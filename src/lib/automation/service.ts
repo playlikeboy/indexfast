@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
 	alerts,
@@ -697,7 +697,7 @@ async function syncSitemapSource(site: SiteRow, source: SiteSitemapRow) {
 }
 
 async function syncActiveSitemaps(site: SiteRow, sourceId?: string) {
-	const filters = [eq(siteSitemaps.siteId, site.id), eq(siteSitemaps.status, "active")];
+	const filters = [eq(siteSitemaps.siteId, site.id), ne(siteSitemaps.status, "disabled")];
 	if (sourceId) {
 		filters.push(eq(siteSitemaps.id, sourceId));
 	}
@@ -934,7 +934,7 @@ export async function runScheduledAutomation() {
 			and(
 				eq(sites.automationEnabled, true),
 				eq(sites.verified, true),
-				eq(siteSitemaps.status, "active"),
+				ne(siteSitemaps.status, "disabled"),
 				or(isNull(siteSitemaps.lastSyncAt), lte(siteSitemaps.lastSyncAt, cutoff)),
 			),
 		)

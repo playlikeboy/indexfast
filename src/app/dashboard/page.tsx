@@ -1,6 +1,7 @@
 import React from "react";
 import { stack } from "@/stack";
 import { AddSiteForm } from "@/components/dashboard/AddSiteForm";
+import { syncUser } from "@/app/actions";
 import Link from "next/link";
 import { AlertTriangle, Check, CheckCircle, ChevronRight, Database, Globe, Settings } from "lucide-react";
 import { getDashboardOverview } from "@/db/dashboard";
@@ -49,6 +50,7 @@ export default async function DashboardOverview() {
 	let fetchError: string | null = null;
 
 	try {
+		await syncUser();
 		const data = await getDashboardOverview(user.id);
 		userSites = data.sites;
 		stats = data.stats;

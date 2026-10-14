@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { alerts, sites, sitemaps, submissions, urls } from "@/db/schema";
 
@@ -17,27 +17,43 @@ function sumCounts(rows: Array<{ value: number | string | null }>) {
 }
 
 export async function getDashboardOverview(userId: string) {
-	const [siteRows, urlCountRows, alertCountRows, submissionCountRows] = await Promise.all([
-		db
-			.select({
-				id: sites.id,
-				domain: sites.domain,
-				name: sites.name,
-				verified: sites.verified,
-				sitemapUrl: sites.sitemapUrl,
-				createdAt: sites.createdAt,
-			})
-			.from(sites)
-			.where(eq(sites.userId, userId))
-			.orderBy(desc(sites.createdAt)),
+	const siteRows = await db
+		.select({
+			id: sites.id,
+			domain: sites.domain,
+			name: sites.name,
+			verified: sites.verified,
+			sitemapUrl: sites.sitemapUrl,
+			createdAt: sites.createdAt,
+		})
+		.from(sites)
+		.where(eq(sites.userId, userId))
+		.orderBy(desc(sites.createdAt));
+
+	if (siteRows.length === 0) {
+		return {
+			stats: {
+				totalSites: 0,
+				verifiedSites: 0,
+				pendingSites: 0,
+				totalUrls: 0,
+				pendingAlerts: 0,
+				totalSubmissions: 0,
+			},
+			sites: [],
+		};
+	}
+
+	const siteIds = siteRows.map((s) => s.id);
+
+	const [urlCountResult, alertCountResult, submissionCountResult] = await Promise.allSettled([
 		db
 			.select({
 				siteId: urls.siteId,
 				value: sql<number>`cast(count(${urls.id}) as int)`,
 			})
 			.from(urls)
-			.innerJoin(sites, eq(urls.siteId, sites.id))
-			.where(eq(sites.userId, userId))
+			.where(inArray(urls.siteId, siteIds))
 			.groupBy(urls.siteId),
 		db
 			.select({
@@ -45,8 +61,7 @@ export async function getDashboardOverview(userId: string) {
 				value: sql<number>`cast(count(${alerts.id}) as int)`,
 			})
 			.from(alerts)
-			.innerJoin(sites, eq(alerts.siteId, sites.id))
-			.where(and(eq(sites.userId, userId), eq(alerts.resolved, false)))
+			.where(and(inArray(alerts.siteId, siteIds), eq(alerts.resolved, false)))
 			.groupBy(alerts.siteId),
 		db
 			.select({
@@ -54,10 +69,13 @@ export async function getDashboardOverview(userId: string) {
 				value: sql<number>`cast(count(${submissions.id}) as int)`,
 			})
 			.from(submissions)
-			.innerJoin(sites, eq(submissions.siteId, sites.id))
-			.where(eq(sites.userId, userId))
+			.where(inArray(submissions.siteId, siteIds))
 			.groupBy(submissions.siteId),
 	]);
+
+	const urlCountRows = urlCountResult.status === "fulfilled" ? urlCountResult.value : [];
+	const alertCountRows = alertCountResult.status === "fulfilled" ? alertCountResult.value : [];
+	const submissionCountRows = submissionCountResult.status === "fulfilled" ? submissionCountResult.value : [];
 
 	const urlCounts = toCountMap(urlCountRows);
 	const alertCounts = toCountMap(alertCountRows);
@@ -166,12 +184,23 @@ export async function getSiteDashboard(userId: string, siteId: string) {
 }
 
 export async function getAlertCenter(userId: string) {
-	const [rows, [total], [openTotal]] = await Promise.all([
+	const userSites = await db
+		.select({ id: sites.id, name: sites.name })
+		.from(sites)
+		.where(eq(sites.userId, userId));
+
+	if (userSites.length === 0) {
+		return { alerts: [], total: 0, openTotal: 0 };
+	}
+
+	const siteMap = new Map(userSites.map((s) => [s.id, s.name]));
+	const siteIds = userSites.map((s) => s.id);
+
+	const [alertRowsRes, totalRes, openTotalRes] = await Promise.allSettled([
 		db
 			.select({
 				id: alerts.id,
 				siteId: alerts.siteId,
-				siteName: sites.name,
 				title: alerts.title,
 				message: alerts.message,
 				alertType: alerts.alertType,
@@ -179,36 +208,51 @@ export async function getAlertCenter(userId: string) {
 				createdAt: alerts.createdAt,
 			})
 			.from(alerts)
-			.innerJoin(sites, eq(alerts.siteId, sites.id))
-			.where(eq(sites.userId, userId))
+			.where(inArray(alerts.siteId, siteIds))
 			.orderBy(desc(alerts.createdAt))
 			.limit(listLimit),
 		db
 			.select({ value: sql<number>`cast(count(${alerts.id}) as int)` })
 			.from(alerts)
-			.innerJoin(sites, eq(alerts.siteId, sites.id))
-			.where(eq(sites.userId, userId)),
+			.where(inArray(alerts.siteId, siteIds)),
 		db
 			.select({ value: sql<number>`cast(count(${alerts.id}) as int)` })
 			.from(alerts)
-			.innerJoin(sites, eq(alerts.siteId, sites.id))
-			.where(and(eq(sites.userId, userId), eq(alerts.resolved, false))),
+			.where(and(inArray(alerts.siteId, siteIds), eq(alerts.resolved, false))),
 	]);
 
+	const alertRows = alertRowsRes.status === "fulfilled" ? alertRowsRes.value : [];
+	const total = totalRes.status === "fulfilled" ? totalRes.value[0]?.value : 0;
+	const openTotal = openTotalRes.status === "fulfilled" ? openTotalRes.value[0]?.value : 0;
+
 	return {
-		alerts: rows,
-		total: normalizeCount(total?.value),
-		openTotal: normalizeCount(openTotal?.value),
+		alerts: alertRows.map((a) => ({
+			...a,
+			siteName: siteMap.get(a.siteId) || "Unknown",
+		})),
+		total: normalizeCount(total),
+		openTotal: normalizeCount(openTotal),
 	};
 }
 
 export async function getSubmissionLog(userId: string) {
-	const [rows, [total]] = await Promise.all([
+	const userSites = await db
+		.select({ id: sites.id, name: sites.name })
+		.from(sites)
+		.where(eq(sites.userId, userId));
+
+	if (userSites.length === 0) {
+		return { submissions: [], total: 0 };
+	}
+
+	const siteMap = new Map(userSites.map((s) => [s.id, s.name]));
+	const siteIds = userSites.map((s) => s.id);
+
+	const [rowsRes, totalRes] = await Promise.allSettled([
 		db
 			.select({
 				id: submissions.id,
 				siteId: submissions.siteId,
-				siteName: sites.name,
 				loc: submissions.loc,
 				engine: submissions.engine,
 				status: submissions.status,
@@ -216,19 +260,23 @@ export async function getSubmissionLog(userId: string) {
 				createdAt: submissions.createdAt,
 			})
 			.from(submissions)
-			.innerJoin(sites, eq(submissions.siteId, sites.id))
-			.where(eq(sites.userId, userId))
+			.where(inArray(submissions.siteId, siteIds))
 			.orderBy(desc(submissions.createdAt))
 			.limit(listLimit),
 		db
 			.select({ value: sql<number>`cast(count(${submissions.id}) as int)` })
 			.from(submissions)
-			.innerJoin(sites, eq(submissions.siteId, sites.id))
-			.where(eq(sites.userId, userId)),
+			.where(inArray(submissions.siteId, siteIds)),
 	]);
 
+	const rows = rowsRes.status === "fulfilled" ? rowsRes.value : [];
+	const total = totalRes.status === "fulfilled" ? totalRes.value[0]?.value : 0;
+
 	return {
-		submissions: rows,
-		total: normalizeCount(total?.value),
+		submissions: rows.map((s) => ({
+			...s,
+			siteName: siteMap.get(s.siteId) || "Unknown",
+		})),
+		total: normalizeCount(total),
 	};
 }
