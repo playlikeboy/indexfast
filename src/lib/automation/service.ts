@@ -838,29 +838,26 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 		? and(eq(submissionJobs.siteId, options.siteId), eligibleFilter)
 		: eligibleFilter;
 
-	// Claim rows in one transaction and skip jobs another cron invocation has locked.
-	// Count an attempt at claim time, so a crashed worker cannot retry forever without being counted.
-	const jobs = await db.transaction(async (tx) => {
-		const selected = await tx
-			.select()
-			.from(submissionJobs)
-			.where(queueFilter)
-			.orderBy(submissionJobs.nextRunAt, submissionJobs.createdAt)
-			.limit(maxJobs)
-			.for("update", { skipLocked: true });
-		if (selected.length === 0) return [];
-
-		await tx
-			.update(submissionJobs)
-			.set({
-				status: "processing",
-				attempts: sql.raw("attempts + 1"),
-				lockedAt: now,
-				updatedAt: now,
-			})
-			.where(inArray(submissionJobs.id, selected.map((job) => job.id)));
-		return selected;
-	});
+	// Claim rows with one atomic UPDATE. This works with Neon HTTP (which does not
+	// support interactive transactions), while the subquery skips rows locked by
+	// a concurrent cron invocation.
+	const candidateJobs = db
+		.select({ id: submissionJobs.id })
+		.from(submissionJobs)
+		.where(queueFilter)
+		.orderBy(submissionJobs.nextRunAt, submissionJobs.createdAt)
+		.limit(maxJobs)
+		.for("update", { skipLocked: true });
+	const jobs = await db
+		.update(submissionJobs)
+		.set({
+			status: "processing",
+			attempts: sql.raw("attempts + 1"),
+			lockedAt: now,
+			updatedAt: now,
+		})
+		.where(inArray(submissionJobs.id, candidateJobs))
+		.returning();
 
 	if (jobs.length === 0) return { processedCount: 0, successCount: 0, failedCount: 0 };
 
@@ -895,11 +892,11 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 						engine: job.engine,
 						status,
 						responseMessage,
-						attempt: job.attempts + 1,
+						attempt: job.attempts,
 					})),
 				),
 				...batch.map((job) => {
-					const attemptNumber = job.attempts + 1;
+					const attemptNumber = job.attempts;
 					const retrying = !result.ok && attemptNumber < AUTOMATION_LIMITS.maxSubmissionAttempts;
 					const retryDelayMinutes = Math.min(5 * Math.pow(2, attemptNumber - 1), 60);
 					const nextRunAt = retrying
@@ -932,7 +929,7 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 				successCount += batch.length;
 			} else {
 				failedCount += batch.length;
-				const exhaustedRetries = batch.filter((job) => job.attempts + 1 >= AUTOMATION_LIMITS.maxSubmissionAttempts);
+				const exhaustedRetries = batch.filter((job) => job.attempts >= AUTOMATION_LIMITS.maxSubmissionAttempts);
 				if (exhaustedRetries.length > 0) {
 					await db.insert(alerts).values({
 						siteId: batch[0].siteId,
