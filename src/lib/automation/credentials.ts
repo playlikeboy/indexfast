@@ -8,6 +8,10 @@ export function hasCredentialEncryptionKey() {
 	return Boolean(getMasterSecret());
 }
 
+export function isEncryptedSecret(value: string) {
+	return value.startsWith(ENCRYPTED_PREFIX);
+}
+
 function toBase64Url(value: Uint8Array) {
 	let binary = "";
 	for (let offset = 0; offset < value.length; offset += 0x8000) {

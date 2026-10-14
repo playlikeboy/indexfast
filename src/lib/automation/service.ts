@@ -13,7 +13,7 @@ import {
 } from "@/db/schema";
 import { getErrorMessage, getSiteHost, normalizeSitemapUrl, normalizeUrlForHost } from "@/lib/url-utils";
 import { AUTOMATION_LIMITS } from "./constants";
-import { encryptSecret, maskCredential, readStoredSecret } from "./credentials";
+import { encryptSecret, hasCredentialEncryptionKey, isEncryptedSecret, maskCredential, readStoredSecret } from "./credentials";
 import {
 	generateIndexNowKey,
 	getBingSubmissionQuota,
@@ -111,6 +111,11 @@ export async function getSiteForUser(siteId: string, userId: string) {
 	return site;
 }
 
+async function upgradeLegacySecret(value: string) {
+	if (isEncryptedSecret(value) || !hasCredentialEncryptionKey()) return value;
+	return encryptSecret(await readStoredSecret(value));
+}
+
 export async function ensureIndexNowIntegration(site: SiteRow) {
 	const host = getSiteHost(site);
 	const [existing] = await db
@@ -121,16 +126,18 @@ export async function ensureIndexNowIntegration(site: SiteRow) {
 
 	if (existing?.encryptedSecret) {
 		const key = await readStoredSecret(existing.encryptedSecret);
+		const encryptedSecret = await upgradeLegacySecret(existing.encryptedSecret);
 		const keyLocation = getConfiguredKeyLocation(existing.publicConfig, host, key);
 		await db
 			.update(siteIntegrations)
 			.set({
+				encryptedSecret,
 				publicConfig: { host, keyLocation },
 				updatedAt: new Date(),
 			})
 			.where(eq(siteIntegrations.id, existing.id));
 
-		return { ...existing, publicConfig: { host, keyLocation }, key, keyLocation };
+		return { ...existing, encryptedSecret, publicConfig: { host, keyLocation }, key, keyLocation };
 	}
 
 	const key = generateIndexNowKey();
@@ -171,6 +178,12 @@ async function getIndexNowSettings(site: SiteRow) {
 	if (existing?.encryptedSecret) {
 		try {
 			const key = await readStoredSecret(existing.encryptedSecret);
+			const encryptedSecret = await upgradeLegacySecret(existing.encryptedSecret);
+			if (encryptedSecret !== existing.encryptedSecret) {
+				await db.update(siteIntegrations)
+					.set({ encryptedSecret, updatedAt: new Date() })
+					.where(eq(siteIntegrations.id, existing.id));
+			}
 			const keyLocation = getConfiguredKeyLocation(existing.publicConfig, host, key);
 			const config = readPublicConfig(existing.publicConfig);
 			return {
@@ -531,6 +544,10 @@ async function enqueueSubmissionJob(siteId: string, url: UrlQueueRow, engine: "i
 }
 
 async function enqueueUrlRows(site: SiteRow, urlRows: UrlQueueRow[], reason: string, allowManual = false) {
+	if (!site.verified) {
+		if (allowManual) throw new Error("Verify site ownership before submitting URLs.");
+		return 0;
+	}
 	const engines = await getEligibleEngines(site, allowManual);
 	let queued = 0;
 
@@ -798,6 +815,11 @@ async function submitEngineBatch(siteId: string, engine: string, urlList: string
 		}
 
 		const key = await readStoredSecret(integration.encryptedSecret);
+		const encryptedSecret = await upgradeLegacySecret(integration.encryptedSecret);
+		if (encryptedSecret !== integration.encryptedSecret) {
+			await db.update(siteIntegrations).set({ encryptedSecret, updatedAt: new Date() })
+				.where(eq(siteIntegrations.id, integration.id));
+		}
 		const keyLocation = getConfiguredKeyLocation(integration.publicConfig, getSiteHost(site), key);
 		return submitIndexNowBatch(getSiteHost(site), key, urlList, keyLocation);
 	}
@@ -814,6 +836,11 @@ async function submitEngineBatch(siteId: string, engine: string, urlList: string
 		}
 
 		const apiKey = await readStoredSecret(integration.encryptedSecret);
+		const encryptedSecret = await upgradeLegacySecret(integration.encryptedSecret);
+		if (encryptedSecret !== integration.encryptedSecret) {
+			await db.update(userIntegrations).set({ encryptedSecret, updatedAt: new Date() })
+				.where(and(eq(userIntegrations.userId, site.userId), eq(userIntegrations.provider, "bing")));
+		}
 		return submitBingBatch(apiKey, getSiteUrl(site), urlList);
 	}
 
@@ -841,10 +868,14 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 	// Claim rows with one atomic UPDATE. This works with Neon HTTP (which does not
 	// support interactive transactions), while the subquery skips rows locked by
 	// a concurrent cron invocation.
+	const verifiedSiteIds = db
+		.select({ id: sites.id })
+		.from(sites)
+		.where(eq(sites.verified, true));
 	const candidateJobs = db
 		.select({ id: submissionJobs.id })
 		.from(submissionJobs)
-		.where(queueFilter)
+		.where(and(queueFilter, inArray(submissionJobs.siteId, verifiedSiteIds)))
 		.orderBy(submissionJobs.nextRunAt, submissionJobs.createdAt)
 		.limit(maxJobs)
 		.for("update", { skipLocked: true });
@@ -1017,7 +1048,12 @@ export async function getSiteSettings(userId: string, siteId: string) {
 	let bingErrorMessage = bingIntegration?.lastErrorMessage ?? null;
 	if (bingIntegration) {
 		try {
-			bingKey = await readStoredSecret(bingIntegration.encryptedSecret);
+			const encryptedSecret = await upgradeLegacySecret(bingIntegration.encryptedSecret);
+			if (encryptedSecret !== bingIntegration.encryptedSecret) {
+				await db.update(userIntegrations).set({ encryptedSecret, updatedAt: new Date() })
+					.where(and(eq(userIntegrations.userId, userId), eq(userIntegrations.provider, "bing")));
+			}
+			bingKey = await readStoredSecret(encryptedSecret);
 		} catch (error) {
 			bingErrorMessage = `Unable to decrypt Bing key: ${getErrorMessage(error)}`;
 		}
