@@ -1,4 +1,4 @@
-// @ts-ignore The OpenNext worker is generated during the build.
+// @ts-expect-error The OpenNext worker is generated during the build.
 import handler from "./.open-next/worker.js";
 
 const runtimeEnvKeys = ["DATABASE_URL"] as const;
@@ -41,5 +41,6 @@ export default {
 	},
 } satisfies ExportedHandler<CloudflareEnv>;
 
-// @ts-ignore The OpenNext worker is generated during the build.
+// @ts-expect-error The OpenNext worker is generated during the build.
 export { DOQueueHandler, DOShardedTagCache } from "./.open-next/worker.js";
+
