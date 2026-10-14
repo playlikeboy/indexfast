@@ -9,6 +9,7 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "indexfast",
+	"account_id": "091539408595ba99a0ef106d42391d5b",
 	"main": "worker.ts",
 	"compatibility_date": "2026-06-01",
 	"compatibility_flags": [
