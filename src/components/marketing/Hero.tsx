@@ -2,123 +2,90 @@ import Link from "next/link";
 
 export function Hero() {
 	return (
-		<section className="relative overflow-hidden bg-grid py-20 sm:py-28 lg:py-32 border-b border-border/40">
-			<div className="mx-auto max-w-4xl px-4 sm:px-6 text-center">
-				<p className="label-mono mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-muted">
-					<span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-					IndexFast MCP v2.0 is Live
-				</p>
-				<h1 className="display text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight">
-					Autonomous SEO Infrastructure <span className="block mt-2 text-muted">for the AI Agent Era.</span>
-				</h1>
-				<p className="mt-6 mx-auto max-w-2xl text-base sm:text-lg leading-relaxed text-muted">
-					Equip your web properties, CMS pipelines, and AI developers with real-time sitemap BFS parsing, instant IndexNow/Bing push queues, and edge-native diagnostics. 100% Edge-native. Built for Cursor, Claude, and programmatic scale.
-				</p>
-				<div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-					<Link
-						href="/dashboard"
-						className="inline-flex items-center justify-center rounded-sm bg-ink px-6 py-3 font-mono text-xs font-black uppercase text-surface transition-all hover:bg-ink/90 hover:shadow-lg"
-					>
-						Deploy console
-					</Link>
-					<Link
-						href="/dashboard/mcp"
-						className="inline-flex items-center justify-center rounded-sm border border-ink px-6 py-3 font-mono text-xs font-black uppercase text-ink transition-all hover:bg-ink hover:text-surface hover:shadow-lg"
-					>
-						Connect MCP Server
-					</Link>
+		<section className="relative overflow-hidden border-b border-border/40 bg-grid py-16 sm:py-20 lg:py-24">
+			<div className="mx-auto grid max-w-6xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-[1fr_0.9fr] lg:gap-16">
+				<div>
+					<p className="label-mono mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-[10px] font-bold tracking-wider">
+						<span className="h-1.5 w-1.5 rounded-full bg-accent" />
+						SEO indexing operations
+					</p>
+					<h1 className="display max-w-2xl text-5xl sm:text-6xl lg:text-7xl">
+						Find indexing issues.
+						<span className="mt-3 block"><span className="text-highlight">Ship fixes faster.</span></span>
+					</h1>
+					<p className="mt-6 max-w-xl text-base leading-relaxed text-muted sm:text-lg">
+						Monitor sitemaps, catch technical blockers, and submit URL updates through IndexNow and Bing—all in one place.
+					</p>
+					<div className="mt-8 flex flex-col gap-3 sm:flex-row">
+						<Link
+							href="/signup"
+							className="inline-flex items-center justify-center gap-2 rounded-sm bg-accent px-6 py-3 text-xs font-mono font-bold uppercase tracking-wide text-accent-foreground transition hover:bg-accent-dark"
+						>
+							Start free <span aria-hidden="true">↗</span>
+						</Link>
+						<Link
+							href="/tools"
+							className="inline-flex items-center justify-center rounded-sm border border-border bg-card/50 px-6 py-3 text-xs font-mono font-bold uppercase tracking-wide text-ink transition hover:border-ink"
+						>
+							Explore free tools
+						</Link>
+					</div>
+					<p className="mt-4 text-xs text-muted">Built for SEO teams, developers, and AI-powered workflows.</p>
 				</div>
-				
-				<div className="mt-16 mx-auto max-w-3xl">
-					<DashboardMockup />
-				</div>
+
+				<WorkflowPreview />
 			</div>
 		</section>
 	);
 }
 
-function DashboardMockup() {
+function WorkflowPreview() {
+	const steps = [
+		{ number: "01", title: "Discover", detail: "Sitemaps and URL changes", tag: "MONITOR" },
+		{ number: "02", title: "Diagnose", detail: "Noindex, canonicals, redirects", tag: "CHECK" },
+		{ number: "03", title: "Submit", detail: "IndexNow and Bing workflows", tag: "NOTIFY" },
+	];
+
 	return (
-		<div className="border border-border bg-card shadow-2xl text-left overflow-hidden">
-			{/* Window chrome header */}
-			<div className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
-				<div className="flex items-center gap-1.5">
-					<span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-					<span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
-					<span className="h-2.5 w-2.5 rounded-full bg-green-400" />
+		<div className="relative mx-auto w-full max-w-xl">
+			<div className="absolute -inset-4 rounded-2xl bg-accent/10 blur-2xl" aria-hidden="true" />
+			<div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+				<div className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
+					<div className="flex items-center gap-2">
+						<span className="h-2 w-2 rounded-full bg-red-400" />
+						<span className="h-2 w-2 rounded-full bg-yellow-400" />
+						<span className="h-2 w-2 rounded-full bg-green-500" />
+					</div>
+					<span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted">Platform overview</span>
+					<span className="w-8" aria-hidden="true" />
 				</div>
-				<span className="font-mono text-[9px] uppercase tracking-wider text-muted font-bold">IndexFast Agent console</span>
-				<div className="w-10" />
-			</div>
-			
-			<div className="p-5 sm:p-6 space-y-6">
-				{/* Stats Grid */}
-				<div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-					<div className="p-4 border border-border/60 bg-surface">
-						<p className="font-mono text-[9px] font-bold uppercase tracking-wider text-muted">Sites Tracked</p>
-						<p className="mt-1 text-2xl font-black font-mono">48</p>
+				<div className="p-5 sm:p-7">
+					<div className="flex items-start justify-between gap-3">
+						<div>
+							<p className="text-xs font-semibold uppercase tracking-widest text-muted">IndexFast workflow</p>
+							<p className="mt-1 text-xl font-bold tracking-tight text-ink">From sitemap to submission</p>
+						</div>
+						<span className="rounded-full border border-border px-2.5 py-1 font-mono text-[9px] font-bold uppercase tracking-wider text-muted">Overview</span>
 					</div>
-					<div className="p-4 border border-border/60 bg-surface">
-						<p className="font-mono text-[9px] font-bold uppercase tracking-wider text-muted">MCP Tools</p>
-						<p className="mt-1 text-2xl font-black font-mono">12</p>
+					<div className="mt-6 space-y-3">
+						{steps.map((step) => (
+							<div key={step.number} className="flex items-center gap-4 rounded-lg border border-border/70 bg-surface/70 p-4">
+								<span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-accent text-xs font-bold text-accent-foreground">{step.number}</span>
+								<div className="min-w-0 flex-1">
+									<p className="text-sm font-bold text-ink">{step.title}</p>
+									<p className="mt-0.5 text-xs leading-relaxed text-muted">{step.detail}</p>
+								</div>
+								<span className="hidden rounded-sm bg-card px-2 py-1 font-mono text-[9px] font-bold tracking-wide text-muted sm:inline">{step.tag}</span>
+							</div>
+						))}
 					</div>
-					<div className="p-4 border border-border/60 bg-surface">
-						<p className="font-mono text-[9px] font-bold uppercase tracking-wider text-muted">URLs Processed</p>
-						<p className="mt-1 text-2xl font-black font-mono text-accent-foreground bg-accent px-1.5 py-0.5 w-fit">98,421</p>
-					</div>
-					<div className="p-4 border border-border/60 bg-surface">
-						<p className="font-mono text-[9px] font-bold uppercase tracking-wider text-muted">Ingestion Latency</p>
-						<p className="mt-1 text-2xl font-black font-mono text-green-600 dark:text-green-400">&lt; 5s</p>
-					</div>
-				</div>
-
-				{/* Editorial Platform Walkthrough Video */}
-				<div className="relative overflow-hidden rounded-md border border-border/80 bg-zinc-950 shadow-inner">
-					<div className="flex items-center justify-between border-b border-border/40 bg-zinc-900/90 px-3 py-1.5 text-xs font-mono text-zinc-400">
-						<span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-accent">
-							<span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-							Platform Walkthrough
-						</span>
-						<span className="text-[9px] uppercase font-bold text-zinc-500">Editorial Preview</span>
-					</div>
-					<video
-						src="/IndexFast-Editorial-v2.mp4"
-						controls
-						autoPlay
-						muted
-						loop
-						playsInline
-						preload="metadata"
-						className="w-full aspect-video object-cover"
-					/>
-				</div>
-
-				{/* CLI Ingestion log simulation */}
-				<div className="rounded-md border border-border/60 bg-surface p-4 font-mono text-xs space-y-2 text-muted">
-					<div className="flex items-center justify-between border-b border-border/20 pb-2 mb-2">
-						<span className="text-[10px] font-bold text-ink uppercase">Real-Time Event Stream</span>
-						<span className="text-[9px] uppercase font-bold text-green-600 dark:text-green-400 flex items-center gap-1">
-							<span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-ping" />
-							Active
-						</span>
-					</div>
-					<div className="flex items-start gap-2">
-						<span className="text-accent font-bold">&gt;</span>
-						<span className="text-ink">npx indexfast login --api-key if_live_...</span>
-					</div>
-					<div className="text-[11px] pl-4 text-muted-foreground">
-						[system] Authenticated as user_8ac4f. Billing tier: Growth.
-					</div>
-					<div className="flex items-start gap-2 mt-2">
-						<span className="text-accent font-bold">&gt;</span>
-						<span className="text-ink">mcp.submit_url https://30tools.com/seo-analyzer</span>
-					</div>
-					<div className="text-[11px] pl-4 text-green-600 dark:text-green-400">
-						[engine] Submission queued: IndexNow [Success] / Bing Webmaster API [Success]
+					<div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/70 pt-4 text-xs text-muted">
+						<span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-accent" /> Sitemap monitoring</span>
+						<span>Indexability checks</span>
+						<span>API · CLI · MCP</span>
 					</div>
 				</div>
 			</div>
 		</div>
 	);
 }
-
