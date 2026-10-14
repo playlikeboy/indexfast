@@ -101,22 +101,3 @@ function DashboardMockup() {
 	);
 }
 
-function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
-	return (
-		<div className={`p-3 text-center ${accent ? "bg-accent" : "bg-card"}`}>
-			<p className={`stat text-2xl ${accent ? "text-accent-foreground" : "text-ink"}`}>{value}</p>
-			<p className={`mt-1 text-[11px] uppercase tracking-wide ${accent ? "text-accent-foreground/60" : "text-muted"}`}>{label}</p>
-		</div>
-	);
-}
-
-function UrlRow({ url, status }: { url: string; status: string }) {
-	return (
-		<div className="flex items-center justify-between bg-card px-3 py-2.5 text-xs">
-			<span className="mr-2 truncate font-mono text-muted">{url}</span>
-			<span className="shrink-0 border border-ink/20 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-ink">
-				{status}
-			</span>
-		</div>
-	);
-}

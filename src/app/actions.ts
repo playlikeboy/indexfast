@@ -6,7 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { stack } from "@/stack";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getErrorMessage, getSiteHost, normalizeHost, normalizeSitemapUrl } from "@/lib/url-utils";
+import { getErrorMessage, normalizeHost, normalizeSitemapUrl } from "@/lib/url-utils";
 import {
 	addSitemapSourceForUser,
 	discoverSitemapsForUser,
@@ -135,59 +135,36 @@ export async function checkUrlDiagnostics(urlId: string) {
 		.limit(1);
 	if (!urlRow) throw new Error("URL not found");
 
-	try {
-		const res = await fetch(urlRow.loc, {
-			headers: { "User-Agent": "IndexFast SEO Checker/1.0" },
-		});
-		const httpStatus = res.status;
-		const text = await res.text();
+	const { evaluateUrlDiagnostics } = await import("@/lib/automation/diagnostics");
+	const result = await evaluateUrlDiagnostics(urlRow.loc);
 
-		const noindex = /<meta[^>]*name=["']robots["'][^>]*content=["'][^"']*noindex[^"']*["']/i.test(text);
-		const canonicalMatch = /<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)["']/i.exec(text);
-		const canonical = canonicalMatch ? canonicalMatch[1] : null;
-		const status = noindex || httpStatus !== 200 ? "fail" : "pass";
+	await db.insert(checks).values({
+		urlId,
+		checkType: "diagnostics",
+		status: result.status,
+		details: {
+			httpStatus: result.httpStatus,
+			noindex: result.noindex,
+			noindexSource: result.noindexSource,
+			canonical: result.canonical,
+			isCanonicalMatch: result.isCanonicalMatch,
+			title: result.title,
+			blockers: result.blockers,
+			finalUrl: result.finalUrl,
+		},
+	});
 
-		await db.insert(checks).values({
-			urlId,
-			checkType: "diagnostics",
-			status,
-			details: {
-				httpStatus,
-				noindex,
-				canonical,
-				isCanonicalMatch: canonical ? canonical === urlRow.loc : true,
-			},
-		});
+	await db
+		.update(urls)
+		.set({
+			httpStatus: result.httpStatus,
+			indexingStatus: result.status === "fail" ? "blockers" : result.httpStatus === 200 ? "indexed" : "not_indexed",
+			lastCheckedAt: new Date(),
+		})
+		.where(eq(urls.id, urlId));
 
-		await db
-			.update(urls)
-			.set({
-				httpStatus,
-				indexingStatus: noindex ? "blockers" : httpStatus === 200 ? "indexed" : "not_indexed",
-				lastCheckedAt: new Date(),
-			})
-			.where(eq(urls.id, urlId));
-
-		return { success: true };
-	} catch (error: unknown) {
-		const message = getErrorMessage(error);
-
-		await db.insert(checks).values({
-			urlId,
-			checkType: "diagnostics",
-			status: "fail",
-			details: { error: message },
-		});
-
-		await db
-			.update(urls)
-			.set({
-				indexingStatus: "blockers",
-				lastCheckedAt: new Date(),
-			})
-			.where(eq(urls.id, urlId));
-
-		const alertMessage = `Unable to run diagnostics for ${urlRow.loc}: ${message}`;
+	if (result.status === "fail" && result.blockers.length > 0) {
+		const alertMessage = `Diagnostic issues for ${urlRow.loc}: ${result.blockers.join("; ")}`;
 		const [existingAlert] = await db
 			.select({ id: alerts.id })
 			.from(alerts)
@@ -195,7 +172,6 @@ export async function checkUrlDiagnostics(urlId: string) {
 				and(
 					eq(alerts.siteId, urlRow.siteId),
 					eq(alerts.title, "Diagnostics Failed"),
-					eq(alerts.message, alertMessage),
 					eq(alerts.resolved, false),
 				),
 			)
@@ -210,9 +186,10 @@ export async function checkUrlDiagnostics(urlId: string) {
 				resolved: false,
 			});
 		}
-
-		return { success: false, error: message };
 	}
+
+	revalidateSiteDashboard(urlRow.siteId);
+	return { success: result.status !== "fail", ...result };
 }
 
 export async function submitToIndexNow(siteId: string, urlLoc: string) {

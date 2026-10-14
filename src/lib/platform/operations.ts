@@ -199,26 +199,23 @@ export async function runDiagnosticsForUser(input: { userId: string; siteId: str
 		throw new Error("URL not found.");
 	}
 
-	const response = await fetch(urlRow.loc, {
-		headers: { "User-Agent": "IndexFast SEO Checker/1.0" },
-	});
-	const httpStatus = response.status;
-	const text = await response.text();
-	const noindex = /<meta[^>]*name=["']robots["'][^>]*content=["'][^"']*noindex[^"']*["']/i.test(text);
-	const canonicalMatch = /<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)["']/i.exec(text);
-	const canonical = canonicalMatch ? canonicalMatch[1] : null;
-	const status = noindex || httpStatus !== 200 ? "fail" : "pass";
+	const { evaluateUrlDiagnostics } = await import("@/lib/automation/diagnostics");
+	const result = await evaluateUrlDiagnostics(urlRow.loc);
 	const checkedAt = new Date();
 
 	await db.insert(checks).values({
 		urlId: urlRow.id,
 		checkType: "diagnostics",
-		status,
+		status: result.status,
 		details: {
-			httpStatus,
-			noindex,
-			canonical,
-			isCanonicalMatch: canonical ? canonical === urlRow.loc : true,
+			httpStatus: result.httpStatus,
+			noindex: result.noindex,
+			noindexSource: result.noindexSource,
+			canonical: result.canonical,
+			isCanonicalMatch: result.isCanonicalMatch,
+			title: result.title,
+			blockers: result.blockers,
+			finalUrl: result.finalUrl,
 		},
 		checkedAt,
 	});
@@ -226,13 +223,21 @@ export async function runDiagnosticsForUser(input: { userId: string; siteId: str
 	await db
 		.update(urls)
 		.set({
-			httpStatus,
-			indexingStatus: noindex ? "blockers" : httpStatus === 200 ? "indexed" : "not_indexed",
+			httpStatus: result.httpStatus,
+			indexingStatus: result.status === "fail" ? "blockers" : result.httpStatus === 200 ? "indexed" : "not_indexed",
 			lastCheckedAt: checkedAt,
 		})
 		.where(eq(urls.id, urlRow.id));
 
-	return { urlId: urlRow.id, loc: urlRow.loc, httpStatus, noindex, canonical, status };
+	return {
+		urlId: urlRow.id,
+		loc: urlRow.loc,
+		httpStatus: result.httpStatus,
+		noindex: result.noindex,
+		canonical: result.canonical,
+		status: result.status,
+		blockers: result.blockers,
+	};
 }
 
 export function listDirectoryResources(priority?: "P0" | "P1" | "P2" | "P3") {

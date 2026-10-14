@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
+import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -93,27 +93,7 @@ export default function CanonicalCheckerPage() {
 							No signup required.
 						</p>
 
-						<form className="mt-10 space-y-4" action="#" method="get">
-							<div>
-								<label htmlFor="url-input" className="block text-sm font-semibold text-ink">
-									Enter URL to check
-								</label>
-								<input
-									id="url-input"
-									type="url"
-									name="url"
-									placeholder="https://example.com/page"
-									required
-									className="mt-3 w-full border border-ink bg-surface px-4 py-3 text-sm placeholder:text-muted focus:border-accent focus:outline-none"
-								/>
-							</div>
-							<button
-								type="submit"
-								className="bg-ink px-6 py-3 text-sm font-semibold text-surface transition-colors hover:bg-ink/85"
-							>
-								Check Canonical Tag
-							</button>
-						</form>
+						<ToolRunner toolType="canonical-checker" buttonLabel="Check Canonical Tag" placeholder="https://example.com/page" />
 
 						<div className="prose prose-muted mt-14 max-w-none space-y-6 text-sm leading-relaxed text-muted">
 							<h2 className="text-base font-bold text-ink">What this tool checks</h2>

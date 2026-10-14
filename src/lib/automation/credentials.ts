@@ -1,5 +1,3 @@
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 export function hasCredentialEncryptionKey() {
 	return true;

@@ -274,7 +274,7 @@ function getPrompt(name: string) {
 		throw new Error(`Unknown prompt: ${name}`);
 	}
 
-	const text = {
+	const promptMap: Record<string, string> = {
 		pseo_launch_audit:
 			"Audit this pSEO launch with IndexFast. Check sitemap coverage, URL count, indexability blockers, IndexNow readiness, Bing setup, AI crawler access, and launch directory opportunities. Return prioritized fixes.",
 		indexing_recovery_plan:
@@ -283,7 +283,9 @@ function getPrompt(name: string) {
 			"Create a directory submission plan using IndexFast resources. Prioritize P0/P1 listings, explain effort, and separate launch, SaaS review, AI, developer, and community channels.",
 		agentic_seo_audit:
 			"Act as an agentic SEO engineer. Inspect code, robots.txt, sitemap routes, metadata, structured data, IndexFast diagnostics, API/MCP setup, and CLI workflows. Produce concise implementation tasks.",
-	}[name as keyof typeof promptText];
+	};
+
+	const text = promptMap[name] || "";
 
 	return {
 		description: prompt.description,
@@ -295,13 +297,6 @@ function getPrompt(name: string) {
 		],
 	};
 }
-
-const promptText = {
-	pseo_launch_audit: "",
-	indexing_recovery_plan: "",
-	directory_submission_plan: "",
-	agentic_seo_audit: "",
-};
 
 export async function handleMcpRequest(auth: AuthenticatedApiKey, request: JsonRpcRequest) {
 	const method = request.method || "";

@@ -54,7 +54,15 @@ export default async function McpPage() {
 						<p className="font-mono text-xs font-bold uppercase text-muted">Status</p>
 						<p className="mt-2 text-sm text-muted">
 							Current plan: <span className="font-bold text-ink">{tier}</span>. MCP access is{" "}
-							<span className="font-bold text-ink">{mcpEnabled ? "enabled" : "available on Growth and above"}</span>.
+							<span className="font-bold text-ink">
+								{mcpEnabled ? (
+									"enabled"
+								) : (
+									<Link href="/dashboard/billing" className="underline hover:text-accent">
+										available on Growth and above (Upgrade)
+									</Link>
+								)}
+							</span>.
 						</p>
 					</div>
 

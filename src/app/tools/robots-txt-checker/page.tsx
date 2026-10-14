@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
+import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -94,30 +94,7 @@ export default function RobotsTxtCheckerPage() {
 							and potential indexing blockers. Free. No signup required.
 						</p>
 
-						<form className="mt-10 space-y-4" action="#" method="get">
-							<div>
-								<label htmlFor="domain-input" className="block text-sm font-semibold text-ink">
-									Enter domain
-								</label>
-								<p className="mt-1 text-xs text-muted">
-									Enter any domain to fetch and analyze its robots.txt file.
-								</p>
-								<input
-									id="domain-input"
-									type="text"
-									name="domain"
-									placeholder="example.com"
-									required
-									className="mt-3 w-full border border-ink bg-surface px-4 py-3 text-sm placeholder:text-muted focus:border-accent focus:outline-none"
-								/>
-							</div>
-							<button
-								type="submit"
-								className="bg-ink px-6 py-3 text-sm font-semibold text-surface transition-colors hover:bg-ink/85"
-							>
-								Analyze robots.txt
-							</button>
-						</form>
+						<ToolRunner toolType="robots-txt-checker" buttonLabel="Analyze robots.txt" placeholder="example.com" />
 
 						<div className="prose prose-muted mt-14 max-w-none space-y-6 text-sm leading-relaxed text-muted">
 							<h2 className="text-base font-bold text-ink">What to look for in robots.txt</h2>

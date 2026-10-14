@@ -121,31 +121,31 @@ export function parseSitemapXml(xml: string, host: string): ParsedSitemap {
 	return { sitemaps: Array.from(sitemaps), urls: Array.from(urls.values()) };
 }
 
+import { safeFetchText } from "@/lib/url-utils";
+
 async function fetchText(url: string, userAgent: string) {
-	const response = await fetch(url, {
-		headers: { "User-Agent": userAgent },
-	});
-	if (!response.ok) {
-		throw new Error(`${url} returned HTTP ${response.status}`);
+	const res = await safeFetchText(url, { userAgent, timeoutMs: 10000 });
+	if (res.status !== 200) {
+		throw new Error(`${url} returned HTTP ${res.status}`);
 	}
-	return response.text();
+	return res.text;
 }
 
 async function fetchCandidateSource(url: string, host: string) {
 	try {
-		const response = await fetch(url, {
-			headers: { "User-Agent": "IndexFast Sitemap Discoverer/1.0" },
+		const res = await safeFetchText(url, {
+			userAgent: "IndexFast Sitemap Discoverer/1.0",
+			timeoutMs: 6000,
 		});
-		if (!response.ok) {
+		if (res.status !== 200) {
 			return null;
 		}
 
-		const text = await response.text();
-		if (!text.trim().startsWith("<")) {
+		if (!res.text.trim().startsWith("<")) {
 			return null;
 		}
 
-		const parsed = parseSitemapXml(text, host);
+		const parsed = parseSitemapXml(res.text, host);
 		if (parsed.sitemaps.length === 0 && parsed.urls.length === 0) {
 			return null;
 		}
