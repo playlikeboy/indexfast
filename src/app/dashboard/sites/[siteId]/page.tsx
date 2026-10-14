@@ -123,6 +123,26 @@ export default async function SiteDetailPage({ params }: SiteDetailPageProps) {
 				</div>
 			</div>
 
+			{!site.verified ? (
+				<div className="border border-amber-500/40 bg-amber-500/5 p-5">
+					<h3 className="font-mono text-sm font-black uppercase tracking-wide">Verify site ownership</h3>
+					<p className="mt-2 text-sm text-muted">
+						Create a plain-text file at this exact URL and paste the token below. Then click “Verify site”.
+					</p>
+					<p className="mt-4 font-mono text-xs font-bold uppercase text-muted">File URL</p>
+					<code className="mt-1 block break-all rounded border border-border bg-card p-3 text-sm">
+						https://{site.domain}/.well-known/indexfast-verification.txt
+					</code>
+					<p className="mt-4 font-mono text-xs font-bold uppercase text-muted">Exact file contents</p>
+					<code className="mt-1 block break-all rounded border border-border bg-card p-3 text-sm">
+						{site.verificationToken}
+					</code>
+					<p className="mt-3 text-xs text-muted">
+						The file must be publicly readable over HTTPS and return the token as plain text.
+					</p>
+				</div>
+			) : null}
+
 			{/* Info Cards Grid */}
 			<div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
 				<div className="border border-border bg-card p-5">

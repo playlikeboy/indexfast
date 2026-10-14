@@ -13,7 +13,7 @@ import {
 } from "@/db/schema";
 import { getErrorMessage, getSiteHost, normalizeSitemapUrl, normalizeUrlForHost } from "@/lib/url-utils";
 import { AUTOMATION_LIMITS } from "./constants";
-import { maskCredential, readStoredSecret, storePlainSecret } from "./credentials";
+import { encryptSecret, maskCredential, readStoredSecret } from "./credentials";
 import {
 	generateIndexNowKey,
 	getBingSubmissionQuota,
@@ -125,17 +125,17 @@ export async function ensureIndexNowIntegration(site: SiteRow) {
 		await db
 			.update(siteIntegrations)
 			.set({
-				publicConfig: { host, keyLocation, storage: "plain" },
+				publicConfig: { host, keyLocation },
 				updatedAt: new Date(),
 			})
 			.where(eq(siteIntegrations.id, existing.id));
 
-		return { ...existing, publicConfig: { host, keyLocation, storage: "plain" }, key, keyLocation };
+		return { ...existing, publicConfig: { host, keyLocation }, key, keyLocation };
 	}
 
 	const key = generateIndexNowKey();
 	const keyLocation = getIndexNowKeyLocation(host, key);
-	const storedSecret = storePlainSecret(key);
+	const storedSecret = await encryptSecret(key);
 
 	const [integration] = await db
 		.insert(siteIntegrations)
@@ -144,14 +144,14 @@ export async function ensureIndexNowIntegration(site: SiteRow) {
 			provider: "indexnow",
 			status: "pending",
 			encryptedSecret: storedSecret,
-			publicConfig: { host, keyLocation, storage: "plain" },
+			publicConfig: { host, keyLocation },
 			automationEnabled: false,
 		})
 		.onConflictDoUpdate({
 			target: [siteIntegrations.siteId, siteIntegrations.provider],
 			set: {
 				encryptedSecret: storedSecret,
-				publicConfig: { host, keyLocation, storage: "plain" },
+				publicConfig: { host, keyLocation },
 				updatedAt: new Date(),
 			},
 		})
@@ -231,16 +231,16 @@ export async function saveIndexNowKeyForUser(userId: string, siteId: string, key
 			siteId,
 			provider: "indexnow",
 			status: "pending",
-			encryptedSecret: storePlainSecret(cleanKey),
-			publicConfig: { host, keyLocation: cleanKeyLocation, storage: "plain" },
+			encryptedSecret: await encryptSecret(cleanKey),
+			publicConfig: { host, keyLocation: cleanKeyLocation },
 			automationEnabled: false,
 		})
 		.onConflictDoUpdate({
 			target: [siteIntegrations.siteId, siteIntegrations.provider],
 			set: {
 				status: "pending",
-				encryptedSecret: storePlainSecret(cleanKey),
-				publicConfig: { host, keyLocation: cleanKeyLocation, storage: "plain" },
+				encryptedSecret: await encryptSecret(cleanKey),
+				publicConfig: { host, keyLocation: cleanKeyLocation },
 				verifiedAt: null,
 				lastCheckedAt: null,
 				lastErrorAt: null,
@@ -269,7 +269,7 @@ export async function verifyIndexNowForUser(userId: string, siteId: string) {
 			lastCheckedAt: now,
 			lastErrorAt: result.ok ? null : now,
 			lastErrorMessage: result.ok ? null : truncateMessage(result.message),
-			publicConfig: { host: getSiteHost(site), keyLocation: result.keyLocation, storage: "plain" },
+			publicConfig: { host: getSiteHost(site), keyLocation: result.keyLocation },
 			updatedAt: now,
 		})
 		.where(eq(siteIntegrations.id, integration.id));
@@ -291,7 +291,7 @@ export async function saveBingApiKeyForUser(userId: string, siteId: string, apiK
 	const siteUrl = getSiteUrl(site);
 	const validation = await getBingSubmissionQuota(cleanApiKey, siteUrl);
 	const now = new Date();
-	const storedSecret = storePlainSecret(cleanApiKey);
+	const storedSecret = await encryptSecret(cleanApiKey);
 	const status = validation.ok ? "verified" : "failed";
 	const validationMessage = describeBingValidationMessage(siteUrl, validation.message);
 
@@ -302,7 +302,7 @@ export async function saveBingApiKeyForUser(userId: string, siteId: string, apiK
 			provider: "bing",
 			status,
 			encryptedSecret: storedSecret,
-			publicConfig: { lastValidationStatus: validation.status, siteUrl, storage: "plain" },
+			publicConfig: { lastValidationStatus: validation.status, siteUrl },
 			verifiedAt: validation.ok ? now : null,
 			lastCheckedAt: now,
 			lastErrorAt: validation.ok ? null : now,
@@ -313,7 +313,7 @@ export async function saveBingApiKeyForUser(userId: string, siteId: string, apiK
 			set: {
 				status,
 				encryptedSecret: storedSecret,
-				publicConfig: { lastValidationStatus: validation.status, siteUrl, storage: "plain" },
+				publicConfig: { lastValidationStatus: validation.status, siteUrl },
 				verifiedAt: validation.ok ? now : null,
 				lastCheckedAt: now,
 				lastErrorAt: validation.ok ? null : now,
@@ -822,34 +822,51 @@ async function submitEngineBatch(siteId: string, engine: string, urlList: string
 
 export async function processSubmissionQueue(options: { siteId?: string; maxJobs?: number } = {}) {
 	const now = new Date();
-	const maxJobs = options.maxJobs ?? AUTOMATION_LIMITS.maxSubmissionJobsPerRun;
-	const baseFilter = options.siteId
-		? and(eq(submissionJobs.status, "queued"), lte(submissionJobs.nextRunAt, now), eq(submissionJobs.siteId, options.siteId))
-		: and(eq(submissionJobs.status, "queued"), lte(submissionJobs.nextRunAt, now));
-	const jobs = await db
-		.select()
-		.from(submissionJobs)
-		.where(baseFilter)
-		.orderBy(submissionJobs.createdAt)
-		.limit(maxJobs);
+	const requestedMax = options.maxJobs ?? AUTOMATION_LIMITS.maxSubmissionJobsPerRun;
+	const maxJobs = Number.isFinite(requestedMax) ? Math.min(Math.max(Math.floor(requestedMax), 0), 500) : 0;
+	if (maxJobs === 0) return { processedCount: 0, successCount: 0, failedCount: 0 };
 
-	if (jobs.length === 0) {
-		return { processedCount: 0, successCount: 0, failedCount: 0 };
-	}
+	const staleBefore = new Date(now.getTime() - AUTOMATION_LIMITS.staleProcessingLockMs);
+	const eligibleFilter = or(
+		and(eq(submissionJobs.status, "queued"), lte(submissionJobs.nextRunAt, now)),
+		and(
+			eq(submissionJobs.status, "processing"),
+			or(isNull(submissionJobs.lockedAt), lte(submissionJobs.lockedAt, staleBefore)),
+		),
+	);
+	const queueFilter = options.siteId
+		? and(eq(submissionJobs.siteId, options.siteId), eligibleFilter)
+		: eligibleFilter;
 
-	await db
-		.update(submissionJobs)
-		.set({ status: "processing", lockedAt: now, updatedAt: now })
-		.where(
-			inArray(
-				submissionJobs.id,
-				jobs.map((job) => job.id),
-			),
-		);
+	// Claim rows in one transaction and skip jobs another cron invocation has locked.
+	// Count an attempt at claim time, so a crashed worker cannot retry forever without being counted.
+	const jobs = await db.transaction(async (tx) => {
+		const selected = await tx
+			.select()
+			.from(submissionJobs)
+			.where(queueFilter)
+			.orderBy(submissionJobs.nextRunAt, submissionJobs.createdAt)
+			.limit(maxJobs)
+			.for("update", { skipLocked: true });
+		if (selected.length === 0) return [];
+
+		await tx
+			.update(submissionJobs)
+			.set({
+				status: "processing",
+				attempts: sql.raw("attempts + 1"),
+				lockedAt: now,
+				updatedAt: now,
+			})
+			.where(inArray(submissionJobs.id, selected.map((job) => job.id)));
+		return selected;
+	});
+
+	if (jobs.length === 0) return { processedCount: 0, successCount: 0, failedCount: 0 };
 
 	const groups = new Map<string, typeof jobs>();
 	for (const job of jobs) {
-		const groupKey = `${job.siteId}:${job.engine}`;
+		const groupKey = job.siteId + ":" + job.engine;
 		const group = groups.get(groupKey) ?? [];
 		group.push(job);
 		groups.set(groupKey, group);
@@ -857,7 +874,6 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 
 	let successCount = 0;
 	let failedCount = 0;
-
 	for (const group of groups.values()) {
 		for (let index = 0; index < group.length; index += AUTOMATION_LIMITS.engineBatchSize) {
 			const batch = group.slice(index, index + AUTOMATION_LIMITS.engineBatchSize);
@@ -882,27 +898,33 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 						attempt: job.attempts + 1,
 					})),
 				),
-				db
-					.update(submissionJobs)
-					.set({
-						status,
-						attempts: sql`${submissionJobs.attempts} + 1`,
-						lockedAt: null,
-						lastErrorMessage: result.ok ? null : responseMessage,
-						updatedAt: completedAt,
-					})
-					.where(
-						inArray(
-							submissionJobs.id,
-							batch.map((job) => job.id),
-						),
-					),
+				...batch.map((job) => {
+					const attemptNumber = job.attempts + 1;
+					const retrying = !result.ok && attemptNumber < AUTOMATION_LIMITS.maxSubmissionAttempts;
+					const retryDelayMinutes = Math.min(5 * Math.pow(2, attemptNumber - 1), 60);
+					const nextRunAt = retrying
+						? new Date(completedAt.getTime() + retryDelayMinutes * 60 * 1000)
+						: completedAt;
+					return db
+						.update(submissionJobs)
+						.set({
+							status: result.ok ? "success" : retrying ? "queued" : "failed",
+							nextRunAt,
+							lockedAt: null,
+							lastErrorMessage: result.ok ? null : responseMessage,
+							updatedAt: completedAt,
+						})
+						.where(
+							and(
+								eq(submissionJobs.id, job.id),
+								eq(submissionJobs.status, "processing"),
+								eq(submissionJobs.lockedAt, now),
+							),
+						);
+				}),
 				db
 					.update(urls)
-					.set({
-						lastSubmittedAt: completedAt,
-						lastSubmissionStatus: status,
-					})
+					.set({ lastSubmittedAt: completedAt, lastSubmissionStatus: status })
 					.where(and(eq(urls.siteId, batch[0].siteId), inArray(urls.loc, batchUrlList))),
 			]);
 
@@ -910,17 +932,19 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 				successCount += batch.length;
 			} else {
 				failedCount += batch.length;
-				await db.insert(alerts).values({
-					siteId: batch[0].siteId,
-					title: "Submission Failed",
-					message: `${batch[0].engine} submission failed for ${batch.length} URL(s): ${responseMessage}`,
-					alertType: "error_detected",
-					resolved: false,
-				});
+				const exhaustedRetries = batch.filter((job) => job.attempts + 1 >= AUTOMATION_LIMITS.maxSubmissionAttempts);
+				if (exhaustedRetries.length > 0) {
+					await db.insert(alerts).values({
+						siteId: batch[0].siteId,
+						title: "Submission Failed",
+						message: batch[0].engine + " submission failed for " + exhaustedRetries.length + " URL(s) after retries: " + responseMessage,
+						alertType: "error_detected",
+						resolved: false,
+					});
+				}
 			}
 		}
 	}
-
 	return { processedCount: jobs.length, successCount, failedCount };
 }
 

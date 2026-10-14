@@ -64,7 +64,7 @@ export default async function DashboardOverview() {
 			{fetchError && (
 				<div className="rounded-sm border border-amber-500/40 bg-amber-500/10 p-4 text-xs font-mono text-amber-700 dark:text-amber-400">
 					<div className="font-bold uppercase">Database Notice</div>
-					<div>{fetchError}. Retrying on background connection.</div>
+					<div>{fetchError}. Reload the page to try again.</div>
 				</div>
 			)}
 			{/* Page Header */}

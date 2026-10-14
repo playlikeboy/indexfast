@@ -6,7 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { stack } from "@/stack";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getErrorMessage, normalizeHost, normalizeSitemapUrl } from "@/lib/url-utils";
+import { getErrorMessage, normalizeHost, normalizeSitemapUrl, safeFetchText } from "@/lib/url-utils";
 import {
 	addSitemapSourceForUser,
 	discoverSitemapsForUser,
@@ -50,15 +50,20 @@ function readFormString(formData: FormData, key: string) {
 
 export async function syncUser() {
 	const stackUser = await getAuthUser();
-	const existing = await db.select().from(users).where(eq(users.id, stackUser.id)).limit(1);
-
-	if (existing.length === 0) {
-		await db.insert(users).values({
+	await db
+		.insert(users)
+		.values({
 			id: stackUser.id,
 			email: stackUser.primaryEmail || "",
 			billingTier: "free",
+		})
+		.onConflictDoUpdate({
+			target: users.id,
+			set: {
+				email: stackUser.primaryEmail || "",
+				updatedAt: new Date(),
+			},
 		});
-	}
 	return stackUser.id;
 }
 
@@ -110,7 +115,37 @@ export async function verifySite(siteId: string) {
 	const site = await getSiteForUser(siteId, user.id);
 	if (!site) throw new Error("Site not found");
 
-	await db.update(sites).set({ verified: true, updatedAt: new Date() }).where(eq(sites.id, siteId));
+	const verificationUrl = "https://" + site.domain + "/.well-known/indexfast-verification.txt";
+	const response = await safeFetchText(verificationUrl, {
+		timeoutMs: 8000,
+		maxBytes: 1024,
+		redirectLimit: 3,
+		userAgent: "IndexFast Site Verification/1.0 (+https://indexfast.co)",
+	});
+	if (response.status !== 200) {
+		throw new Error("Verification file returned HTTP " + response.status + ". Publish the token at " + verificationUrl + " and try again.");
+	}
+
+	const expectedUrl = new URL(verificationUrl);
+	const finalUrl = new URL(response.finalUrl);
+	if (
+		finalUrl.protocol !== "https:" ||
+		finalUrl.origin !== expectedUrl.origin ||
+		finalUrl.pathname !== expectedUrl.pathname
+	) {
+		throw new Error("The verification file must be served from the same HTTPS URL without redirecting to another origin or path.");
+	}
+	if (response.text.trim() !== site.verificationToken) {
+		throw new Error("The verification token did not match. Copy the exact token shown on the site dashboard and try again.");
+	}
+
+	const [verifiedSite] = await db
+		.update(sites)
+		.set({ verified: true, updatedAt: new Date() })
+		.where(and(eq(sites.id, siteId), eq(sites.userId, user.id)))
+		.returning({ id: sites.id });
+	if (!verifiedSite) throw new Error("Site not found");
+
 	revalidateSiteDashboard(siteId);
 	return { success: true, verified: true };
 }

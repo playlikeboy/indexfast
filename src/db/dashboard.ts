@@ -46,7 +46,7 @@ export async function getDashboardOverview(userId: string) {
 
 	const siteIds = siteRows.map((s) => s.id);
 
-	const [urlCountResult, alertCountResult, submissionCountResult] = await Promise.allSettled([
+	const [urlCountRows, alertCountRows, submissionCountRows] = await Promise.all([
 		db
 			.select({
 				siteId: urls.siteId,
@@ -73,9 +73,6 @@ export async function getDashboardOverview(userId: string) {
 			.groupBy(submissions.siteId),
 	]);
 
-	const urlCountRows = urlCountResult.status === "fulfilled" ? urlCountResult.value : [];
-	const alertCountRows = alertCountResult.status === "fulfilled" ? alertCountResult.value : [];
-	const submissionCountRows = submissionCountResult.status === "fulfilled" ? submissionCountResult.value : [];
 
 	const urlCounts = toCountMap(urlCountRows);
 	const alertCounts = toCountMap(alertCountRows);
@@ -107,6 +104,7 @@ export async function getSiteDashboard(userId: string, siteId: string) {
 			domain: sites.domain,
 			name: sites.name,
 			verified: sites.verified,
+			verificationToken: sites.verificationToken,
 			sitemapUrl: sites.sitemapUrl,
 		})
 		.from(sites)

@@ -1,4 +1,4 @@
-import { authenticateApiRequest, recordApiUsage, type AuthenticatedApiKey } from "./api-keys";
+import { ApiRequestLimitError, authenticateApiRequest, recordApiUsage, type AuthenticatedApiKey } from "./api-keys";
 import type { ApiScope } from "./plans";
 
 export function jsonResponse(data: unknown, status = 200) {
@@ -35,7 +35,7 @@ export async function withApiAuth<T>(
 		const result = await handler(auth);
 		return jsonResponse(result, statusCode);
 	} catch (error) {
-		statusCode = error instanceof Error && /missing|invalid|revoked|scope|requires/i.test(error.message) ? 401 : 400;
+		statusCode = error instanceof ApiRequestLimitError ? 429 : error instanceof Error && /missing|invalid|revoked|scope|requires/i.test(error.message) ? 401 : 400;
 		return errorResponse(error, statusCode);
 	} finally {
 		if (auth) {

@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { and, count, eq, gte, gt, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { apiKeys, apiUsageEvents, users } from "@/db/schema";
 import {
@@ -18,6 +18,15 @@ export type AuthenticatedApiKey = {
 	scopes: ApiScope[];
 	billingTier: ReturnType<typeof normalizeBillingTier>;
 };
+
+export class ApiRequestLimitError extends Error {
+	readonly statusCode = 429;
+
+	constructor(limit: number) {
+		super("Monthly API request limit (" + limit + ") reached for your plan.");
+		this.name = "ApiRequestLimitError";
+	}
+}
 
 async function getUserTier(userId: string) {
 	const [user] = await db.select({ billingTier: users.billingTier }).from(users).where(eq(users.id, userId)).limit(1);
@@ -154,6 +163,15 @@ export async function authenticateApiRequest(
 	}
 	if (options.requireCli && !plan.cliEnabled) {
 		throw new Error("CLI access requires the Indie plan or higher.");
+	}
+
+	const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+	const [usage] = await db
+		.select({ total: count(apiUsageEvents.id) })
+		.from(apiUsageEvents)
+		.where(and(eq(apiUsageEvents.userId, row.userId), gte(apiUsageEvents.createdAt, monthStart)));
+	if ((usage?.total ?? 0) >= plan.monthlyApiRequests) {
+		throw new ApiRequestLimitError(plan.monthlyApiRequests);
 	}
 
 	// Only update lastUsedAt if it hasn't been updated in the last hour to reduce DB load

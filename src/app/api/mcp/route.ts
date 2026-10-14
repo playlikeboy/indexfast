@@ -1,4 +1,4 @@
-import { authenticateApiRequest, recordApiUsage } from "@/lib/platform/api-keys";
+import { ApiRequestLimitError, authenticateApiRequest, recordApiUsage } from "@/lib/platform/api-keys";
 import { handleMcpRequest, type JsonRpcRequest } from "@/lib/mcp/server";
 import type { AuthenticatedApiKey } from "@/lib/platform/api-keys";
 
@@ -23,13 +23,13 @@ export async function POST(request: Request) {
 			: await handleMcpRequest(authenticated, body);
 		return Response.json(result, { status: statusCode });
 	} catch (error) {
-		statusCode = error instanceof Error && /missing|invalid|revoked|scope|requires/i.test(error.message) ? 401 : 400;
+		statusCode = error instanceof ApiRequestLimitError ? 429 : error instanceof Error && /missing|invalid|revoked|scope|requires/i.test(error.message) ? 401 : 400;
 		return Response.json(
 			{
 				jsonrpc: "2.0",
 				id: null,
 				error: {
-					code: statusCode === 401 ? -32001 : -32000,
+					code: statusCode === 401 ? -32001 : statusCode === 429 ? -32002 : -32000,
 					message: error instanceof Error ? error.message : "Unknown MCP error",
 				},
 			},
