@@ -72,6 +72,27 @@ function DashboardMockup() {
 					</div>
 				</div>
 
+				{/* Editorial Platform Walkthrough Video */}
+				<div className="relative overflow-hidden rounded-md border border-border/80 bg-zinc-950 shadow-inner">
+					<div className="flex items-center justify-between border-b border-border/40 bg-zinc-900/90 px-3 py-1.5 text-xs font-mono text-zinc-400">
+						<span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-accent">
+							<span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+							Platform Walkthrough
+						</span>
+						<span className="text-[9px] uppercase font-bold text-zinc-500">Editorial Preview</span>
+					</div>
+					<video
+						src="/IndexFast-Editorial-v2.mp4"
+						controls
+						autoPlay
+						muted
+						loop
+						playsInline
+						preload="metadata"
+						className="w-full aspect-video object-cover"
+					/>
+				</div>
+
 				{/* CLI Ingestion log simulation */}
 				<div className="rounded-md border border-border/60 bg-surface p-4 font-mono text-xs space-y-2 text-muted">
 					<div className="flex items-center justify-between border-b border-border/20 pb-2 mb-2">

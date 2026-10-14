@@ -37,10 +37,34 @@ export default async function DashboardOverview() {
 	const user = await stack.getUser();
 	if (!user) return null;
 
-	const { sites: userSites, stats } = await getDashboardOverview(user.id);
+	let userSites: Awaited<ReturnType<typeof getDashboardOverview>>["sites"] = [];
+	let stats: Awaited<ReturnType<typeof getDashboardOverview>>["stats"] = {
+		totalSites: 0,
+		verifiedSites: 0,
+		pendingSites: 0,
+		totalUrls: 0,
+		pendingAlerts: 0,
+		totalSubmissions: 0,
+	};
+	let fetchError: string | null = null;
+
+	try {
+		const data = await getDashboardOverview(user.id);
+		userSites = data.sites;
+		stats = data.stats;
+	} catch (err: unknown) {
+		console.error("Dashboard overview query failed:", err);
+		fetchError = err instanceof Error ? err.message : "Database temporarily unavailable";
+	}
 
 	return (
 		<div className="space-y-8">
+			{fetchError && (
+				<div className="rounded-sm border border-amber-500/40 bg-amber-500/10 p-4 text-xs font-mono text-amber-700 dark:text-amber-400">
+					<div className="font-bold uppercase">Database Notice</div>
+					<div>{fetchError}. Retrying on background connection.</div>
+				</div>
+			)}
 			{/* Page Header */}
 			<div className="flex flex-col gap-2">
 				<h2 className="text-3xl font-extrabold uppercase tracking-tight font-mono">Overview</h2>

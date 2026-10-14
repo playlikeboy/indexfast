@@ -1,9 +1,25 @@
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
+import type { NeonHttpDatabase } from "drizzle-orm/neon-http";
 
-if (!process.env.DATABASE_URL) {
-	throw new Error("DATABASE_URL is not set in environment variables.");
+let _db: NeonHttpDatabase | null = null;
+
+export function getDb(): NeonHttpDatabase {
+	if (!_db) {
+		const url = process.env.DATABASE_URL;
+		if (!url) {
+			throw new Error("DATABASE_URL is not set in environment variables.");
+		}
+		const sql = neon(url);
+		_db = drizzle(sql);
+	}
+	return _db;
 }
 
-const sql = neon(process.env.DATABASE_URL);
-export const db = drizzle(sql);
+export const db = new Proxy({} as NeonHttpDatabase, {
+	get(_target, prop, receiver) {
+		const client = getDb();
+		const value = Reflect.get(client, prop, receiver);
+		return typeof value === "function" ? value.bind(client) : value;
+	},
+});

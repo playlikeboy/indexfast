@@ -4,7 +4,7 @@
 	"private": true,
 	"scripts": {
 		"dev": "next dev",
-		"prep": "node -e 'const fs=require(\"fs\");fs.mkdirSync(\".open-next\",{recursive:true});if(!fs.existsSync(\".open-next/worker.js\"))fs.writeFileSync(\".open-next/worker.js\",\"export default { fetch: async () => new Response() }; export const DOQueueHandler = {}; export const DOShardedTagCache = {};\\n\");'",
+		"prep": "node -e 'const fs=require(\"fs\");fs.mkdirSync(\".open-next\",{recursive:true});if(!fs.existsSync(\".open-next/worker.js\"))fs.writeFileSync(\".open-next/worker.js\",\"export default { fetch: async (request, env, ctx) => new Response() }; export const DOQueueHandler = {}; export const DOShardedTagCache = {};\\n\");'",
 		"build": "bun run prep && next build",
 		"test": "vitest run",
 		"start": "next start",
