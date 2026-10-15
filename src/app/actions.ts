@@ -1,325 +1,304 @@
 "use server";
 
-import { db } from "@/db";
-import { alerts, checks, sites, urls, users } from "@/db/schema";
+/**
+ * Dashboard server actions. Each action: authenticate -> delegate to the engine (which
+ * re-checks ownership) -> revalidate the affected routes -> return an ActionResult the UI
+ * renders inline. Errors are returned, not thrown, because Next.js hides thrown messages
+ * in production and users need the real reason ("key file returned 404").
+ *
+ * Signature convention: (boundArgs..., prevState, formData) so actions plug straight into
+ * useActionState via `.bind(null, ...)`.
+ */
 import { and, eq } from "drizzle-orm";
-import { stack } from "@/stack";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getErrorMessage, normalizeHost, normalizeSitemapUrl } from "@/lib/url-utils";
+import { db } from "@/db";
+import { alerts, sites, users } from "@/db/schema";
+import { ensureUserRow, isAdmin, requireActionUser, getSessionUser } from "@/lib/auth";
 import {
 	addSitemapSourceForUser,
+	createSiteForUser,
+	deleteSiteForUser,
 	discoverSitemapsForUser,
-	enqueueManualSubmissionForUser,
-	ensureIndexNowIntegration,
-	getSiteForUser,
 	removeBingApiKeyForUser,
 	removeSitemapSourceForUser,
 	saveBingApiKeyForUser,
-	setAutomationForUser,
-	syncSitemapsForUser,
-	verifyIndexNowForUser,
 	saveIndexNowKeyForUser,
-	updateEngineAutomationForUser,
+	setAutomationForUser,
+	submitPendingForUser,
+	submitUrlsForUser,
+	syncSitemapsForUser,
 	updateUrlSubmissionRulesForUser,
-	deleteSiteForUser,
+	verifySiteForUser,
 } from "@/lib/automation/service";
 import { createApiKeyForUser, revokeApiKeyForUser } from "@/lib/platform/api-keys";
-import { DEFAULT_API_SCOPES, normalizeApiScopes } from "@/lib/platform/plans";
+import { DEFAULT_API_SCOPES, PLAN_PERIOD_DAYS, isPaidPlan, normalizeBillingTier } from "@/lib/platform/plans";
+import { runDiagnosticsForUser } from "@/lib/platform/operations";
+import { activatePaidOrder, createCheckoutOrder } from "@/lib/platform/razorpay-billing";
+import { getRazorpayConfig, verifyCheckoutSignature } from "@/lib/platform/razorpay";
+import { getErrorMessage } from "@/lib/url-utils";
 
-async function getAuthUser() {
-	const user = await stack.getUser();
-	if (!user) {
-		throw new Error("Unauthorized");
-	}
-	return user;
+export type ActionResult = { ok: boolean; message?: string; error?: string; data?: Record<string, unknown> } | null;
+
+function text(formData: FormData | undefined, key: string) {
+	const value = formData?.get(key);
+	return typeof value === "string" ? value.trim() : "";
 }
 
-function revalidateSiteDashboard(siteId: string) {
+function revalidateSite(siteId: string) {
 	revalidatePath("/dashboard");
-	revalidatePath("/dashboard/submissions");
-	revalidatePath("/dashboard/alerts");
 	revalidatePath(`/dashboard/sites/${siteId}`);
-	revalidatePath(`/dashboard/sites/${siteId}/settings`);
 }
 
-function readFormString(formData: FormData, key: string) {
-	const value = formData.get(key);
-	return typeof value === "string" ? value : "";
-}
-
-export async function syncUser() {
-	const stackUser = await getAuthUser();
-	const existing = await db.select().from(users).where(eq(users.id, stackUser.id)).limit(1);
-
-	if (existing.length === 0) {
-		await db.insert(users).values({
-			id: stackUser.id,
-			email: stackUser.primaryEmail || "",
-			billingTier: "free",
-		});
+async function run(work: () => Promise<string | { message: string; data?: Record<string, unknown> }>): Promise<ActionResult> {
+	try {
+		const result = await work();
+		return typeof result === "string" ? { ok: true, message: result } : { ok: true, ...result };
+	} catch (error) {
+		return { ok: false, error: getErrorMessage(error) };
 	}
-	return stackUser.id;
 }
 
-export async function addSite(domain: string, name: string, sitemapUrl?: string) {
-	const userId = await syncUser();
-	const cleanHost = normalizeHost(domain);
-	const cleanName = name.trim();
-	const cleanSitemapUrl = normalizeSitemapUrl(sitemapUrl, cleanHost);
-
-	if (!cleanName) {
-		throw new Error("Site label is required");
-	}
-
-	const existing = await db
-		.select({ id: sites.id })
-		.from(sites)
-		.where(and(eq(sites.userId, userId), eq(sites.domain, cleanHost)))
-		.limit(1);
-
-	if (existing.length > 0) {
-		throw new Error("This domain is already connected");
-	}
-
-	const verificationToken = `indexfast-verification-${crypto.randomUUID()}`;
-	const [newSite] = await db
-		.insert(sites)
-		.values({
-			userId,
-			domain: cleanHost,
-			indexingHost: cleanHost,
-			name: cleanName,
-			verified: false,
-			verificationToken,
-			sitemapUrl: cleanSitemapUrl,
-		})
-		.returning();
-
-	await ensureIndexNowIntegration(newSite);
-	if (cleanSitemapUrl) {
-		await addSitemapSourceForUser(userId, newSite.id, cleanSitemapUrl, true);
-	}
-
-	revalidatePath("/dashboard");
-	return newSite;
+async function sessionUserId() {
+	const user = await requireActionUser();
+	await ensureUserRow(user);
+	return user.id;
 }
 
-export async function verifySite(siteId: string) {
-	const user = await getAuthUser();
-	const site = await getSiteForUser(siteId, user.id);
-	if (!site) throw new Error("Site not found");
+// ---------------------------------------------------------------------------
+// Sites
+// ---------------------------------------------------------------------------
 
-	await db.update(sites).set({ verified: true, updatedAt: new Date() }).where(eq(sites.id, siteId));
-	revalidateSiteDashboard(siteId);
-	return { success: true, verified: true };
-}
-
-export async function syncSitemap(siteId: string) {
-	const user = await getAuthUser();
-	await syncSitemapsForUser(user.id, siteId);
-	revalidateSiteDashboard(siteId);
-}
-
-export async function checkUrlDiagnostics(urlId: string) {
-	const user = await getAuthUser();
-	const [urlRow] = await db
-		.select({
-			id: urls.id,
-			loc: urls.loc,
-			siteId: urls.siteId,
-		})
-		.from(urls)
-		.innerJoin(sites, eq(urls.siteId, sites.id))
-		.where(and(eq(urls.id, urlId), eq(sites.userId, user.id)))
-		.limit(1);
-	if (!urlRow) throw new Error("URL not found");
-
-	const { evaluateUrlDiagnostics } = await import("@/lib/automation/diagnostics");
-	const result = await evaluateUrlDiagnostics(urlRow.loc);
-
-	await db.insert(checks).values({
-		urlId,
-		checkType: "diagnostics",
-		status: result.status,
-		details: {
-			httpStatus: result.httpStatus,
-			noindex: result.noindex,
-			noindexSource: result.noindexSource,
-			canonical: result.canonical,
-			isCanonicalMatch: result.isCanonicalMatch,
-			title: result.title,
-			blockers: result.blockers,
-			finalUrl: result.finalUrl,
-		},
+export async function addSiteAction(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
+	let siteId: string | null = null;
+	const result = await run(async () => {
+		const userId = await sessionUserId();
+		const created = await createSiteForUser({ userId, domain: text(formData, "domain"), sitemapUrl: text(formData, "sitemapUrl") || undefined });
+		siteId = created.site.id;
+		return created.warning ?? `Found ${created.sync?.urlCount ?? 0} URLs.`;
 	});
+	if (siteId) {
+		revalidatePath("/dashboard");
+		redirect(`/dashboard/sites/${siteId}`);
+	}
+	return result;
+}
 
-	await db
-		.update(urls)
-		.set({
-			httpStatus: result.httpStatus,
-			indexingStatus: result.status === "fail" ? "blockers" : result.httpStatus === 200 ? "indexed" : "not_indexed",
-			lastCheckedAt: new Date(),
-		})
-		.where(eq(urls.id, urlId));
+export async function verifySiteAction(siteId: string): Promise<ActionResult> {
+	return run(async () => {
+		const result = await verifySiteForUser(await sessionUserId(), siteId);
+		revalidateSite(siteId);
+		if (!result.ok) {
+			throw new Error(result.message);
+		}
+		return result.queued > 0 ? `Verified. Submitting ${result.queued} URLs now.` : "Verified. Automation is on.";
+	});
+}
 
-	if (result.status === "fail" && result.blockers.length > 0) {
-		const alertMessage = `Diagnostic issues for ${urlRow.loc}: ${result.blockers.join("; ")}`;
-		const [existingAlert] = await db
+export async function syncNowAction(siteId: string): Promise<ActionResult> {
+	return run(async () => {
+		const result = await syncSitemapsForUser(await sessionUserId(), siteId);
+		revalidateSite(siteId);
+		const summary = `Checked ${result.urlCount} URLs: ${result.newCount} new, ${result.changedCount} updated, ${result.submitted} submitted.`;
+		if (result.failures.length > 0) {
+			throw new Error(`${summary} Problems: ${result.failures.join("; ")}`);
+		}
+		return summary;
+	});
+}
+
+export async function submitPendingAction(siteId: string): Promise<ActionResult> {
+	return run(async () => {
+		const result = await submitPendingForUser(await sessionUserId(), siteId);
+		revalidateSite(siteId);
+		return result.queued === 0 ? "Nothing pending." : `Queued ${result.queued}, submitted ${result.submitted}.`;
+	});
+}
+
+export async function submitUrlsAction(siteId: string, _prev: ActionResult, formData: FormData): Promise<ActionResult> {
+	return run(async () => {
+		const list = text(formData, "urls").split(/[\s,]+/).filter(Boolean);
+		const result = await submitUrlsForUser(await sessionUserId(), siteId, list);
+		revalidateSite(siteId);
+		const rejected = result.rejected.length > 0 ? ` ${result.rejected.length} skipped (wrong host or invalid).` : "";
+		return `Submitted ${result.successCount} of ${result.accepted}.${rejected}`;
+	});
+}
+
+export async function resubmitUrlAction(siteId: string, loc: string): Promise<ActionResult> {
+	return run(async () => {
+		const result = await submitUrlsForUser(await sessionUserId(), siteId, [loc]);
+		revalidateSite(siteId);
+		return result.successCount > 0 ? "Submitted." : result.failedCount > 0 ? "Engine rejected it, see activity." : "Queued.";
+	});
+}
+
+export async function checkUrlAction(siteId: string, urlId: string): Promise<ActionResult> {
+	return run(async () => {
+		const result = await runDiagnosticsForUser({ userId: await sessionUserId(), siteId, urlId });
+		revalidateSite(siteId);
+		return result.blockers.length > 0 ? `HTTP ${result.httpStatus}. Issues: ${result.blockers.join("; ")}` : `HTTP ${result.httpStatus}. No blockers found.`;
+	});
+}
+
+export async function addSitemapAction(siteId: string, _prev: ActionResult, formData: FormData): Promise<ActionResult> {
+	return run(async () => {
+		await addSitemapSourceForUser(await sessionUserId(), siteId, text(formData, "sitemapUrl"));
+		revalidateSite(siteId);
+		return "Sitemap added. Click Sync now to import it.";
+	});
+}
+
+export async function discoverSitemapsAction(siteId: string): Promise<ActionResult> {
+	return run(async () => {
+		const found = await discoverSitemapsForUser(await sessionUserId(), siteId);
+		revalidateSite(siteId);
+		return found.length > 0 ? `Found ${found.length} sitemap(s).` : "No sitemap found. Add the URL manually.";
+	});
+}
+
+export async function removeSitemapAction(siteId: string, sourceId: string): Promise<ActionResult> {
+	return run(async () => {
+		await removeSitemapSourceForUser(await sessionUserId(), sourceId);
+		revalidateSite(siteId);
+		return "Sitemap removed.";
+	});
+}
+
+export async function setAutomationAction(siteId: string, enabled: boolean): Promise<ActionResult> {
+	return run(async () => {
+		await setAutomationForUser(await sessionUserId(), siteId, enabled);
+		revalidateSite(siteId);
+		return enabled ? "Automation on." : "Automation paused.";
+	});
+}
+
+export async function updateRulesAction(siteId: string, _prev: ActionResult, formData: FormData): Promise<ActionResult> {
+	return run(async () => {
+		await updateUrlSubmissionRulesForUser(await sessionUserId(), siteId, formData.get("submitNewUrls") === "on", formData.get("submitChangedUrls") === "on");
+		revalidateSite(siteId);
+		return "Saved.";
+	});
+}
+
+export async function saveCustomKeyAction(siteId: string, _prev: ActionResult, formData: FormData): Promise<ActionResult> {
+	return run(async () => {
+		await saveIndexNowKeyForUser(await sessionUserId(), siteId, text(formData, "keyLocation"), text(formData, "key"));
+		revalidateSite(siteId);
+		return "Key saved. Click Verify.";
+	});
+}
+
+export async function saveBingKeyAction(siteId: string, _prev: ActionResult, formData: FormData): Promise<ActionResult> {
+	return run(async () => {
+		await saveBingApiKeyForUser(await sessionUserId(), siteId, text(formData, "apiKey"));
+		revalidateSite(siteId);
+		return "Bing key verified.";
+	});
+}
+
+export async function removeBingKeyAction(siteId: string): Promise<ActionResult> {
+	return run(async () => {
+		await removeBingApiKeyForUser(await sessionUserId());
+		revalidateSite(siteId);
+		return "Bing key removed.";
+	});
+}
+
+export async function dismissIssueAction(siteId: string, alertId: string): Promise<ActionResult> {
+	return run(async () => {
+		const userId = await sessionUserId();
+		const [row] = await db
 			.select({ id: alerts.id })
 			.from(alerts)
-			.where(
-				and(
-					eq(alerts.siteId, urlRow.siteId),
-					eq(alerts.title, "Diagnostics Failed"),
-					eq(alerts.resolved, false),
-				),
-			)
+			.innerJoin(sites, eq(alerts.siteId, sites.id))
+			.where(and(eq(alerts.id, alertId), eq(sites.userId, userId)))
 			.limit(1);
+		if (!row) throw new Error("Issue not found");
+		await db.update(alerts).set({ resolved: true }).where(eq(alerts.id, alertId));
+		revalidateSite(siteId);
+		return "Dismissed.";
+	});
+}
 
-		if (!existingAlert) {
-			await db.insert(alerts).values({
-				siteId: urlRow.siteId,
-				title: "Diagnostics Failed",
-				message: alertMessage,
-				alertType: "error_detected",
-				resolved: false,
-			});
-		}
+export async function deleteSiteAction(siteId: string): Promise<ActionResult> {
+	const result = await run(async () => {
+		await deleteSiteForUser(await sessionUserId(), siteId);
+		return "Deleted.";
+	});
+	if (result?.ok) {
+		revalidatePath("/dashboard");
+		redirect("/dashboard");
 	}
-
-	revalidateSiteDashboard(urlRow.siteId);
-	return { success: result.status !== "fail", ...result };
+	return result;
 }
 
-export async function submitToIndexNow(siteId: string, urlLoc: string) {
-	const user = await getAuthUser();
+// ---------------------------------------------------------------------------
+// API keys / MCP
+// ---------------------------------------------------------------------------
 
-	try {
-		const result = await enqueueManualSubmissionForUser(user.id, siteId, urlLoc);
-		revalidateSiteDashboard(siteId);
-		return { success: true, ...result };
-	} catch (error: unknown) {
-		return { success: false, error: getErrorMessage(error) };
-	}
+export async function createApiKeyAction(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
+	return run(async () => {
+		const key = await createApiKeyForUser(await sessionUserId(), text(formData, "name") || "MCP key", DEFAULT_API_SCOPES);
+		revalidatePath("/dashboard/connect");
+		return { message: "Key created. Copy it now, it will not be shown again.", data: { plainKey: key.plainKey } };
+	});
 }
 
-export async function saveSitemapSource(siteId: string, formData: FormData) {
-	const user = await getAuthUser();
-	const sitemapUrl = readFormString(formData, "sitemapUrl");
-	const makePrimary = formData.get("isPrimary") === "on";
-	await addSitemapSourceForUser(user.id, siteId, sitemapUrl, makePrimary);
-	revalidateSiteDashboard(siteId);
+export async function revokeApiKeyAction(apiKeyId: string): Promise<ActionResult> {
+	return run(async () => {
+		await revokeApiKeyForUser(await sessionUserId(), apiKeyId);
+		revalidatePath("/dashboard/connect");
+		return "Key revoked.";
+	});
 }
 
-export async function deleteSitemapSource(siteId: string, sourceId: string) {
-	const user = await getAuthUser();
-	await removeSitemapSourceForUser(user.id, sourceId);
-	revalidateSiteDashboard(siteId);
+// ---------------------------------------------------------------------------
+// Billing (Razorpay)
+// ---------------------------------------------------------------------------
+
+export async function createCheckoutAction(plan: string): Promise<ActionResult> {
+	return run(async () => {
+		if (!isPaidPlan(plan)) throw new Error("Unknown plan");
+		const user = await requireActionUser();
+		await ensureUserRow(user);
+		const order = await createCheckoutOrder(user, plan);
+		return { message: "Order created", data: order };
+	});
 }
 
-export async function discoverSitemapSources(siteId: string) {
-	const user = await getAuthUser();
-	await discoverSitemapsForUser(user.id, siteId);
-	revalidateSiteDashboard(siteId);
+/** Called by the Checkout success handler. The webhook does the same work as a backstop. */
+export async function confirmPaymentAction(input: { orderId: string; paymentId: string; signature: string }): Promise<ActionResult> {
+	return run(async () => {
+		await requireActionUser();
+		const valid = await verifyCheckoutSignature({ ...input, keySecret: getRazorpayConfig().keySecret });
+		if (!valid) throw new Error("Payment signature mismatch. If you were charged, it will activate automatically within minutes.");
+		const result = await activatePaidOrder({ orderId: input.orderId, paymentId: input.paymentId });
+		if (!result.ok) throw new Error("Order not found.");
+		revalidatePath("/dashboard", "layout");
+		return `Payment received. Your plan is active until ${result.periodEnd?.toDateString() ?? "the end of the period"}.`;
+	});
 }
 
-export async function verifyIndexNowKey(siteId: string) {
-	const user = await getAuthUser();
-	await verifyIndexNowForUser(user.id, siteId);
-	revalidateSiteDashboard(siteId);
-}
+// ---------------------------------------------------------------------------
+// Admin
+// ---------------------------------------------------------------------------
 
-export async function saveIndexNowKey(siteId: string, formData: FormData) {
-	const user = await getAuthUser();
-	const keyLocation = readFormString(formData, "keyLocation");
-	const key = readFormString(formData, "key");
-	await saveIndexNowKeyForUser(user.id, siteId, keyLocation, key);
-	revalidateSiteDashboard(siteId);
-}
-
-export async function saveBingApiKey(siteId: string, formData: FormData) {
-	const user = await getAuthUser();
-	const apiKey = readFormString(formData, "apiKey");
-	await saveBingApiKeyForUser(user.id, siteId, apiKey);
-	revalidateSiteDashboard(siteId);
-}
-
-export async function removeBingApiKey(siteId: string) {
-	const user = await getAuthUser();
-	await removeBingApiKeyForUser(user.id);
-	revalidateSiteDashboard(siteId);
-}
-
-export async function toggleSiteAutomation(siteId: string, formData: FormData) {
-	const user = await getAuthUser();
-	const enabled = readFormString(formData, "enabled") === "true";
-	await setAutomationForUser(user.id, siteId, enabled);
-	revalidateSiteDashboard(siteId);
-}
-
-export async function createDashboardApiKey(formData: FormData) {
-	const userId = await syncUser();
-	const name = readFormString(formData, "name") || "IndexFast API key";
-	const requestedScopes = normalizeApiScopes(formData.getAll("scopes"));
-	const apiKey = await createApiKeyForUser(userId, name, requestedScopes.length > 0 ? requestedScopes : DEFAULT_API_SCOPES);
-	revalidatePath("/dashboard/api-keys");
-	revalidatePath("/dashboard/mcp");
-	return apiKey;
-}
-
-export async function revokeDashboardApiKey(apiKeyId: string) {
-	const user = await getAuthUser();
-	await revokeApiKeyForUser(user.id, apiKeyId);
-	revalidatePath("/dashboard/api-keys");
-	revalidatePath("/dashboard/mcp");
-}
-
-export async function setAlertResolved(alertId: string, resolved: boolean) {
-	const user = await getAuthUser();
-	const [alertRow] = await db
-		.select({
-			id: alerts.id,
-			siteId: alerts.siteId,
-		})
-		.from(alerts)
-		.innerJoin(sites, eq(alerts.siteId, sites.id))
-		.where(and(eq(alerts.id, alertId), eq(sites.userId, user.id)))
-		.limit(1);
-
-	if (!alertRow) {
-		throw new Error("Alert not found");
-	}
-
-	await db.update(alerts).set({ resolved }).where(eq(alerts.id, alertId));
-	revalidateSiteDashboard(alertRow.siteId);
-}
-
-export async function toggleEngineAutomation(siteId: string, provider: string, enabled: boolean) {
-	const user = await getAuthUser();
-	await updateEngineAutomationForUser(user.id, siteId, provider, enabled);
-	revalidateSiteDashboard(siteId);
-}
-
-export async function updateUrlRules(siteId: string, formData: FormData) {
-	const user = await getAuthUser();
-	const submitNewUrls = formData.get("submitNewUrls") === "on";
-	const submitChangedUrls = formData.get("submitChangedUrls") === "on";
-	await updateUrlSubmissionRulesForUser(user.id, siteId, submitNewUrls, submitChangedUrls);
-	revalidateSiteDashboard(siteId);
-}
-
-export async function deleteSite(siteId: string) {
-	const user = await getAuthUser();
-	await deleteSiteForUser(user.id, siteId);
-	revalidatePath("/dashboard");
-	redirect("/dashboard");
-}
-
-export async function createMcpApiKey() {
-	const userId = await syncUser();
-	const apiKey = await createApiKeyForUser(userId, "IndexFast MCP Key", DEFAULT_API_SCOPES);
-	revalidatePath("/dashboard/api-keys");
-	revalidatePath("/dashboard/mcp");
-	return apiKey;
+/** Support tool: grant (or remove) a plan for N days without a payment. */
+export async function adminGrantPlanAction(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
+	return run(async () => {
+		if (!isAdmin(await getSessionUser())) throw new Error("Not allowed");
+		const email = text(formData, "email").toLowerCase();
+		const plan = normalizeBillingTier(text(formData, "plan"));
+		const days = Number(text(formData, "days")) || PLAN_PERIOD_DAYS;
+		const expiresAt = plan === "free" ? null : new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+		const updated = await db
+			.update(users)
+			.set({ billingTier: plan, planExpiresAt: expiresAt, updatedAt: new Date() })
+			.where(eq(users.email, email))
+			.returning({ id: users.id });
+		if (updated.length === 0) throw new Error(`No user with email ${email}`);
+		revalidatePath("/admin");
+		return plan === "free" ? `${email} set to Free.` : `${email} on ${plan} until ${expiresAt?.toDateString()}.`;
+	});
 }

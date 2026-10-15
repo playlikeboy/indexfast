@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeHost, normalizeSitemapUrl, normalizeUrlForHost } from "@/lib/url-utils";
+import { canonicalizeUrl, normalizeHost, normalizeSitemapUrl, normalizeUrlForHost } from "@/lib/url-utils";
 
 describe("url utils", () => {
 	it("preserves www in configured hosts", () => {
@@ -32,3 +32,14 @@ describe("url utils", () => {
 	});
 });
 
+
+describe("canonicalizeUrl (dedup key)", () => {
+	it("drops fragments, default ports and tracking params", () => {
+		expect(canonicalizeUrl("https://Example.com:443/a?utm_source=x&id=2#top")).toBe("https://example.com/a?id=2");
+	});
+
+	it("preserves path case and trailing slashes", () => {
+		expect(canonicalizeUrl("https://example.com/Blog/")).toBe("https://example.com/Blog/");
+		expect(canonicalizeUrl("https://example.com/blog")).not.toBe(canonicalizeUrl("https://example.com/blog/"));
+	});
+});

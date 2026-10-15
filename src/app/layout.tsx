@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { StackProvider, StackTheme } from "@stackframe/stack";
 import { stack } from "@/stack";
+import { PageViewTracker } from "@/components/app/PageViewTracker";
 
 const geistSans = Geist({
 	variable: "--font-geist-sans",
@@ -87,9 +88,9 @@ const softwareJsonLd = {
 	offers: {
 		"@type": "AggregateOffer",
 		lowPrice: "0",
-		highPrice: "249",
+		highPrice: "99",
 		priceCurrency: "USD",
-		offerCount: "5",
+		offerCount: "3",
 	},
 };
 
@@ -153,6 +154,7 @@ export default function RootLayout({
 			<body className={[geistSans.variable, geistMono.variable, "antialiased"].join(" ")}>
 				<StackProvider app={stack}>
 					<StackTheme>{children}</StackTheme>
+					<PageViewTracker />
 				</StackProvider>
 			</body>
 		</html>

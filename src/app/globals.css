@@ -102,3 +102,45 @@ html {
 		linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
 	background-size: 64px 64px;
 }
+
+/*
+ * App (dashboard + admin) tokens. The marketing site is brutalist; the app is deliberately
+ * calmer: neutral panels, soft borders, lime used only for the primary action.
+ */
+:root {
+	--app-bg: #f7f7f5;
+	--app-panel: #ffffff;
+	--app-subtle: #f1f1ee;
+	--app-border: #e6e5e0;
+	--app-text: #111110;
+	--app-muted: #6f6e69;
+	--app-ok: #15803d;
+	--app-ok-bg: #ecfdf3;
+	--app-warn: #a16207;
+	--app-warn-bg: #fefce8;
+	--app-bad: #b91c1c;
+	--app-bad-bg: #fef2f2;
+}
+
+.dark {
+	--app-bg: #0b0b0a;
+	--app-panel: #141413;
+	--app-subtle: #1b1b19;
+	--app-border: #2a2a27;
+	--app-text: #f2f1ec;
+	--app-muted: #9a9991;
+	--app-ok: #4ade80;
+	--app-ok-bg: rgba(74, 222, 128, 0.1);
+	--app-warn: #facc15;
+	--app-warn-bg: rgba(250, 204, 21, 0.1);
+	--app-bad: #f87171;
+	--app-bad-bg: rgba(248, 113, 113, 0.1);
+}
+
+/* Single-series chart color, validated with the dataviz palette checker for both surfaces. */
+:root {
+	--chart-1: #3b6fd8;
+}
+.dark {
+	--chart-1: #5585e6;
+}

@@ -1,179 +1,101 @@
-import React from "react";
-import { stack } from "@/stack";
-import { AddSiteForm } from "@/components/dashboard/AddSiteForm";
-import { syncUser } from "@/app/actions";
+/**
+ * Websites home. Empty state is the onboarding (one input). With sites, it is a scannable
+ * list: status, URL counts, and what is new, with every row linking to the site page.
+ */
 import Link from "next/link";
-import { AlertTriangle, Check, CheckCircle, ChevronRight, Database, Globe, Settings } from "lucide-react";
-import { getDashboardOverview } from "@/db/dashboard";
+import { ChevronRight } from "lucide-react";
+import { AddSiteForm } from "@/components/app/AddSiteForm";
+import { Badge, ButtonLink, Card, PageHeader, timeAgo } from "@/components/app/ui";
+import { getDashboardHome, type SiteStatus } from "@/db/app-queries";
+import { requireSessionUser } from "@/lib/auth";
+import { formatLimit } from "@/lib/platform/plans";
 
-function StatCard({
-	icon: Icon,
-	label,
-	value,
-	footer,
-	accent,
-}: {
-	icon: React.ComponentType<{ className?: string }>;
-	label: string;
-	value: number;
-	footer: string;
-	accent?: boolean;
-}) {
-	return (
-		<div className={`p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-md border border-border bg-card text-ink relative overflow-hidden group`}>
-			{accent && (
-				<div className="absolute top-0 left-0 w-full h-1 bg-accent" />
-			)}
-			<div className="mb-3 flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-wider text-muted group-hover:text-ink transition-colors">
-				<Icon className="h-4 w-4" />
-				{label}
+const statusBadge: Record<SiteStatus, { tone: "ok" | "warn" | "bad" | "neutral"; label: string }> = {
+	live: { tone: "ok", label: "Live" },
+	setup: { tone: "warn", label: "Needs setup" },
+	error: { tone: "bad", label: "Sitemap error" },
+	paused: { tone: "neutral", label: "Paused" },
+};
+
+export default async function DashboardPage() {
+	const user = await requireSessionUser();
+	const { sites, entitlement } = await getDashboardHome(user.id);
+	const atLimit = sites.length >= entitlement.limits.sites;
+
+	if (sites.length === 0) {
+		return (
+			<div className="mx-auto max-w-xl py-10">
+				<h1 className="text-3xl font-semibold tracking-tight">Get your pages found faster.</h1>
+				<p className="mt-3 text-[var(--app-muted)]">
+					Add your website. We find your sitemap, watch it for new pages, and notify search engines automatically.
+				</p>
+				<div className="mt-8">
+					<AddSiteForm large />
+				</div>
+				<ol className="mt-10 space-y-4 text-sm">
+					{[
+						["Add your domain", "We discover your sitemap and import every URL."],
+						["Drop one file in your site", "A tiny key file proves you own it. Your AI can add it for you."],
+						["Done", "New and updated pages are submitted to Bing, Yandex, Naver and other IndexNow engines automatically."],
+					].map(([title, body], index) => (
+						<li key={title} className="flex gap-3">
+							<span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--app-subtle)] text-xs font-semibold">{index + 1}</span>
+							<div>
+								<p className="font-medium">{title}</p>
+								<p className="text-[var(--app-muted)]">{body}</p>
+							</div>
+						</li>
+					))}
+				</ol>
+				<p className="mt-10 text-sm text-[var(--app-muted)]">
+					Using Claude Code, Cursor or another AI editor?{" "}
+					<Link href="/dashboard/connect" className="font-medium text-[var(--app-text)] underline underline-offset-2">
+						Connect IndexFast to your AI
+					</Link>{" "}
+					and let it do the setup.
+				</p>
 			</div>
-			<div className="text-4xl font-extrabold tracking-tight font-sans">{value}</div>
-			<div className="mt-3 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted">{footer}</div>
-		</div>
-	);
-}
-
-export default async function DashboardOverview() {
-	const user = await stack.getUser();
-	if (!user) return null;
-
-	let userSites: Awaited<ReturnType<typeof getDashboardOverview>>["sites"] = [];
-	let stats: Awaited<ReturnType<typeof getDashboardOverview>>["stats"] = {
-		totalSites: 0,
-		verifiedSites: 0,
-		pendingSites: 0,
-		totalUrls: 0,
-		pendingAlerts: 0,
-		totalSubmissions: 0,
-	};
-	let fetchError: string | null = null;
-
-	try {
-		await syncUser();
-		const data = await getDashboardOverview(user.id);
-		userSites = data.sites;
-		stats = data.stats;
-	} catch (err: unknown) {
-		console.error("Dashboard overview query failed:", err);
-		fetchError = err instanceof Error ? err.message : "Database temporarily unavailable";
+		);
 	}
 
 	return (
-		<div className="space-y-8">
-			{fetchError && (
-				<div className="rounded-sm border border-amber-500/40 bg-amber-500/10 p-4 text-xs font-mono text-amber-700 dark:text-amber-400">
-					<div className="font-bold uppercase">Database Notice</div>
-					<div>{fetchError}. Retrying on background connection.</div>
-				</div>
-			)}
-			{/* Page Header */}
-			<div className="flex flex-col gap-2">
-				<h2 className="text-3xl font-extrabold uppercase tracking-tight font-mono">Overview</h2>
-				<p className="font-mono text-xs text-muted">Monitor site indexing status, sitemaps, and indexing submission metrics.</p>
-			</div>
+		<>
+			<PageHeader
+				title="Websites"
+				description={`${sites.length} of ${formatLimit(entitlement.limits.sites)} on ${entitlement.plan.name}`}
+				action={atLimit ? <ButtonLink href="/dashboard/billing" variant="primary">Upgrade to add more</ButtonLink> : null}
+			/>
 
-			{/* Stats Grid */}
-			<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
-				<StatCard
-					icon={Globe}
-					label="Connected Sites"
-					value={stats.totalSites}
-					footer={`${stats.verifiedSites} verified / ${stats.pendingSites} pending`}
-				/>
-				<StatCard 
-					icon={Database} 
-					label="Monitored URLs" 
-					value={stats.totalUrls} 
-					footer="Sitemap catalog" 
-					accent 
-				/>
-				<StatCard 
-					icon={CheckCircle} 
-					label="Submissions" 
-					value={stats.totalSubmissions} 
-					footer="IndexNow and Bing" 
-				/>
-				<StatCard
-					icon={AlertTriangle}
-					label="Pending Alerts"
-					value={stats.pendingAlerts}
-					footer={stats.pendingAlerts > 0 ? "Needs review" : "No open alerts"}
-				/>
-			</div>
-
-			{/* Main Layout Grid */}
-			<div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-				{/* Domains List */}
-				<section className="lg:col-span-2 border border-border bg-card p-6">
-					<div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/40 pb-4">
-						<div>
-							<h3 className="text-lg font-black uppercase tracking-tight font-mono">Connected Domains</h3>
-							<p className="font-mono text-[10px] text-muted mt-1">Manage sitemaps and direct indexing integrations.</p>
-						</div>
-						<span className="w-fit rounded-sm border border-border bg-surface px-2.5 py-1 font-mono text-[10px] font-bold uppercase text-muted">
-							{stats.totalSites} active
-						</span>
-					</div>
-
-					{userSites.length === 0 ? (
-						<div className="rounded-md border border-dashed border-border bg-surface p-12 text-center">
-							<Globe className="mx-auto h-8 w-8 text-muted/60" />
-							<p className="mt-4 font-mono text-sm text-muted">No domains connected yet.</p>
-							<p className="mt-2 font-mono text-xs text-muted">Add a property to start tracking.</p>
-						</div>
-					) : (
-						<div className="divide-y divide-border/40">
-							{userSites.map((site) => (
-								<div key={site.id} className="flex flex-col gap-4 py-5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between group">
-									<div className="min-w-0">
-										<div className="flex flex-wrap items-center gap-3">
-											<h4 className="truncate text-lg font-black uppercase tracking-tight font-mono group-hover:text-accent-dark transition-colors">{site.name}</h4>
-											{site.verified ? (
-												<span className="inline-flex items-center gap-1 rounded-sm border border-green-300 bg-green-50 px-2 py-0.5 font-mono text-[9px] font-bold uppercase text-green-700 dark:border-green-900/50 dark:bg-green-950/20">
-													<Check className="h-2.5 w-2.5" />
-													Verified
-												</span>
-											) : (
-												<span className="rounded-sm border border-yellow-300 bg-yellow-50 px-2 py-0.5 font-mono text-[9px] font-bold uppercase text-yellow-700 dark:border-yellow-900/50 dark:bg-yellow-950/20">
-													Pending
-												</span>
-											)}
-										</div>
-										<p className="mt-1.5 truncate font-mono text-xs text-muted">{site.domain}</p>
-										
-										<div className="mt-4 flex flex-wrap gap-2 font-mono text-[9px] font-bold uppercase text-muted">
-											<span className="rounded-sm border border-border/60 bg-surface px-2 py-0.5">{site.urlCount} URLs</span>
-											<span className="rounded-sm border border-border/60 bg-surface px-2 py-0.5">{site.pendingAlertCount} alerts</span>
-											<span className="rounded-sm border border-border/60 bg-surface px-2 py-0.5">{site.submissionCount} submissions</span>
-										</div>
+			<Card>
+				<ul className="divide-y divide-[var(--app-border)]">
+					{sites.map(({ site, status, stats, lastSyncAt, openIssues }) => (
+						<li key={site.id}>
+							<Link href={`/dashboard/sites/${site.id}`} className="flex items-center gap-4 px-5 py-4 transition hover:bg-[var(--app-subtle)]">
+								<div className="min-w-0 flex-1">
+									<div className="flex flex-wrap items-center gap-2">
+										<span className="truncate font-medium">{site.indexingHost || site.domain}</span>
+										<Badge tone={statusBadge[status].tone}>{statusBadge[status].label}</Badge>
+										{openIssues > 0 ? <Badge tone="bad">{openIssues} issue{openIssues === 1 ? "" : "s"}</Badge> : null}
 									</div>
-
-									<div className="flex flex-wrap gap-2 self-end sm:self-center shrink-0">
-										<Link
-											href={`/dashboard/sites/${site.id}/settings`}
-											className="inline-flex items-center gap-1.5 border border-border bg-surface px-3 py-2 font-mono text-[10px] font-black uppercase text-ink transition-colors hover:border-ink"
-										>
-											<Settings className="h-3.5 w-3.5" />
-											Settings
-										</Link>
-										<Link
-											href={`/dashboard/sites/${site.id}`}
-											className="inline-flex items-center gap-1.5 border border-accent bg-accent px-3 py-2 font-mono text-[10px] font-black uppercase text-accent-foreground transition-colors hover:bg-accent-dark"
-										>
-											Inspect
-											<ChevronRight className="h-3.5 w-3.5" />
-										</Link>
-									</div>
+									<p className="mt-1 text-sm text-[var(--app-muted)]">
+										{stats.total.toLocaleString()} URLs · {stats.submitted.toLocaleString()} submitted
+										{stats.new7d > 0 ? ` · ${stats.new7d.toLocaleString()} new this week` : ""} · checked {timeAgo(lastSyncAt)}
+									</p>
 								</div>
-							))}
-						</div>
-					)}
-				</section>
+								<ChevronRight className="h-4 w-4 shrink-0 text-[var(--app-muted)]" aria-hidden />
+							</Link>
+						</li>
+					))}
+				</ul>
+			</Card>
 
-				{/* Add Domain Form */}
-				<AddSiteForm />
-			</div>
-		</div>
+			{!atLimit ? (
+				<Card className="mt-6" title="Add another website">
+					<div className="p-5">
+						<AddSiteForm />
+					</div>
+				</Card>
+			) : null}
+		</>
 	);
 }

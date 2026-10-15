@@ -103,5 +103,28 @@ export const migrations = [
       "CREATE INDEX \"subscriptions_status_idx\" ON \"subscriptions\" USING btree (\"status\");",
       "CREATE UNIQUE INDEX \"subscriptions_dodo_subscription_unique_idx\" ON \"subscriptions\" USING btree (\"dodo_subscription_id\");"
     ]
+  },
+  {
+    "name": "0004_razorpay_admin_analytics.sql",
+    "statements": [
+      "CREATE TABLE \"cron_runs\" (\n\t\"id\" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,\n\t\"status\" text DEFAULT 'running' NOT NULL,\n\t\"summary\" jsonb,\n\t\"error_message\" text,\n\t\"started_at\" timestamp DEFAULT now() NOT NULL,\n\t\"finished_at\" timestamp\n);",
+      "CREATE TABLE \"page_views\" (\n\t\"id\" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,\n\t\"path\" text NOT NULL,\n\t\"referrer\" text,\n\t\"country\" text,\n\t\"device\" text,\n\t\"visitor_hash\" text NOT NULL,\n\t\"user_id\" text,\n\t\"created_at\" timestamp DEFAULT now() NOT NULL\n);",
+      "CREATE TABLE \"payments\" (\n\t\"id\" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,\n\t\"user_id\" text NOT NULL,\n\t\"provider\" text DEFAULT 'razorpay' NOT NULL,\n\t\"order_id\" text NOT NULL,\n\t\"payment_id\" text,\n\t\"plan\" text NOT NULL,\n\t\"amount\" integer NOT NULL,\n\t\"currency\" text NOT NULL,\n\t\"status\" text DEFAULT 'created' NOT NULL,\n\t\"period_start\" timestamp,\n\t\"period_end\" timestamp,\n\t\"failure_reason\" text,\n\t\"created_at\" timestamp DEFAULT now() NOT NULL,\n\t\"updated_at\" timestamp DEFAULT now() NOT NULL\n);",
+      "ALTER TABLE \"sitemaps\" ADD COLUMN \"url_count\" integer;",
+      "ALTER TABLE \"sitemaps\" ADD COLUMN \"new_count\" integer;",
+      "ALTER TABLE \"sitemaps\" ADD COLUMN \"changed_count\" integer;",
+      "ALTER TABLE \"users\" ADD COLUMN \"plan_expires_at\" timestamp;",
+      "ALTER TABLE \"users\" ADD COLUMN \"last_seen_at\" timestamp;",
+      "ALTER TABLE \"payments\" ADD CONSTRAINT \"payments_user_id_users_id_fk\" FOREIGN KEY (\"user_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE cascade ON UPDATE no action;",
+      "CREATE INDEX \"cron_runs_started_idx\" ON \"cron_runs\" USING btree (\"started_at\");",
+      "CREATE INDEX \"page_views_created_idx\" ON \"page_views\" USING btree (\"created_at\");",
+      "CREATE INDEX \"page_views_path_created_idx\" ON \"page_views\" USING btree (\"path\",\"created_at\");",
+      "CREATE UNIQUE INDEX \"payments_order_unique_idx\" ON \"payments\" USING btree (\"order_id\");",
+      "CREATE INDEX \"payments_user_created_idx\" ON \"payments\" USING btree (\"user_id\",\"created_at\");",
+      "CREATE INDEX \"payments_status_created_idx\" ON \"payments\" USING btree (\"status\",\"created_at\");",
+      "-- Collapse pre-existing duplicate open jobs so the partial unique index below can be built.\nDELETE FROM \"submission_jobs\" a USING \"submission_jobs\" b WHERE a.\"site_id\" = b.\"site_id\" AND a.\"loc\" = b.\"loc\" AND a.\"engine\" = b.\"engine\" AND a.\"status\" in ('queued', 'processing') AND b.\"status\" in ('queued', 'processing') AND a.\"created_at\" > b.\"created_at\";",
+      "DELETE FROM \"submission_jobs\" a USING \"submission_jobs\" b WHERE a.\"site_id\" = b.\"site_id\" AND a.\"loc\" = b.\"loc\" AND a.\"engine\" = b.\"engine\" AND a.\"status\" in ('queued', 'processing') AND b.\"status\" in ('queued', 'processing') AND a.\"created_at\" = b.\"created_at\" AND a.\"id\"::text > b.\"id\"::text;",
+      "CREATE UNIQUE INDEX \"submission_jobs_open_unique_idx\" ON \"submission_jobs\" USING btree (\"site_id\",\"loc\",\"engine\") WHERE \"submission_jobs\".\"status\" in ('queued', 'processing');"
+    ]
   }
 ];

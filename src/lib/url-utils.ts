@@ -1,3 +1,8 @@
+/**
+ * URL safety and normalization. Two jobs: (1) SSRF protection for every outbound fetch of a
+ * user-supplied URL (assertSafeExternalUrl / safeFetchText), and (2) the canonical URL form
+ * used as the dedup key across sitemaps, manual submits and the queue (canonicalizeUrl).
+ */
 export function getErrorMessage(error: unknown) {
 	return error instanceof Error ? error.message : "Unknown error";
 }
@@ -180,6 +185,30 @@ export function normalizeSitemapUrl(sitemapUrl: string | undefined, host: string
 	return url.toString();
 }
 
+// Query params that never change page content. Stripping them is what lets the same page,
+// linked from a campaign and listed in a sitemap, collapse into one tracked URL.
+const TRACKING_PARAMS = /^(utm_[a-z]+|gclid|fbclid|msclkid|mc_cid|mc_eid|_ga|ref_src)$/i;
+
+/**
+ * Canonical form used as the dedup key for `urls.loc` and the submission queue.
+ * Lowercases scheme/host (URL does this), drops the fragment, default ports, and tracking
+ * params. Path case and trailing slashes are preserved: they are different URLs to search
+ * engines and silently merging them would submit a URL the site never published.
+ */
+export function canonicalizeUrl(input: string | URL) {
+	const url = typeof input === "string" ? new URL(input) : new URL(input.toString());
+	url.hash = "";
+	if ((url.protocol === "https:" && url.port === "443") || (url.protocol === "http:" && url.port === "80")) {
+		url.port = "";
+	}
+	for (const key of Array.from(url.searchParams.keys())) {
+		if (TRACKING_PARAMS.test(key)) {
+			url.searchParams.delete(key);
+		}
+	}
+	return url.toString();
+}
+
 export function normalizeUrlForHost(input: string, host: string) {
 	const url = assertSafeExternalUrl(input);
 
@@ -187,7 +216,7 @@ export function normalizeUrlForHost(input: string, host: string) {
 		throw new Error("URL must belong to the selected site host");
 	}
 
-	return url.toString();
+	return canonicalizeUrl(url);
 }
 
 export function getSiteHost(site: { domain: string; indexingHost?: string | null }) {

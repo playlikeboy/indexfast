@@ -1,12 +1,19 @@
-import { and, eq, gt, isNull, or } from "drizzle-orm";
+/**
+ * IndexFast API keys (REST, MCP, CLI). Plaintext is shown once; only a SHA-256 hash and a
+ * short prefix are stored. Every authenticated request is checked against the owner's
+ * *current* entitlement (so expiry is enforced immediately) and the monthly request quota.
+ */
+import { and, eq, gt, gte, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { apiKeys, apiUsageEvents, users } from "@/db/schema";
+import { getUserEntitlement } from "./entitlements";
 import {
 	DEFAULT_API_SCOPES,
-	PLAN_LIMITS,
+	type BillingTier,
 	type ApiScope,
+	formatLimit,
 	normalizeApiScopes,
-	normalizeBillingTier,
+	resolveEntitlement,
 } from "./plans";
 export { generateApiKey, getApiKeyPrefix, hashApiKey, maskApiKeyPrefix } from "./api-key-utils";
 import { generateApiKey, getApiKeyPrefix, hashApiKey, maskApiKeyPrefix } from "./api-key-utils";
@@ -16,13 +23,8 @@ export type AuthenticatedApiKey = {
 	userId: string;
 	name: string;
 	scopes: ApiScope[];
-	billingTier: ReturnType<typeof normalizeBillingTier>;
+	billingTier: BillingTier;
 };
-
-async function getUserTier(userId: string) {
-	const [user] = await db.select({ billingTier: users.billingTier }).from(users).where(eq(users.id, userId)).limit(1);
-	return normalizeBillingTier(user?.billingTier);
-}
 
 export async function listApiKeysForUser(userId: string) {
 	const rows = await db
@@ -50,14 +52,16 @@ export async function listApiKeysForUser(userId: string) {
 
 export async function createApiKeyForUser(userId: string, name: string, scopes: ApiScope[] = DEFAULT_API_SCOPES) {
 	const cleanName = name.trim() || "Default API key";
-	const billingTier = await getUserTier(userId);
+	const entitlement = await getUserEntitlement(userId);
 	const activeKeys = await db
 		.select({ id: apiKeys.id })
 		.from(apiKeys)
 		.where(and(eq(apiKeys.userId, userId), eq(apiKeys.status, "active")));
 
-	if (activeKeys.length >= PLAN_LIMITS[billingTier].apiKeys) {
-		throw new Error(`Your ${billingTier} plan supports ${PLAN_LIMITS[billingTier].apiKeys} active API key(s).`);
+	if (activeKeys.length >= entitlement.limits.apiKeys) {
+		throw new Error(
+			`The ${entitlement.plan.name} plan includes ${formatLimit(entitlement.limits.apiKeys)} active key(s). Revoke one or upgrade.`,
+		);
 	}
 
 	const plainKey = generateApiKey();
@@ -124,6 +128,7 @@ export async function authenticateApiRequest(
 			scopes: apiKeys.scopes,
 			lastUsedAt: apiKeys.lastUsedAt,
 			billingTier: users.billingTier,
+			planExpiresAt: users.planExpiresAt,
 		})
 		.from(apiKeys)
 		.innerJoin(users, eq(apiKeys.userId, users.id))
@@ -147,13 +152,19 @@ export async function authenticateApiRequest(
 		}
 	}
 
-	const billingTier = normalizeBillingTier(row.billingTier);
-	const plan = PLAN_LIMITS[billingTier];
-	if (options.requireMcp && !plan.mcpEnabled) {
-		throw new Error("MCP access requires the Growth plan or higher.");
-	}
-	if (options.requireCli && !plan.cliEnabled) {
-		throw new Error("CLI access requires the Indie plan or higher.");
+	// MCP and CLI are available on every plan; the monthly request quota is the only gate.
+	void options;
+	const entitlement = resolveEntitlement(row, now);
+	const quota = entitlement.limits.monthlyApiRequests;
+	if (Number.isFinite(quota)) {
+		const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+		const [{ used }] = await db
+			.select({ used: sql<number>`cast(count(*) as int)` })
+			.from(apiUsageEvents)
+			.where(and(eq(apiUsageEvents.userId, row.userId), gte(apiUsageEvents.createdAt, monthStart)));
+		if (used >= quota) {
+			throw new Error(`Monthly API limit reached (${formatLimit(quota)} requests on ${entitlement.plan.name}). Upgrade at https://indexfast.co/dashboard/billing`);
+		}
 	}
 
 	// Only update lastUsedAt if it hasn't been updated in the last hour to reduce DB load
@@ -167,7 +178,7 @@ export async function authenticateApiRequest(
 		userId: row.userId,
 		name: row.name,
 		scopes,
-		billingTier,
+		billingTier: entitlement.tier,
 	};
 }
 

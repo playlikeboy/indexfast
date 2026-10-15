@@ -22,6 +22,15 @@ export async function readJsonBody<T extends Record<string, unknown>>(request: R
 	return JSON.parse(text) as T;
 }
 
+/** Map domain errors to HTTP codes: auth problems 401, quota 429, missing rows 404, else 400. */
+export function statusForError(error: unknown) {
+	const message = error instanceof Error ? error.message : "";
+	if (/limit reached/i.test(message)) return 429;
+	if (/bearer|invalid or revoked|missing required scope/i.test(message)) return 401;
+	if (/not found/i.test(message)) return 404;
+	return 400;
+}
+
 export async function withApiAuth<T>(
 	request: Request,
 	scopes: ApiScope[],
@@ -35,7 +44,7 @@ export async function withApiAuth<T>(
 		const result = await handler(auth);
 		return jsonResponse(result, statusCode);
 	} catch (error) {
-		statusCode = error instanceof Error && /missing|invalid|revoked|scope|requires/i.test(error.message) ? 401 : 400;
+		statusCode = statusForError(error);
 		return errorResponse(error, statusCode);
 	} finally {
 		if (auth) {

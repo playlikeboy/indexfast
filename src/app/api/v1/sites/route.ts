@@ -10,13 +10,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
 	return withApiAuth(request, ["sites:write"], async (auth) => {
 		const body = await readJsonBody<{ domain?: string; name?: string; sitemapUrl?: string }>(request);
-		const site = await createSiteForUser({
+		// Returns { site, sitemaps, sync, warning, setup } so a script can finish onboarding in one call.
+		return createSiteForUser({
 			userId: auth.userId,
 			domain: body.domain || "",
-			name: body.name || body.domain || "",
+			name: body.name,
 			sitemapUrl: body.sitemapUrl,
 		});
-
-		return { site };
 	});
 }

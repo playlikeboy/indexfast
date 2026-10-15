@@ -34,7 +34,7 @@ export default function ResourcesPage() {
 			desc: "Understand when Google Indexing API is eligible and when sitemap/GSC workflows are safer.",
 		},
 		{
-			href: "/dashboard/mcp",
+			href: "/dashboard/connect",
 			title: "MCP setup",
 			desc: "Connect IndexFast to Cursor, Codex, Claude Desktop, and agentic SEO harnesses.",
 		},

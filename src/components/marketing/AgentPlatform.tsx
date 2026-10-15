@@ -53,7 +53,7 @@ export function AgentPlatform() {
 						</p>
 						<div className="mt-8 flex flex-col gap-3 sm:flex-row lg:flex-col xl:flex-row">
 							<Link
-								href="/dashboard/mcp"
+								href="/dashboard/connect"
 								className="inline-flex items-center justify-center rounded-sm bg-ink px-6 py-3 font-mono text-xs font-bold uppercase text-surface transition-all hover:bg-ink/90 hover:shadow-md"
 							>
 								Configure MCP

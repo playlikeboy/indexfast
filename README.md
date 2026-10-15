@@ -239,22 +239,16 @@ These tools should be public, fast, and SEO-friendly.
 
 ---
 
-## Pricing Strategy
+## Pricing
 
-Recommended pricing:
+| Plan | Price | Best for |
+|---|---|---|
+| Free | $0 | One site, daily checks, MCP + API |
+| Pro | $19 / 30 days | Up to 10 sites, hourly checks, Bing API |
+| Unlimited | $99 / 30 days | Everything, no caps |
 
-| Plan       |   Price | Best For                    |
-| ---------- | ------: | --------------------------- |
-| Free       |      $0 | testing and lead generation |
-| Indie      |  $19/mo | bloggers and indie hackers  |
-| Growth     |  $49/mo | pSEO builders               |
-| Agency     |  $99/mo | SEO agencies                |
-| Scale      | $249/mo | large sites and teams       |
-| Enterprise |  Custom | high-volume SEO teams       |
-
-Extra usage can be sold as credit packs for live index checks.
-
----
+Prepaid via Razorpay, no auto-renewal. After expiry: 3-day grace, then Free (extra sites
+paused, nothing deleted). Details: `docs/billing.md`.
 
 ## Suggested Pages
 
@@ -275,42 +269,13 @@ Extra usage can be sold as credit packs for live index checks.
 
 ### Dashboard Pages
 
-* `/dashboard`
-* `/dashboard/sites`
-* `/dashboard/sites/[id]`
-* `/dashboard/urls`
-* `/dashboard/checks`
-* `/dashboard/submissions`
-* `/dashboard/reports`
-* `/dashboard/alerts`
-* `/dashboard/api`
-* `/dashboard/settings`
+* `/dashboard` - websites (one-input onboarding when empty)
+* `/dashboard/sites/[id]` - setup, URLs, sitemaps, activity, settings
+* `/dashboard/connect` - MCP + API keys for AI editors
+* `/dashboard/billing` - plans and payments
+* `/admin` - admin only: revenue, users, traffic, cron health
 
----
-
-## Dashboard Content
-
-The dashboard should show:
-
-* total URLs tracked
-* indexed URLs
-* not indexed URLs
-* blocked URLs
-* dropped URLs
-* indexing health score
-* sitemap sync status
-* latest indexing issues
-* recent submissions
-* alert history
-* usage limits
-
-Main dashboard CTA:
-
-```txt
-Run indexing audit
-```
-
----
+See `docs/dashboard.md` and `AGENTS.md` for the architecture.
 
 ## SEO Requirements
 

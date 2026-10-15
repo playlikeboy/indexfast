@@ -1,7 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-	/* config options here */
+	// The dashboard was rebuilt into four screens; keep old deep links (docs, CLI, emails) working.
+	async redirects() {
+		return [
+			{ source: "/dashboard/mcp", destination: "/dashboard/connect", permanent: true },
+			{ source: "/dashboard/api-keys", destination: "/dashboard/connect", permanent: true },
+			{ source: "/dashboard/alerts", destination: "/dashboard", permanent: true },
+			{ source: "/dashboard/submissions", destination: "/dashboard", permanent: true },
+			{ source: "/dashboard/sites/:siteId/settings", destination: "/dashboard/sites/:siteId", permanent: true },
+		];
+	},
 };
 
 export default nextConfig;

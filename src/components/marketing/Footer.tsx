@@ -17,7 +17,7 @@ export function FinalCTA() {
 					<Link href="/signup" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-sm bg-accent px-5 py-3 text-xs font-mono font-bold uppercase tracking-wide text-accent-foreground transition hover:bg-accent-dark">
 						Start free <span aria-hidden="true">↗</span>
 					</Link>
-					<Link href="/dashboard/mcp" className="inline-flex min-h-11 items-center justify-center rounded-sm border border-zinc-700 px-5 py-3 text-xs font-mono font-bold uppercase tracking-wide text-zinc-200 transition hover:border-zinc-400">
+					<Link href="/dashboard/connect" className="inline-flex min-h-11 items-center justify-center rounded-sm border border-zinc-700 px-5 py-3 text-xs font-mono font-bold uppercase tracking-wide text-zinc-200 transition hover:border-zinc-400">
 						Connect MCP
 					</Link>
 				</div>
@@ -44,7 +44,7 @@ export function Footer() {
 							<li><a href="#features" className="transition hover:text-ink">Features</a></li>
 							<li><a href="#pricing" className="transition hover:text-ink">Pricing</a></li>
 							<li><Link href="/dashboard" className="transition hover:text-ink">Console</Link></li>
-							<li><Link href="/dashboard/mcp" className="transition hover:text-ink">MCP integration</Link></li>
+							<li><Link href="/dashboard/connect" className="transition hover:text-ink">MCP integration</Link></li>
 							<li><Link href="/resources" className="transition hover:text-ink">Resources</Link></li>
 						</ul>
 					</div>
