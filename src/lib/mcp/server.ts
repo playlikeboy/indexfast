@@ -78,8 +78,13 @@ const tools = [
 	{
 		name: "verify_site",
 		title: "Verify site",
-		description: "Check the key file is live. On success, turns on automatic submission and submits all pending URLs.",
-		inputSchema: { type: "object", properties: { site }, required: ["site"] },
+		description:
+			"Check the key file is live. On success, turns on automatic submission and submits all pending URLs. If the site already hosts an IndexNow key, pass it (or its file URL) as existingKey instead of creating a new file.",
+		inputSchema: {
+			type: "object",
+			properties: { site, existingKey: { type: "string", description: "Optional. Existing IndexNow key, or full URL of the existing key file." } },
+			required: ["site"],
+		},
 	},
 	{
 		name: "add_sitemap",
@@ -241,7 +246,7 @@ async function callTool(auth: AuthenticatedApiKey, rawName: string, args: Record
 		case "get_site":
 			return getSiteDetailsForUser(auth.userId, siteRef);
 		case "verify_site":
-			return verifySiteForApi(auth.userId, siteRef);
+			return verifySiteForApi(auth.userId, siteRef, asString(args.existingKey) || undefined);
 		case "add_sitemap":
 			return addSitemapForApi(auth.userId, siteRef, asString(args.sitemapUrl));
 		case "discover_sitemaps":

@@ -24,6 +24,7 @@ import {
 	submitUrlsAction,
 	syncNowAction,
 	updateRulesAction,
+	adoptExistingKeyAction,
 	verifySiteAction,
 } from "@/app/actions";
 import { ActionButton, ActionForm, CodeBlock, CopyButton } from "@/components/app/client";
@@ -137,6 +138,27 @@ export default async function SitePage({ params, searchParams }: PageProps) {
 										<span className="text-[var(--app-muted)]">Using an AI editor?</span>
 										<CopyButton value={aiPrompt} label="Copy prompt for your AI" />
 									</div>
+									{/* Users migrating from another IndexNow tool (or an older IndexFast setup) already host a key file; let them reuse it instead of deploying a new one. */}
+									<details className="rounded-lg border border-[var(--app-border)] px-3 py-2">
+										<summary className="cursor-pointer text-[var(--app-muted)] hover:text-[var(--app-text)]">
+											Already have an IndexNow key on this site? Use it instead
+										</summary>
+										<div className="mt-3 space-y-2">
+											<p className="text-[var(--app-muted)]">
+												Paste the key, or the full URL of your key file (e.g. <code className="font-mono">https://{host}/yourkey.txt</code>). We check it and verify in one step.
+											</p>
+											<ActionForm action={adoptExistingKeyAction.bind(null, site.id)} submitLabel="Use my key and verify" pendingLabel="Checking..." variant="secondary" inline>
+												<input
+													name="existingKey"
+													required
+													autoComplete="off"
+													placeholder="Key or https://.../key.txt"
+													className={`${inputClass} min-w-0 flex-1 font-mono text-xs`}
+													aria-label="Existing IndexNow key or key file URL"
+												/>
+											</ActionForm>
+										</div>
+									</details>
 								</div>
 							</li>
 							<li className="flex gap-3">

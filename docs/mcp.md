@@ -26,7 +26,7 @@ Every `site` argument accepts a domain or a site id.
 | `account_status` | Plan, limits, expiry, all sites |
 | `add_site` | Add by domain, discover + sync, returns key file instructions |
 | `get_site` | Status, setup, sitemaps, URL counts, issues |
-| `verify_site` | Check key file, enable automation, submit backlog |
+| `verify_site` | Check key file, enable automation, submit backlog. Optional `existingKey` (key or key file URL) reuses a key the site already hosts |
 | `add_sitemap` / `discover_sitemaps` / `sync_now` | Sitemap management |
 | `submit_urls` / `submit_pending` | Manual submission |
 | `list_urls` | Filter `all/new/pending/submitted/failed` |

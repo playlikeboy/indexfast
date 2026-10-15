@@ -71,7 +71,7 @@ Every `site` argument accepts the domain (e.g. `example.com`) or the site id.
 - `account_status` - plan, limits, expiry, and all sites. Call first.
 - `add_site` - add by domain; discovers sitemaps, imports URLs, returns the key file to create.
 - `get_site` - status, setup steps, sitemaps, URL counts, open issues.
-- `verify_site` - confirms the key file is live, turns on auto-submit, submits pending URLs.
+- `verify_site` - confirms the key file is live, turns on auto-submit, submits pending URLs. If the site already hosts an IndexNow key, pass `existingKey` (the key or its file URL) and skip creating a new file.
 - `add_sitemap`, `discover_sitemaps`, `sync_now`
 - `submit_urls` - submit up to 1000 URLs now (after publishing or updating pages).
 - `submit_pending` - submit every URL that was never submitted.

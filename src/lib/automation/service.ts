@@ -28,7 +28,7 @@ import {
 	userIntegrations,
 	users,
 } from "@/db/schema";
-import { getErrorMessage, getSiteHost, normalizeHost, normalizeSitemapUrl, normalizeUrlForHost } from "@/lib/url-utils";
+import { getErrorMessage, getSiteHost, normalizeHost, normalizeSitemapUrl, normalizeUrlForHost, safeFetchText } from "@/lib/url-utils";
 import { getPausedSiteIdsForUsers, getUserAccess, getUserEntitlement } from "@/lib/platform/entitlements";
 import { formatLimit, resolveEntitlement, type Entitlement } from "@/lib/platform/plans";
 import { AUTOMATION_LIMITS, ENGINE_BATCH_SIZE, type SubmissionEngine } from "./constants";
@@ -299,6 +299,52 @@ export async function saveIndexNowKeyForUser(userId: string, siteId: string, key
 			updatedAt: new Date(),
 		})
 		.where(eq(siteIntegrations.id, existing.id));
+}
+
+/**
+ * "I already host an IndexNow key" path, for users coming from another tool or an older
+ * IndexFast setup. Accepts the key itself or the URL of the key file (the key is read from
+ * it). The candidate is checked *before* saving, so a typo never replaces the generated key
+ * shown in the setup card. Same ownership rules as verifySiteForUser: root-level file,
+ * exact content, no redirect.
+ */
+export async function adoptExistingIndexNowKeyForUser(userId: string, siteId: string, input: string) {
+	const site = await requireSite(userId, siteId);
+	const host = getSiteHost(site);
+	const value = input.trim();
+	if (!value) {
+		throw new Error("Paste your IndexNow key or the URL of your key file.");
+	}
+
+	let key = value;
+	let keyLocation = "";
+	if (/^https?:\/\//i.test(value)) {
+		keyLocation = normalizeIndexNowKeyLocation(value, host);
+		const response = await safeFetchText(keyLocation, {
+			userAgent: "IndexFast IndexNow Verifier/1.0",
+			timeoutMs: 10_000,
+			maxBytes: 1024,
+		});
+		if (response.status !== 200) {
+			throw new Error(`${keyLocation} returned HTTP ${response.status}. Check the URL and that the file is deployed.`);
+		}
+		key = response.text.trim();
+	}
+	key = normalizeIndexNowKey(key);
+	keyLocation = keyLocation || getIndexNowKeyLocation(host, key);
+	normalizeIndexNowKeyLocation(keyLocation, host);
+
+	const check = await verifyIndexNowKey(host, key, keyLocation);
+	if (!check.ok) {
+		throw new Error(
+			check.status === 404
+				? `No key file at ${keyLocation}. If your file has a different name, paste its full URL instead.`
+				: check.message,
+		);
+	}
+
+	await saveIndexNowKeyForUser(userId, siteId, keyLocation, key);
+	return verifySiteForUser(userId, siteId);
 }
 
 /**

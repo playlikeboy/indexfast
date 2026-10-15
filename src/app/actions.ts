@@ -29,6 +29,7 @@ import {
 	submitUrlsForUser,
 	syncSitemapsForUser,
 	updateUrlSubmissionRulesForUser,
+	adoptExistingIndexNowKeyForUser,
 	verifySiteForUser,
 } from "@/lib/automation/service";
 import { createApiKeyForUser, revokeApiKeyForUser } from "@/lib/platform/api-keys";
@@ -92,6 +93,18 @@ export async function verifySiteAction(siteId: string): Promise<ActionResult> {
 			throw new Error(result.message);
 		}
 		return result.queued > 0 ? `Verified. Submitting ${result.queued} URLs now.` : "Verified. Automation is on.";
+	});
+}
+
+/** Setup shortcut: the user already hosts an IndexNow key (key or key file URL). */
+export async function adoptExistingKeyAction(siteId: string, _prev: ActionResult, formData: FormData): Promise<ActionResult> {
+	return run(async () => {
+		const result = await adoptExistingIndexNowKeyForUser(await sessionUserId(), siteId, text(formData, "existingKey"));
+		revalidateSite(siteId);
+		if (!result.ok) {
+			throw new Error(result.message);
+		}
+		return result.queued > 0 ? `Verified with your existing key. Submitting ${result.queued} URLs now.` : "Verified with your existing key. Automation is on.";
 	});
 }
 

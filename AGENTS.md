@@ -405,6 +405,7 @@ DODO_PRODUCT_ID_SCALE=
   `verified = false`. Verification = the IndexNow key file at the site root, fetched
   without redirecting to another URL. Migration `0004_reverify_sites` reset all
   earlier verified flags because the old button never checked anything.
+  Sites already hosting an IndexNow key can reuse it (`adoptExistingIndexNowKeyForUser`).
 - **Serverless HTTP DB.** Drizzle uses `@neondatabase/serverless` over HTTP.
   Each query is a fetch — prefer `Promise.all` for parallel reads (as
   `dashboard.ts` does).

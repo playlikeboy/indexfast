@@ -16,6 +16,10 @@ cron call into it; nothing else mutates sites, URLs or the queue.
    ownership, which is why there is no separate `.well-known` token (an interim
    implementation used `/.well-known/indexfast-verification.txt`; it was folded into this).
    Unverified sites can be synced (URLs are visible) but nothing is ever submitted.
+   Already hosting an IndexNow key? `adoptExistingIndexNowKeyForUser` accepts the key or the
+   key file URL, checks it *before* saving (a typo never replaces the generated key), then
+   verifies. Exposed in the setup card, MCP `verify_site { existingKey }` and REST
+   `POST /api/v1/sites/:site/verify { existingKey }`.
 3. **Ongoing**: the hourly cron re-crawls due sitemaps and submits new/changed URLs.
 
 ## Sitemap discovery (`sitemaps.ts`)

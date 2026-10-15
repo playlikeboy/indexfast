@@ -15,6 +15,7 @@ import {
 	submitPendingForUser,
 	submitUrlsForUser,
 	syncSitemapsForUser,
+	adoptExistingIndexNowKeyForUser,
 	verifySiteForUser,
 } from "@/lib/automation/service";
 import { getUserAccess } from "./entitlements";
@@ -32,7 +33,7 @@ function setupInstructions(setup: Awaited<ReturnType<typeof getIndexNowSetup>>, 
 	}
 	return {
 		done: false,
-		message: `Create a file named ${setup.fileName} at your site root containing exactly: ${setup.fileContent}. Deploy, then call verify_site.`,
+		message: `Create a file named ${setup.fileName} at your site root containing exactly: ${setup.fileContent}. Deploy, then call verify_site. If the site already hosts an IndexNow key, call verify_site with existingKey (the key or its file URL) instead.`,
 		file: { name: setup.fileName, content: setup.fileContent, url: setup.keyLocation },
 		hints: {
 			nextjs: `public/${setup.fileName}`,
@@ -145,9 +146,10 @@ export async function getSiteDetailsForUser(userId: string, siteRef: string) {
 	};
 }
 
-export async function verifySiteForApi(userId: string, siteRef: string) {
+/** existingKey: optional IndexNow key or key file URL the site already hosts. */
+export async function verifySiteForApi(userId: string, siteRef: string, existingKey?: string) {
 	const site = await resolveSiteForUser(userId, siteRef);
-	return verifySiteForUser(userId, site.id);
+	return existingKey ? adoptExistingIndexNowKeyForUser(userId, site.id, existingKey) : verifySiteForUser(userId, site.id);
 }
 
 export async function listSitemapsForUser(userId: string, siteRef: string) {
