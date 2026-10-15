@@ -22,7 +22,7 @@ export function AppNav({ isAdmin }: { isAdmin: boolean }) {
 					href={item.href}
 					aria-current={item.active ? "page" : undefined}
 					className={cn(
-						"whitespace-nowrap border-b-2 px-3 py-3 text-sm transition",
+						"whitespace-nowrap border-b-2 px-3 pb-2.5 pt-1 text-sm transition",
 						item.active ? "border-[var(--app-text)] font-medium text-[var(--app-text)]" : "border-transparent text-[var(--app-muted)] hover:text-[var(--app-text)]",
 					)}
 				>

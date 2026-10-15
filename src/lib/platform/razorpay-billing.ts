@@ -227,3 +227,5 @@ export async function getBillingOverview(userId: string) {
 		history,
 	};
 }
+
+export type BillingOverview = Awaited<ReturnType<typeof getBillingOverview>>;

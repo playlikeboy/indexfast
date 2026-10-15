@@ -41,9 +41,16 @@ export function BarChart({ data, valueLabel }: { data: Array<{ day: string; valu
 							</g>
 						);
 					})}
-					{[0, Math.floor(data.length / 2), data.length - 1].map((index) =>
+					{[0, Math.floor(data.length / 2), data.length - 1].map((index, position) =>
 						data[index] ? (
-							<text key={index} x={pad.left + index * slot + slot / 2} y={height - 6} textAnchor="middle" fontSize={11} fill="var(--app-muted)">
+							<text
+								key={index}
+								x={position === 0 ? pad.left : position === 2 ? width - pad.right : pad.left + index * slot + slot / 2}
+								y={height - 6}
+								textAnchor={position === 0 ? "start" : position === 2 ? "end" : "middle"}
+								fontSize={11}
+								fill="var(--app-muted)"
+							>
 								{data[index].day.slice(5)}
 							</text>
 						) : null,

@@ -4,10 +4,11 @@
  * Client primitives for the dashboard. Every mutation goes through ActionForm/ActionButton so
  * pending state and the ActionResult message are shown consistently next to the control.
  */
-import { useActionState, useState, type ReactNode } from "react";
+import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import { Check, Copy, Loader2 } from "lucide-react";
 import type { ActionResult } from "@/app/actions";
+import { showToast } from "./toast";
 import { buttonClass, cn } from "./ui";
 
 type FormAction = (prev: ActionResult, formData: FormData) => Promise<ActionResult>;
@@ -41,6 +42,7 @@ export function ActionForm({
 	className,
 	inline,
 	onDone,
+	footer,
 }: {
 	action: FormAction;
 	children?: ReactNode;
@@ -50,6 +52,7 @@ export function ActionForm({
 	className?: string;
 	inline?: boolean;
 	onDone?: (result: ActionResult) => ReactNode;
+	footer?: ReactNode;
 }) {
 	const [result, formAction] = useActionState(action, null);
 	return (
@@ -61,12 +64,16 @@ export function ActionForm({
 				</SubmitButton>
 				{onDone && result?.ok ? null : <ResultMessage result={result} />}
 			</div>
+			{footer}
 			{onDone && result?.ok ? onDone(result) : null}
 		</form>
 	);
 }
 
-/** One-click mutation (bound server action) with optional confirm. */
+/**
+ * One-click mutation (bound server action) with optional confirm. The result is shown as a
+ * toast so buttons in headers and table rows never reflow their container.
+ */
 export function ActionButton({
 	action,
 	children,
@@ -74,6 +81,7 @@ export function ActionButton({
 	variant = "secondary",
 	confirm,
 	showResult = true,
+	className,
 }: {
 	action: () => Promise<ActionResult>;
 	children: ReactNode;
@@ -81,20 +89,27 @@ export function ActionButton({
 	variant?: keyof typeof buttonClass;
 	confirm?: string;
 	showResult?: boolean;
+	className?: string;
 }) {
 	const [result, formAction] = useActionState(async () => action(), null);
+
+	useEffect(() => {
+		if (result && (showResult || !result.ok)) {
+			showToast(result.ok, (result.ok ? result.message : result.error) || "");
+		}
+	}, [result, showResult]);
+
 	return (
 		<form
 			action={formAction}
 			onSubmit={(event) => {
 				if (confirm && !window.confirm(confirm)) event.preventDefault();
 			}}
-			className="inline-flex flex-wrap items-center gap-2"
+			className={cn("inline-flex", className)}
 		>
 			<SubmitButton variant={variant} pendingLabel={pendingLabel}>
 				{children}
 			</SubmitButton>
-			{showResult ? <ResultMessage result={result} /> : null}
 		</form>
 	);
 }
@@ -104,7 +119,7 @@ export function CopyButton({ value, label = "Copy", className }: { value: string
 	return (
 		<button
 			type="button"
-			className={cn(buttonClass.ghost, className)}
+			className={cn(buttonClass.ghost, "shrink-0", className)}
 			onClick={async () => {
 				try {
 					await navigator.clipboard.writeText(value);
@@ -121,14 +136,15 @@ export function CopyButton({ value, label = "Copy", className }: { value: string
 	);
 }
 
-export function CodeBlock({ code, label }: { code: string; label?: string }) {
+/** wrap: soft-wrap prose-like content (AI prompts); commands keep horizontal scroll. */
+export function CodeBlock({ code, label, wrap }: { code: string; label?: string; wrap?: boolean }) {
 	return (
-		<div className="overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-subtle)]">
-			<div className="flex items-center justify-between border-b border-[var(--app-border)] px-3 py-1">
-				<span className="font-mono text-xs text-[var(--app-muted)]">{label}</span>
-				<CopyButton value={code} />
+		<div className="min-w-0 overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-subtle)]">
+			<div className="flex items-center justify-between gap-2 border-b border-[var(--app-border)] py-0.5 pl-3 pr-1">
+				<span className="truncate text-xs font-medium text-[var(--app-muted)]">{label}</span>
+				<CopyButton value={code} className="min-h-7 py-1 text-xs" />
 			</div>
-			<pre className="overflow-x-auto px-3 py-2.5 font-mono text-xs leading-relaxed">
+			<pre className={cn("px-3 py-2.5 font-mono text-xs leading-relaxed", wrap ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "overflow-x-auto whitespace-pre")}>
 				<code>{code}</code>
 			</pre>
 		</div>

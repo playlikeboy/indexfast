@@ -89,6 +89,7 @@ export function McpSetup({ exampleDomain }: { exampleDomain: string | null }) {
 			<section className="space-y-3">
 				<h3 className="text-sm font-medium">3. Ask your AI</h3>
 				<CodeBlock
+					wrap
 					label="Paste into your AI chat"
 					code={`Use the IndexFast MCP to set up indexing for ${domain}: add the site, create the key file it gives you in this project's public folder, then tell me to deploy and verify the site.`}
 				/>

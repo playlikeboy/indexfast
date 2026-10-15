@@ -202,3 +202,5 @@ function fillDays(rows: Array<{ day: string; views: number; visitors: number }>,
 	}
 	return result;
 }
+
+export type AdminOverview = Awaited<ReturnType<typeof getAdminOverview>>;

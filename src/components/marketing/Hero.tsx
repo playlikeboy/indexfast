@@ -14,7 +14,7 @@ export function Hero() {
 						<span className="mt-3 block"><span className="text-highlight">Ship fixes faster.</span></span>
 					</h1>
 					<p className="mt-6 max-w-xl text-base leading-relaxed text-muted sm:text-lg">
-						Monitor sitemaps, catch technical blockers, and submit URL updates through IndexNow and Bing—all in one place.
+						Add your site, drop in one file, and every new or updated page is sent to search engines automatically. Works from the dashboard or straight from your AI editor.
 					</p>
 					<div className="mt-8 flex flex-col gap-3 sm:flex-row">
 						<Link
@@ -30,61 +30,44 @@ export function Hero() {
 							Explore free tools
 						</Link>
 					</div>
-					<p className="mt-4 text-xs text-muted">Built for SEO teams, developers, and AI-powered workflows.</p>
+					<p className="mt-4 text-xs text-muted">Free plan included. No credit card needed.</p>
 				</div>
 
-				<WorkflowPreview />
+				<ProductVideo />
 			</div>
 		</section>
 	);
 }
 
-function WorkflowPreview() {
-	const steps = [
-		{ number: "01", title: "Discover", detail: "Sitemaps and URL changes", tag: "MONITOR" },
-		{ number: "02", title: "Diagnose", detail: "Noindex, canonicals, redirects", tag: "CHECK" },
-		{ number: "03", title: "Submit", detail: "IndexNow and Bing workflows", tag: "NOTIFY" },
-	];
-
+/**
+ * Product video in the hero. preload="metadata" keeps the 9 MB file off the critical path
+ * (only headers + first frame load until the visitor presses play); the #t=4 fragment
+ * shows the "You ship 40 new pages" frame instead of the near-blank intro.
+ */
+function ProductVideo() {
 	return (
-		<div className="relative mx-auto w-full max-w-xl">
+		<div className="relative mx-auto w-full max-w-xl lg:max-w-none">
 			<div className="absolute -inset-4 rounded-2xl bg-accent/10 blur-2xl" aria-hidden="true" />
 			<div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
-				<div className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
-					<div className="flex items-center gap-2">
-						<span className="h-2 w-2 rounded-full bg-red-400" />
-						<span className="h-2 w-2 rounded-full bg-yellow-400" />
-						<span className="h-2 w-2 rounded-full bg-green-500" />
+				<div className="flex items-center justify-between border-b border-border bg-surface px-4 py-2.5">
+					<div className="flex items-center gap-1.5" aria-hidden="true">
+						<span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+						<span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
+						<span className="h-2.5 w-2.5 rounded-full bg-green-500" />
 					</div>
-					<span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted">Platform overview</span>
-					<span className="w-8" aria-hidden="true" />
+					<span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted">See IndexFast in action</span>
+					<span className="w-10" aria-hidden="true" />
 				</div>
-				<div className="p-5 sm:p-7">
-					<div className="flex items-start justify-between gap-3">
-						<div>
-							<p className="text-xs font-semibold uppercase tracking-widest text-muted">IndexFast workflow</p>
-							<p className="mt-1 text-xl font-bold tracking-tight text-ink">From sitemap to submission</p>
-						</div>
-						<span className="rounded-full border border-border px-2.5 py-1 font-mono text-[9px] font-bold uppercase tracking-wider text-muted">Overview</span>
-					</div>
-					<div className="mt-6 space-y-3">
-						{steps.map((step) => (
-							<div key={step.number} className="flex items-center gap-4 rounded-lg border border-border/70 bg-surface/70 p-4">
-								<span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-accent text-xs font-bold text-accent-foreground">{step.number}</span>
-								<div className="min-w-0 flex-1">
-									<p className="text-sm font-bold text-ink">{step.title}</p>
-									<p className="mt-0.5 text-xs leading-relaxed text-muted">{step.detail}</p>
-								</div>
-								<span className="hidden rounded-sm bg-card px-2 py-1 font-mono text-[9px] font-bold tracking-wide text-muted sm:inline">{step.tag}</span>
-							</div>
-						))}
-					</div>
-					<div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/70 pt-4 text-xs text-muted">
-						<span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-accent" /> Sitemap monitoring</span>
-						<span>Indexability checks</span>
-						<span>API · CLI · MCP</span>
-					</div>
-				</div>
+				<video
+					className="block aspect-video w-full bg-black"
+					src="/IndexFast-Editorial-v2.mp4#t=4"
+					controls
+					playsInline
+					preload="metadata"
+					aria-label="IndexFast product walkthrough video"
+				>
+					<a href="/IndexFast-Editorial-v2.mp4">Watch the IndexFast walkthrough</a>
+				</video>
 			</div>
 		</div>
 	);

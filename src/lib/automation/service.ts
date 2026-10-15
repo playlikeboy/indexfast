@@ -752,7 +752,7 @@ async function syncSitemapSource(site: SiteRow, source: SiteSitemapRow, entitlem
 				.set({ status: "failed", lastSyncAt: now, lastErrorAt: now, lastErrorMessage: message, updatedAt: now })
 				.where(eq(siteSitemaps.id, source.id)),
 			db.update(sitemaps).set({ status: "failed", errorMessage: message, lastSyncTime: now }).where(eq(sitemaps.id, syncRow.id)),
-			raiseAlert(site.id, "Sitemap sync failed", `${source.url}: ${message}`, "sitemap_failure"),
+			raiseAlert(site.id, "Sitemap sync failed", message.includes(source.url) ? message : `${source.url}: ${message}`, "sitemap_failure"),
 		]);
 		throw error;
 	}

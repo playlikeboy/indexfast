@@ -138,6 +138,9 @@ export async function getSitePage(userId: string, siteId: string, options: { tab
 	};
 }
 
+export type SitePageData = NonNullable<Awaited<ReturnType<typeof getSitePage>>>;
+export type DashboardHomeData = Awaited<ReturnType<typeof getDashboardHome>>;
+
 export async function getConnectPage(userId: string) {
 	const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
 	const [access, keys, [usage], siteRows] = await Promise.all([
@@ -160,3 +163,5 @@ export async function getConnectPage(userId: string) {
 		exampleDomain: siteRows[0]?.domain ?? null,
 	};
 }
+
+export type ConnectPageData = Awaited<ReturnType<typeof getConnectPage>>;
