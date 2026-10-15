@@ -18,6 +18,16 @@ import {
 export { generateApiKey, getApiKeyPrefix, hashApiKey, maskApiKeyPrefix } from "./api-key-utils";
 import { generateApiKey, getApiKeyPrefix, hashApiKey, maskApiKeyPrefix } from "./api-key-utils";
 
+/** Typed quota error so HTTP layers map it to 429 without string matching. */
+export class ApiRequestLimitError extends Error {
+	readonly statusCode = 429;
+
+	constructor(message: string) {
+		super(message);
+		this.name = "ApiRequestLimitError";
+	}
+}
+
 export type AuthenticatedApiKey = {
 	apiKeyId: string;
 	userId: string;
@@ -163,7 +173,7 @@ export async function authenticateApiRequest(
 			.from(apiUsageEvents)
 			.where(and(eq(apiUsageEvents.userId, row.userId), gte(apiUsageEvents.createdAt, monthStart)));
 		if (used >= quota) {
-			throw new Error(`Monthly API limit reached (${formatLimit(quota)} requests on ${entitlement.plan.name}). Upgrade at https://indexfast.co/dashboard/billing`);
+			throw new ApiRequestLimitError(`Monthly API limit reached (${formatLimit(quota)} requests on ${entitlement.plan.name}). Upgrade at https://indexfast.co/dashboard/billing`);
 		}
 	}
 

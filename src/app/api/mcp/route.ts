@@ -52,7 +52,7 @@ export async function POST(request: Request) {
 			{
 				jsonrpc: "2.0",
 				id: null,
-				error: { code: statusCode === 401 ? -32001 : -32000, message: error instanceof Error ? error.message : "Unknown MCP error" },
+				error: { code: statusCode === 401 ? -32001 : statusCode === 429 ? -32002 : -32000, message: error instanceof Error ? error.message : "Unknown MCP error" },
 			},
 			{ status: statusCode, headers: statusCode === 401 ? { "WWW-Authenticate": 'Bearer realm="indexfast"' } : undefined },
 		);

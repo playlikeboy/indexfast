@@ -16,6 +16,7 @@ Runtime secrets live in Cloudflare (`wrangler secret put NAME`) and are mirrored
 | Name | Where |
 |---|---|
 | `DATABASE_URL` | Worker + GitHub |
+| `CREDENTIAL_ENCRYPTION_KEY` (optional, falls back to `STACK_SECRET_SERVER_KEY`) | Worker. Never rotate without re-encrypting credentials |
 | `NEXT_PUBLIC_STACK_PROJECT_ID`, `NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY`, `STACK_SECRET_SERVER_KEY` | Worker + build env |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `NEXT_PUBLIC_RAZORPAY_KEY_ID` | Worker + GitHub |
 | `ADMIN_EMAILS` | Worker + GitHub |
@@ -28,6 +29,8 @@ Local: `.env` (Next/Drizzle) and `.dev.vars` (wrangler). Both gitignored; templa
 
 - Edit `src/db/schema.ts`, then `DATABASE_URL=... bunx drizzle-kit generate --name <name>`.
 - Migrations must be additive and safe to run before the code deploys (old code keeps working).
-- `0004_razorpay_admin_analytics` adds `payments`, `page_views`, `cron_runs`,
+- `0004_reverify_sites` resets every site to unverified (the old verify button never checked
+  anything). Users click Verify once; their key file is usually still in place.
+- `0005_razorpay_admin_analytics` adds `payments`, `page_views`, `cron_runs`,
   `users.plan_expires_at`, `users.last_seen_at`, sync counters on `sitemaps`, and the partial
   unique index for queue dedup (with a duplicate cleanup step first).

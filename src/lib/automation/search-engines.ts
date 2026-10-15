@@ -47,9 +47,13 @@ export async function verifyIndexNowKey(host: string, key: string, keyLocation =
 			maxBytes: 64 * 1024,
 		});
 		const body = response.text.trim();
-		const ok = response.status === 200 && body === key;
+		// A redirect elsewhere (another host, or a path the owner does not control) is not proof.
+		const sameUrl = new URL(response.finalUrl).href === new URL(keyLocation).href;
+		const ok = response.status === 200 && body === key && sameUrl;
 		let message = "Key file found and matches.";
-		if (response.status !== 200) {
+		if (!sameUrl) {
+			message = `${keyLocation} redirects to ${response.finalUrl}. Serve the key file directly at the original URL.`;
+		} else if (response.status !== 200) {
 			message = `${keyLocation} returned HTTP ${response.status}. Upload the key file to your site root and deploy.`;
 		} else if (!ok) {
 			message = `${keyLocation} is reachable but its content does not match the key. The file must contain only the key.`;

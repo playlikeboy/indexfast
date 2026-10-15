@@ -73,6 +73,40 @@ export function assertSafeExternalUrl(input: string): URL {
 	return url;
 }
 
+async function readResponseTextLimited(response: Response, maxBytes: number) {
+	if (!response.body) {
+		const text = await response.text();
+		if (new TextEncoder().encode(text).byteLength > maxBytes) {
+			throw new Error("Response size exceeds maximum limit of " + maxBytes + " bytes");
+		}
+		return text;
+	}
+	const reader = response.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let totalBytes = 0;
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			totalBytes += value.byteLength;
+			if (totalBytes > maxBytes) {
+				await reader.cancel().catch(() => undefined);
+				throw new Error("Response size exceeds maximum limit of " + maxBytes + " bytes");
+			}
+			chunks.push(value);
+		}
+	} finally {
+		reader.releaseLock();
+	}
+	const bytes = new Uint8Array(totalBytes);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return new TextDecoder().decode(bytes);
+}
+
 export async function safeFetchText(
 	inputUrl: string,
 	options: {
@@ -82,10 +116,9 @@ export async function safeFetchText(
 		redirectLimit?: number;
 	} = {},
 ): Promise<{ text: string; status: number; finalUrl: string; headers: Headers }> {
-	const maxBytes = options.maxBytes ?? 5 * 1024 * 1024; // 5MB limit
+	const maxBytes = options.maxBytes ?? 5 * 1024 * 1024;
 	const timeoutMs = options.timeoutMs ?? 10000;
 	const userAgent = options.userAgent ?? "IndexFast Bot/1.0 (+https://indexfast.co)";
-
 	let currentUrl = assertSafeExternalUrl(inputUrl).toString();
 	let redirectCount = 0;
 	const maxRedirects = options.redirectLimit ?? 5;
@@ -93,7 +126,6 @@ export async function safeFetchText(
 	while (redirectCount <= maxRedirects) {
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
 		try {
 			const response = await fetch(currentUrl, {
 				method: "GET",
@@ -104,41 +136,28 @@ export async function safeFetchText(
 				redirect: "manual",
 				signal: controller.signal,
 			});
-			clearTimeout(timeoutId);
-
 			if (response.status >= 300 && response.status < 400) {
+				clearTimeout(timeoutId);
 				const location = response.headers.get("location");
-				if (!location) {
-					throw new Error(`Redirect status ${response.status} without Location header`);
-				}
+				if (!location) throw new Error("Redirect status " + response.status + " without Location header");
 				const nextUrl = new URL(location, currentUrl).toString();
 				currentUrl = assertSafeExternalUrl(nextUrl).toString();
 				redirectCount++;
 				continue;
 			}
-
-			// Read text safely with size limit
-			const text = await response.text();
-			if (text.length > maxBytes) {
-				throw new Error(`Response size exceeds maximum limit of ${maxBytes} bytes`);
-			}
-
-			return {
-				text,
-				status: response.status,
-				finalUrl: currentUrl,
-				headers: response.headers,
-			};
+			// The timer remains active during streaming so slow bodies are aborted too.
+			const text = await readResponseTextLimited(response, maxBytes);
+			clearTimeout(timeoutId);
+			return { text, status: response.status, finalUrl: currentUrl, headers: response.headers };
 		} catch (err: unknown) {
 			clearTimeout(timeoutId);
 			if (err instanceof Error && err.name === "AbortError") {
-				throw new Error(`Request timed out after ${timeoutMs}ms`);
+				throw new Error("Request timed out after " + timeoutMs + "ms");
 			}
 			throw err;
 		}
 	}
-
-	throw new Error(`Exceeded maximum redirect limit of ${maxRedirects}`);
+	throw new Error("Exceeded maximum redirect limit of " + maxRedirects);
 }
 
 export function normalizeHost(input: string) {

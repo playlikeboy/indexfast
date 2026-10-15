@@ -32,7 +32,7 @@ import { getErrorMessage, getSiteHost, normalizeHost, normalizeSitemapUrl, norma
 import { getPausedSiteIdsForUsers, getUserAccess, getUserEntitlement } from "@/lib/platform/entitlements";
 import { formatLimit, resolveEntitlement, type Entitlement } from "@/lib/platform/plans";
 import { AUTOMATION_LIMITS, ENGINE_BATCH_SIZE, type SubmissionEngine } from "./constants";
-import { maskCredential, readStoredSecret, storePlainSecret } from "./credentials";
+import { encryptSecret, hasCredentialEncryptionKey, isEncryptedSecret, maskCredential, readStoredSecret } from "./credentials";
 import {
 	generateIndexNowKey,
 	getBingSubmissionQuota,
@@ -159,6 +159,15 @@ async function resolveAlerts(siteId: string, title: string) {
 		.where(and(eq(alerts.siteId, siteId), eq(alerts.title, title), eq(alerts.resolved, false)));
 }
 
+/**
+ * Secrets are stored AES-GCM encrypted (credentials.ts). Rows written by older releases are
+ * plaintext; they are re-encrypted the next time they are read so no bulk migration is needed.
+ */
+async function upgradeLegacySecret(value: string) {
+	if (isEncryptedSecret(value) || !hasCredentialEncryptionKey()) return value;
+	return encryptSecret(await readStoredSecret(value));
+}
+
 // ---------------------------------------------------------------------------
 // IndexNow key (doubles as ownership verification)
 // ---------------------------------------------------------------------------
@@ -197,6 +206,11 @@ function normalizeIndexNowKeyLocation(keyLocation: string, host: string) {
 	if (url.hostname.toLowerCase() !== host) {
 		throw new Error("IndexNow key file URL must be on the exact site host.");
 	}
+	// The key file doubles as ownership proof, so it must live at the site root: upload
+	// folders and user-content paths deeper in a site must not be able to "verify" a domain.
+	if (!/^\/[A-Za-z0-9-]+\.txt$/.test(url.pathname) || url.search) {
+		throw new Error("The key file must be at the site root, e.g. https://example.com/<key>.txt");
+	}
 	return url.toString();
 }
 
@@ -211,26 +225,35 @@ export async function ensureIndexNowIntegration(site: SiteRow) {
 
 	if (existing?.encryptedSecret) {
 		const key = await readStoredSecret(existing.encryptedSecret);
-		const config = readPublicConfig(existing.publicConfig);
-		return { ...existing, key, keyLocation: config.keyLocation || getIndexNowKeyLocation(host, key), config };
+		const { storage: _legacyStorage, ...config } = readPublicConfig(existing.publicConfig);
+		void _legacyStorage;
+		const encryptedSecret = await upgradeLegacySecret(existing.encryptedSecret);
+		if (encryptedSecret !== existing.encryptedSecret) {
+			await db
+				.update(siteIntegrations)
+				.set({ encryptedSecret, publicConfig: config, updatedAt: new Date() })
+				.where(eq(siteIntegrations.id, existing.id));
+		}
+		return { ...existing, encryptedSecret, key, keyLocation: config.keyLocation || getIndexNowKeyLocation(host, key), config };
 	}
 
 	const key = generateIndexNowKey();
 	const keyLocation = getIndexNowKeyLocation(host, key);
-	const config: IndexNowPublicConfig = { host, keyLocation, storage: "plain", submitNewUrls: true, submitChangedUrls: true };
+	const config: IndexNowPublicConfig = { host, keyLocation, submitNewUrls: true, submitChangedUrls: true };
+	const encryptedSecret = await encryptSecret(key);
 	const [integration] = await db
 		.insert(siteIntegrations)
 		.values({
 			siteId: site.id,
 			provider: "indexnow",
 			status: "pending",
-			encryptedSecret: storePlainSecret(key),
+			encryptedSecret,
 			publicConfig: config,
 			automationEnabled: false,
 		})
 		.onConflictDoUpdate({
 			target: [siteIntegrations.siteId, siteIntegrations.provider],
-			set: { encryptedSecret: storePlainSecret(key), publicConfig: config, updatedAt: new Date() },
+			set: { encryptedSecret, publicConfig: config, updatedAt: new Date() },
 		})
 		.returning();
 
@@ -268,8 +291,8 @@ export async function saveIndexNowKeyForUser(userId: string, siteId: string, key
 		.update(siteIntegrations)
 		.set({
 			status: "pending",
-			encryptedSecret: storePlainSecret(cleanKey),
-			publicConfig: { ...existing.config, host, keyLocation: cleanKeyLocation, storage: "plain" },
+			encryptedSecret: await encryptSecret(cleanKey),
+			publicConfig: { ...existing.config, host, keyLocation: cleanKeyLocation },
 			verifiedAt: null,
 			lastErrorAt: null,
 			lastErrorMessage: null,
@@ -285,7 +308,11 @@ export async function saveIndexNowKeyForUser(userId: string, siteId: string, key
 export async function verifySiteForUser(userId: string, siteId: string) {
 	const site = await requireSite(userId, siteId);
 	const integration = await ensureIndexNowIntegration(site);
-	const result = await verifyIndexNowKey(getSiteHost(site), integration.key, integration.keyLocation);
+	const keyUrl = new URL(integration.keyLocation);
+	const result =
+		keyUrl.hostname === getSiteHost(site) && /^\/[A-Za-z0-9-]+\.txt$/.test(keyUrl.pathname)
+			? await verifyIndexNowKey(getSiteHost(site), integration.key, integration.keyLocation)
+			: { ok: false, status: 0, message: "The key file must be at the site root. Reset it under Settings > Use my own IndexNow key.", keyLocation: integration.keyLocation };
 	const now = new Date();
 
 	await db
@@ -385,8 +412,8 @@ export async function saveBingApiKeyForUser(userId: string, siteId: string, apiK
 	const message = validation.ok ? null : truncateMessage(describeBingValidationMessage(siteUrl, validation.message));
 	const values = {
 		status,
-		encryptedSecret: storePlainSecret(cleanApiKey),
-		publicConfig: { lastValidationStatus: validation.status, siteUrl, storage: "plain" },
+		encryptedSecret: await encryptSecret(cleanApiKey),
+		publicConfig: { lastValidationStatus: validation.status, siteUrl },
 		verifiedAt: validation.ok ? now : null,
 		lastCheckedAt: now,
 		lastErrorAt: validation.ok ? null : now,
@@ -775,6 +802,12 @@ async function getEligibleEngines(site: SiteRow, entitlement: Entitlement, manua
  * already waiting is silently skipped instead of being submitted twice.
  */
 async function enqueueUrlRows(site: SiteRow, rows: UrlQueueRow[], reason: SubmissionReason, entitlement: Entitlement, manual = false) {
+	// Domain proof gates every submission path: we must never ping search engines about a
+	// host the user has not proven they control.
+	if (!site.verified) {
+		if (manual) throw new Error("Verify the site's key file first, then submit.");
+		return 0;
+	}
 	if (rows.length === 0) {
 		return 0;
 	}
@@ -871,6 +904,10 @@ async function submitEngineBatch(site: SiteRow, engine: string, urlList: string[
 			return { ok: false, status: 403, message: "IndexNow key is not verified." };
 		}
 		const key = await readStoredSecret(integration.encryptedSecret);
+		const upgraded = await upgradeLegacySecret(integration.encryptedSecret);
+		if (upgraded !== integration.encryptedSecret) {
+			await db.update(siteIntegrations).set({ encryptedSecret: upgraded, updatedAt: new Date() }).where(eq(siteIntegrations.id, integration.id));
+		}
 		const keyLocation = readPublicConfig(integration.publicConfig).keyLocation || getIndexNowKeyLocation(getSiteHost(site), key);
 		return submitIndexNowBatch(getSiteHost(site), key, urlList, keyLocation);
 	}
@@ -884,7 +921,12 @@ async function submitEngineBatch(site: SiteRow, engine: string, urlList: string[
 		if (!integration?.encryptedSecret || integration.status !== "verified") {
 			return { ok: false, status: 403, message: "Bing API key is not verified." };
 		}
-		return submitBingBatch(await readStoredSecret(integration.encryptedSecret), `https://${getSiteHost(site)}`, urlList);
+		const apiKey = await readStoredSecret(integration.encryptedSecret);
+		const upgraded = await upgradeLegacySecret(integration.encryptedSecret);
+		if (upgraded !== integration.encryptedSecret) {
+			await db.update(userIntegrations).set({ encryptedSecret: upgraded, updatedAt: new Date() }).where(eq(userIntegrations.id, integration.id));
+		}
+		return submitBingBatch(apiKey, `https://${getSiteHost(site)}`, urlList);
 	}
 
 	return { ok: false, status: 400, message: `Unsupported engine: ${engine}` };
@@ -914,12 +956,16 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 		lte(submissionJobs.nextRunAt, now),
 		options.siteId ? eq(submissionJobs.siteId, options.siteId) : undefined,
 	);
+	const verifiedSiteIds = db.select({ id: sites.id }).from(sites).where(eq(sites.verified, true));
+	// SKIP LOCKED lets a concurrent run (cron + manual submit) claim disjoint rows. Works over
+	// Neon HTTP because the whole claim is a single UPDATE statement.
 	const candidateIds = db
 		.select({ id: submissionJobs.id })
 		.from(submissionJobs)
-		.where(dueFilter)
+		.where(and(dueFilter, inArray(submissionJobs.siteId, verifiedSiteIds)))
 		.orderBy(sql`case when ${submissionJobs.reason} = 'manual' then 0 else 1 end`, asc(submissionJobs.createdAt))
-		.limit(maxJobs);
+		.limit(maxJobs)
+		.for("update", { skipLocked: true });
 	// The outer status check makes the claim safe if two runs race for the same rows.
 	const jobs = await db
 		.update(submissionJobs)

@@ -11,6 +11,11 @@ cron call into it; nothing else mutates sites, URLs or the queue.
 2. **Verify** (`verifySiteForUser`): fetches `https://<host>/<key>.txt`. A matching file
    proves ownership, so it sets `sites.verified`, `automationEnabled`, the integration to
    `verified`, and queues + submits the backlog of never-submitted URLs.
+   Security rules: the file must be at the site root (no subfolders, where user uploads
+   could live) and must not redirect to another URL. One file serves both IndexNow and
+   ownership, which is why there is no separate `.well-known` token (an interim
+   implementation used `/.well-known/indexfast-verification.txt`; it was folded into this).
+   Unverified sites can be synced (URLs are visible) but nothing is ever submitted.
 3. **Ongoing**: the hourly cron re-crawls due sitemaps and submits new/changed URLs.
 
 ## Sitemap discovery (`sitemaps.ts`)
@@ -51,6 +56,9 @@ The dashboard "New (7d)" tab is `urls.created_at > now() - 7 days`.
 4. Network/429/5xx -> retry with backoff 10, 20, 40 min up to 3 attempts. Other errors fail fast.
 5. Final outcomes update `urls.lastSubmittedAt/lastSubmissionStatus`; every attempt is
    logged in `submissions`; failures raise one de-duplicated alert per site, success resolves it.
+
+Credentials are AES-GCM encrypted at rest and lazily re-encrypted if a legacy plaintext row
+is read. Only jobs of verified sites are claimed (`FOR UPDATE SKIP LOCKED`).
 
 Engines: IndexNow (needs verified key) always; Bing only on Pro/Unlimited with a verified
 per-user key.

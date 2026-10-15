@@ -105,7 +105,13 @@ export const migrations = [
     ]
   },
   {
-    "name": "0004_razorpay_admin_analytics.sql",
+    "name": "0004_reverify_sites.sql",
+    "statements": [
+      "-- The previous verification action only set sites.verified=true and never checked domain control.\n-- Existing verified flags therefore cannot be trusted until the domain's token file is checked again.\nUPDATE sites\nSET verified = FALSE,\n    automation_enabled = FALSE,\n    updated_at = NOW()\nWHERE verified = TRUE OR automation_enabled = TRUE;"
+    ]
+  },
+  {
+    "name": "0005_razorpay_admin_analytics.sql",
     "statements": [
       "CREATE TABLE \"cron_runs\" (\n\t\"id\" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,\n\t\"status\" text DEFAULT 'running' NOT NULL,\n\t\"summary\" jsonb,\n\t\"error_message\" text,\n\t\"started_at\" timestamp DEFAULT now() NOT NULL,\n\t\"finished_at\" timestamp\n);",
       "CREATE TABLE \"page_views\" (\n\t\"id\" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,\n\t\"path\" text NOT NULL,\n\t\"referrer\" text,\n\t\"country\" text,\n\t\"device\" text,\n\t\"visitor_hash\" text NOT NULL,\n\t\"user_id\" text,\n\t\"created_at\" timestamp DEFAULT now() NOT NULL\n);",
