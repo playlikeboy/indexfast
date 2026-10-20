@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
+import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -94,30 +94,7 @@ export default function SitemapUrlExtractorPage() {
 							Free. No signup required.
 						</p>
 
-						<form className="mt-10 space-y-4" action="#" method="get">
-							<div>
-								<label htmlFor="sitemap-input" className="block text-sm font-semibold text-ink">
-									Enter sitemap URL
-								</label>
-								<p className="mt-1 text-xs text-muted">
-									Paste the full URL of your sitemap.xml or sitemap index file.
-								</p>
-								<input
-									id="sitemap-input"
-									type="url"
-									name="sitemap"
-									placeholder="https://example.com/sitemap.xml"
-									required
-									className="mt-3 w-full border border-ink bg-surface px-4 py-3 text-sm placeholder:text-muted focus:border-accent focus:outline-none"
-								/>
-							</div>
-							<button
-								type="submit"
-								className="bg-ink px-6 py-3 text-sm font-semibold text-surface transition-colors hover:bg-ink/85"
-							>
-								Extract URLs
-							</button>
-						</form>
+						<ToolRunner toolType="sitemap-url-extractor" buttonLabel="Extract Sitemap URLs" placeholder="https://example.com/sitemap.xml" />
 
 						<div className="prose prose-muted mt-14 max-w-none space-y-6 text-sm leading-relaxed text-muted">
 							<h2 className="text-base font-bold text-ink">Why sitemap coverage matters</h2>

@@ -1,4 +1,15 @@
+/**
+ * Thin HTTP clients for IndexNow and the Bing Webmaster API. No DB access here so they stay
+ * unit-testable; the queue runner in service.ts decides what to send and records results.
+ */
+import { safeFetchText } from "@/lib/url-utils";
 import { BING_API_BASE, INDEXNOW_ENDPOINT } from "./constants";
+
+const ENGINE_TIMEOUT_MS = 20_000;
+
+function timeoutSignal() {
+	return AbortSignal.timeout(ENGINE_TIMEOUT_MS);
+}
 
 export type EngineSubmissionResult = {
 	ok: boolean;
@@ -24,18 +35,38 @@ export function buildIndexNowPayload(host: string, key: string, urls: string[], 
 	};
 }
 
+/**
+ * Fetching the key file doubles as site ownership verification: only someone who controls
+ * the site can publish /<key>.txt with that exact content. Uses the SSRF-safe fetcher.
+ */
 export async function verifyIndexNowKey(host: string, key: string, keyLocation = getIndexNowKeyLocation(host, key)) {
-	const response = await fetch(keyLocation, {
-		headers: { "User-Agent": "IndexFast IndexNow Verifier/1.0" },
-	});
-
-	const body = await response.text();
-	return {
-		ok: response.ok && body.trim() === key,
-		status: response.status,
-		message: response.ok ? "Fetched key file." : `Key file returned HTTP ${response.status}.`,
-		keyLocation,
-	};
+	try {
+		const response = await safeFetchText(keyLocation, {
+			userAgent: "IndexFast IndexNow Verifier/1.0",
+			timeoutMs: 10_000,
+			maxBytes: 64 * 1024,
+		});
+		const body = response.text.trim();
+		// A redirect elsewhere (another host, or a path the owner does not control) is not proof.
+		const sameUrl = new URL(response.finalUrl).href === new URL(keyLocation).href;
+		const ok = response.status === 200 && body === key && sameUrl;
+		let message = "Key file found and matches.";
+		if (!sameUrl) {
+			message = `${keyLocation} redirects to ${response.finalUrl}. Serve the key file directly at the original URL.`;
+		} else if (response.status !== 200) {
+			message = `${keyLocation} returned HTTP ${response.status}. Upload the key file to your site root and deploy.`;
+		} else if (!ok) {
+			message = `${keyLocation} is reachable but its content does not match the key. The file must contain only the key.`;
+		}
+		return { ok, status: response.status, message, keyLocation };
+	} catch (error) {
+		return {
+			ok: false,
+			status: 0,
+			message: `Could not fetch ${keyLocation}: ${error instanceof Error ? error.message : "network error"}`,
+			keyLocation,
+		};
+	}
 }
 
 export async function submitIndexNowBatch(host: string, key: string, urls: string[], keyLocation?: string): Promise<EngineSubmissionResult> {
@@ -43,6 +74,7 @@ export async function submitIndexNowBatch(host: string, key: string, urls: strin
 		method: "POST",
 		headers: { "Content-Type": "application/json; charset=utf-8" },
 		body: JSON.stringify(buildIndexNowPayload(host, key, urls, keyLocation)),
+		signal: timeoutSignal(),
 	});
 	const message = await response.text().catch(() => "");
 
@@ -64,6 +96,7 @@ export async function getBingSubmissionQuota(apiKey: string, siteUrl: string): P
 	const endpoint = `${BING_API_BASE}/GetUrlSubmissionQuota?siteUrl=${encodeURIComponent(siteUrl)}&apikey=${encodeURIComponent(apiKey)}`;
 	const response = await fetch(endpoint, {
 		headers: { "User-Agent": "IndexFast Bing API Validator/1.0" },
+		signal: timeoutSignal(),
 	});
 	const message = await response.text().catch(() => "");
 
@@ -80,6 +113,7 @@ export async function submitBingBatch(apiKey: string, siteUrl: string, urls: str
 		method: "POST",
 		headers: { "Content-Type": "application/json; charset=utf-8" },
 		body: JSON.stringify(buildBingBatchPayload(siteUrl, urls)),
+		signal: timeoutSignal(),
 	});
 	const message = await response.text().catch(() => "");
 

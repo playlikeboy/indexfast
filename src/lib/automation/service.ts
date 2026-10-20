@@ -1,7 +1,23 @@
-import { and, desc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+/**
+ * IndexFast automation engine: the only place that mutates sites, sitemap sources, URLs and
+ * the submission queue. Dashboard server actions, the REST API, MCP tools and the hourly cron
+ * all call into this module, so business rules live here exactly once.
+ *
+ * The product flow it implements (see docs/automation.md):
+ *   1. Add a site by domain -> sitemaps are auto-discovered and synced immediately, so the
+ *      user sees their URLs before doing any setup.
+ *   2. Verify: the user hosts /<indexnow-key>.txt. A matching file proves ownership, flips the
+ *      site to verified, turns automation on, and queues the backlog of unsubmitted URLs.
+ *   3. From then on the cron re-crawls sitemaps on the plan's interval, detects new URLs and
+ *      URLs whose <lastmod> moved, and submits only those (deduped, with retry/backoff).
+ *
+ * Every *ForUser function re-checks ownership with the userId it is given.
+ */
+import { and, asc, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
 	alerts,
+	cronRuns,
 	siteIntegrations,
 	siteSitemaps,
 	sitemaps,
@@ -10,10 +26,13 @@ import {
 	submissions,
 	urls,
 	userIntegrations,
+	users,
 } from "@/db/schema";
-import { getErrorMessage, getSiteHost, normalizeSitemapUrl, normalizeUrlForHost } from "@/lib/url-utils";
-import { AUTOMATION_LIMITS } from "./constants";
-import { maskCredential, readStoredSecret, storePlainSecret } from "./credentials";
+import { getErrorMessage, getSiteHost, normalizeHost, normalizeSitemapUrl, normalizeUrlForHost, safeFetchText } from "@/lib/url-utils";
+import { getPausedSiteIdsForUsers, getUserAccess, getUserEntitlement } from "@/lib/platform/entitlements";
+import { formatLimit, resolveEntitlement, type Entitlement } from "@/lib/platform/plans";
+import { AUTOMATION_LIMITS, ENGINE_BATCH_SIZE, type SubmissionEngine } from "./constants";
+import { encryptSecret, hasCredentialEncryptionKey, isEncryptedSecret, maskCredential, readStoredSecret } from "./credentials";
 import {
 	generateIndexNowKey,
 	getBingSubmissionQuota,
@@ -21,24 +40,137 @@ import {
 	submitBingBatch,
 	submitIndexNowBatch,
 	verifyIndexNowKey,
+	type EngineSubmissionResult,
 } from "./search-engines";
 import { discoverSitemapUrls, fetchSitemapTree, type ParsedSitemapUrl } from "./sitemaps";
 
 type SiteRow = typeof sites.$inferSelect;
 type SiteSitemapRow = typeof siteSitemaps.$inferSelect;
 type UrlQueueRow = { id: string; loc: string };
+type SubmissionReason = "new" | "changed" | "manual";
+
+const MINUTE_MS = 60 * 1000;
 
 function truncateMessage(message: string) {
 	return message.length > 1000 ? `${message.slice(0, 997)}...` : message;
 }
 
-function hasLastmodChanged(existing: { lastmod: Date | null }, next: ParsedSitemapUrl) {
+function chunk<T>(items: T[], size: number) {
+	const chunks: T[][] = [];
+	for (let index = 0; index < items.length; index += size) {
+		chunks.push(items.slice(index, index + size));
+	}
+	return chunks;
+}
+
+function hasLastmodAdvanced(existing: { lastmod: Date | null }, next: ParsedSitemapUrl) {
 	if (!next.lastmod) {
 		return false;
 	}
-
-	return !existing.lastmod || existing.lastmod.getTime() !== next.lastmod.getTime();
+	return !existing.lastmod || next.lastmod.getTime() > existing.lastmod.getTime();
 }
+
+// ---------------------------------------------------------------------------
+// Lookups
+// ---------------------------------------------------------------------------
+
+export async function getSiteForUser(siteId: string, userId: string) {
+	if (!/^[0-9a-f-]{36}$/i.test(siteId)) {
+		return undefined;
+	}
+	const [site] = await db
+		.select()
+		.from(sites)
+		.where(and(eq(sites.id, siteId), eq(sites.userId, userId)))
+		.limit(1);
+	return site;
+}
+
+/**
+ * Agents rarely remember UUIDs, so API/MCP callers may pass either a site id or a domain
+ * ("example.com", "https://www.example.com/") wherever a site is expected.
+ */
+export async function resolveSiteForUser(userId: string, siteRef: string) {
+	const ref = siteRef.trim();
+	if (!ref) {
+		throw new Error("A site id or domain is required.");
+	}
+
+	const byId = await getSiteForUser(ref, userId);
+	if (byId) {
+		return byId;
+	}
+
+	let host: string;
+	try {
+		host = normalizeHost(ref);
+	} catch {
+		throw new Error(`Site not found: ${ref}`);
+	}
+	const bare = host.replace(/^www\./, "");
+	const candidates = await db
+		.select()
+		.from(sites)
+		.where(and(eq(sites.userId, userId), or(eq(sites.domain, host), eq(sites.domain, bare), eq(sites.indexingHost, host))));
+	const site = candidates.find((row) => getSiteHost(row) === host) ?? candidates[0];
+	if (!site) {
+		throw new Error(`Site not found: ${ref}. Add it first with add_site.`);
+	}
+	return site;
+}
+
+async function requireSite(userId: string, siteId: string) {
+	const site = await getSiteForUser(siteId, userId);
+	if (!site) {
+		throw new Error("Site not found");
+	}
+	return site;
+}
+
+async function assertSiteActive(userId: string, siteId: string) {
+	const { entitlement, pausedSiteIds } = await getUserAccess(userId);
+	if (pausedSiteIds.has(siteId)) {
+		throw new Error(
+			`This site is paused: the ${entitlement.plan.name} plan includes ${formatLimit(entitlement.limits.sites)} site(s). Upgrade or delete another site to resume.`,
+		);
+	}
+	return entitlement;
+}
+
+/** De-duplicated operator alert: one open alert per (site, title); repeats refresh it. */
+async function raiseAlert(siteId: string, title: string, message: string, alertType: string) {
+	const [existing] = await db
+		.select({ id: alerts.id })
+		.from(alerts)
+		.where(and(eq(alerts.siteId, siteId), eq(alerts.title, title), eq(alerts.resolved, false)))
+		.limit(1);
+
+	if (existing) {
+		await db.update(alerts).set({ message: truncateMessage(message), createdAt: new Date() }).where(eq(alerts.id, existing.id));
+		return;
+	}
+	await db.insert(alerts).values({ siteId, title, message: truncateMessage(message), alertType, resolved: false });
+}
+
+async function resolveAlerts(siteId: string, title: string) {
+	await db
+		.update(alerts)
+		.set({ resolved: true })
+		.where(and(eq(alerts.siteId, siteId), eq(alerts.title, title), eq(alerts.resolved, false)));
+}
+
+/**
+ * Secrets are stored AES-GCM encrypted (credentials.ts). Rows written by older releases are
+ * plaintext; they are re-encrypted the next time they are read so no bulk migration is needed.
+ */
+async function upgradeLegacySecret(value: string) {
+	if (isEncryptedSecret(value) || !hasCredentialEncryptionKey()) return value;
+	return encryptSecret(await readStoredSecret(value));
+}
+
+// ---------------------------------------------------------------------------
+// IndexNow key (doubles as ownership verification)
+// ---------------------------------------------------------------------------
 
 type IndexNowPublicConfig = {
 	host?: string;
@@ -52,11 +184,6 @@ function readPublicConfig(value: unknown): IndexNowPublicConfig {
 	return value && typeof value === "object" ? (value as IndexNowPublicConfig) : {};
 }
 
-function getConfiguredKeyLocation(publicConfig: unknown, host: string, key: string) {
-	const config = readPublicConfig(publicConfig);
-	return config.keyLocation || getIndexNowKeyLocation(host, key);
-}
-
 function normalizeIndexNowKey(key: string) {
 	const cleanKey = key.trim();
 	if (!/^[a-zA-Z0-9-]{8,128}$/.test(cleanKey)) {
@@ -67,50 +194,27 @@ function normalizeIndexNowKey(key: string) {
 
 function normalizeIndexNowKeyLocation(keyLocation: string, host: string) {
 	const cleanLocation = keyLocation.trim();
-	if (!cleanLocation) {
-		throw new Error("IndexNow file URL is required.");
-	}
-
 	let url: URL;
 	try {
 		url = new URL(cleanLocation);
 	} catch {
-		throw new Error("Enter a valid IndexNow file URL.");
+		throw new Error("Enter a valid IndexNow key file URL.");
 	}
-
-	if (url.protocol !== "http:" && url.protocol !== "https:") {
-		throw new Error("IndexNow file URL must use HTTP or HTTPS.");
+	if (url.protocol !== "https:" && url.protocol !== "http:") {
+		throw new Error("IndexNow key file URL must use HTTP or HTTPS.");
 	}
-
 	if (url.hostname.toLowerCase() !== host) {
-		throw new Error("IndexNow file URL must belong to the exact site host.");
+		throw new Error("IndexNow key file URL must be on the exact site host.");
 	}
-
+	// The key file doubles as ownership proof, so it must live at the site root: upload
+	// folders and user-content paths deeper in a site must not be able to "verify" a domain.
+	if (!/^\/[A-Za-z0-9-]+\.txt$/.test(url.pathname) || url.search) {
+		throw new Error("The key file must be at the site root, e.g. https://example.com/<key>.txt");
+	}
 	return url.toString();
 }
 
-function getSiteUrl(site: SiteRow) {
-	return `https://${getSiteHost(site)}`;
-}
-
-function describeBingValidationMessage(siteUrl: string, message: string) {
-	if (/InvalidParameter/i.test(message)) {
-		return `Bing returned InvalidParameter for ${siteUrl}. Make sure this exact site URL is added and verified in Bing Webmaster Tools.`;
-	}
-
-	return message;
-}
-
-export async function getSiteForUser(siteId: string, userId: string) {
-	const [site] = await db
-		.select()
-		.from(sites)
-		.where(and(eq(sites.id, siteId), eq(sites.userId, userId)))
-		.limit(1);
-
-	return site;
-}
-
+/** Idempotently create the site's IndexNow key, preserving any existing config flags. */
 export async function ensureIndexNowIntegration(site: SiteRow) {
 	const host = getSiteHost(site);
 	const [existing] = await db
@@ -121,230 +225,188 @@ export async function ensureIndexNowIntegration(site: SiteRow) {
 
 	if (existing?.encryptedSecret) {
 		const key = await readStoredSecret(existing.encryptedSecret);
-		const keyLocation = getConfiguredKeyLocation(existing.publicConfig, host, key);
-		await db
-			.update(siteIntegrations)
-			.set({
-				publicConfig: { host, keyLocation, storage: "plain" },
-				updatedAt: new Date(),
-			})
-			.where(eq(siteIntegrations.id, existing.id));
-
-		return { ...existing, publicConfig: { host, keyLocation, storage: "plain" }, key, keyLocation };
+		const { storage: _legacyStorage, ...config } = readPublicConfig(existing.publicConfig);
+		void _legacyStorage;
+		const encryptedSecret = await upgradeLegacySecret(existing.encryptedSecret);
+		if (encryptedSecret !== existing.encryptedSecret) {
+			await db
+				.update(siteIntegrations)
+				.set({ encryptedSecret, publicConfig: config, updatedAt: new Date() })
+				.where(eq(siteIntegrations.id, existing.id));
+		}
+		return { ...existing, encryptedSecret, key, keyLocation: config.keyLocation || getIndexNowKeyLocation(host, key), config };
 	}
 
 	const key = generateIndexNowKey();
 	const keyLocation = getIndexNowKeyLocation(host, key);
-	const storedSecret = storePlainSecret(key);
-
+	const config: IndexNowPublicConfig = { host, keyLocation, submitNewUrls: true, submitChangedUrls: true };
+	const encryptedSecret = await encryptSecret(key);
 	const [integration] = await db
 		.insert(siteIntegrations)
 		.values({
 			siteId: site.id,
 			provider: "indexnow",
 			status: "pending",
-			encryptedSecret: storedSecret,
-			publicConfig: { host, keyLocation, storage: "plain" },
+			encryptedSecret,
+			publicConfig: config,
 			automationEnabled: false,
 		})
 		.onConflictDoUpdate({
 			target: [siteIntegrations.siteId, siteIntegrations.provider],
-			set: {
-				encryptedSecret: storedSecret,
-				publicConfig: { host, keyLocation, storage: "plain" },
-				updatedAt: new Date(),
-			},
+			set: { encryptedSecret, publicConfig: config, updatedAt: new Date() },
 		})
 		.returning();
 
-	return { ...integration, key, keyLocation };
+	return { ...integration, key, keyLocation, config };
 }
 
-async function getIndexNowSettings(site: SiteRow) {
-	const host = getSiteHost(site);
-	const [existing] = await db
-		.select()
-		.from(siteIntegrations)
-		.where(and(eq(siteIntegrations.siteId, site.id), eq(siteIntegrations.provider, "indexnow")))
-		.limit(1);
-
-	if (existing?.encryptedSecret) {
-		try {
-			const key = await readStoredSecret(existing.encryptedSecret);
-			const keyLocation = getConfiguredKeyLocation(existing.publicConfig, host, key);
-			const config = readPublicConfig(existing.publicConfig);
-			return {
-				status: existing.status,
-				key,
-				keyLocation,
-				verifiedAt: existing.verifiedAt,
-				lastCheckedAt: existing.lastCheckedAt,
-				lastErrorMessage: existing.lastErrorMessage,
-				automationEnabled: existing.automationEnabled,
-				submitNewUrls: config.submitNewUrls ?? true,
-				submitChangedUrls: config.submitChangedUrls ?? true,
-			};
-		} catch (error) {
-			return {
-				status: "failed",
-				key: null,
-				keyLocation: null,
-				verifiedAt: existing.verifiedAt,
-				lastCheckedAt: existing.lastCheckedAt,
-				lastErrorMessage: `Unable to decrypt IndexNow key: ${getErrorMessage(error)}`,
-				automationEnabled: false,
-				submitNewUrls: true,
-				submitChangedUrls: true,
-			};
-		}
-	}
-
+/** Everything the UI / an agent needs to install the key file. */
+export async function getIndexNowSetup(site: SiteRow) {
 	const integration = await ensureIndexNowIntegration(site);
-	const config = readPublicConfig(integration.publicConfig);
+	const fileName = new URL(integration.keyLocation).pathname.replace(/^\//, "");
 	return {
 		status: integration.status,
 		key: integration.key,
 		keyLocation: integration.keyLocation,
+		fileName,
+		fileContent: integration.key,
 		verifiedAt: integration.verifiedAt,
-		lastCheckedAt: integration.lastCheckedAt,
 		lastErrorMessage: integration.lastErrorMessage,
-		automationEnabled: integration.automationEnabled,
-		submitNewUrls: config.submitNewUrls ?? true,
-		submitChangedUrls: config.submitChangedUrls ?? true,
+		submitNewUrls: integration.config.submitNewUrls ?? true,
+		submitChangedUrls: integration.config.submitChangedUrls ?? true,
 	};
 }
 
+/** Use a key the user already hosts (e.g. from another tool) instead of the generated one. */
 export async function saveIndexNowKeyForUser(userId: string, siteId: string, keyLocation: string, key: string) {
-	const site = await getSiteForUser(siteId, userId);
-	if (!site) {
-		throw new Error("Site not found");
-	}
-
+	const site = await requireSite(userId, siteId);
 	const host = getSiteHost(site);
 	const cleanKey = normalizeIndexNowKey(key);
-	const cleanKeyLocation = normalizeIndexNowKeyLocation(keyLocation, host);
-	const now = new Date();
+	const cleanKeyLocation = keyLocation.trim()
+		? normalizeIndexNowKeyLocation(keyLocation, host)
+		: getIndexNowKeyLocation(host, cleanKey);
+	const existing = await ensureIndexNowIntegration(site);
 
 	await db
-		.insert(siteIntegrations)
-		.values({
-			siteId,
-			provider: "indexnow",
+		.update(siteIntegrations)
+		.set({
 			status: "pending",
-			encryptedSecret: storePlainSecret(cleanKey),
-			publicConfig: { host, keyLocation: cleanKeyLocation, storage: "plain" },
-			automationEnabled: false,
+			encryptedSecret: await encryptSecret(cleanKey),
+			publicConfig: { ...existing.config, host, keyLocation: cleanKeyLocation },
+			verifiedAt: null,
+			lastErrorAt: null,
+			lastErrorMessage: null,
+			updatedAt: new Date(),
 		})
-		.onConflictDoUpdate({
-			target: [siteIntegrations.siteId, siteIntegrations.provider],
-			set: {
-				status: "pending",
-				encryptedSecret: storePlainSecret(cleanKey),
-				publicConfig: { host, keyLocation: cleanKeyLocation, storage: "plain" },
-				verifiedAt: null,
-				lastCheckedAt: null,
-				lastErrorAt: null,
-				lastErrorMessage: null,
-				automationEnabled: false,
-				updatedAt: now,
-			},
-		});
+		.where(eq(siteIntegrations.id, existing.id));
 }
 
-export async function verifyIndexNowForUser(userId: string, siteId: string) {
-	const site = await getSiteForUser(siteId, userId);
-	if (!site) {
-		throw new Error("Site not found");
+/**
+ * "I already host an IndexNow key" path, for users coming from another tool or an older
+ * IndexFast setup. Accepts the key itself or the URL of the key file (the key is read from
+ * it). The candidate is checked *before* saving, so a typo never replaces the generated key
+ * shown in the setup card. Same ownership rules as verifySiteForUser: root-level file,
+ * exact content, no redirect.
+ */
+export async function adoptExistingIndexNowKeyForUser(userId: string, siteId: string, input: string) {
+	const site = await requireSite(userId, siteId);
+	const host = getSiteHost(site);
+	const value = input.trim();
+	if (!value) {
+		throw new Error("Paste your IndexNow key or the URL of your key file.");
 	}
 
+	let key = value;
+	let keyLocation = "";
+	if (/^https?:\/\//i.test(value)) {
+		keyLocation = normalizeIndexNowKeyLocation(value, host);
+		const response = await safeFetchText(keyLocation, {
+			userAgent: "IndexFast IndexNow Verifier/1.0",
+			timeoutMs: 10_000,
+			maxBytes: 1024,
+		});
+		if (response.status !== 200) {
+			throw new Error(`${keyLocation} returned HTTP ${response.status}. Check the URL and that the file is deployed.`);
+		}
+		key = response.text.trim();
+	}
+	key = normalizeIndexNowKey(key);
+	keyLocation = keyLocation || getIndexNowKeyLocation(host, key);
+	normalizeIndexNowKeyLocation(keyLocation, host);
+
+	const check = await verifyIndexNowKey(host, key, keyLocation);
+	if (!check.ok) {
+		throw new Error(
+			check.status === 404
+				? `No key file at ${keyLocation}. If your file has a different name, paste its full URL instead.`
+				: check.message,
+		);
+	}
+
+	await saveIndexNowKeyForUser(userId, siteId, keyLocation, key);
+	return verifySiteForUser(userId, siteId);
+}
+
+/**
+ * Verify the key file. Success = ownership proven: mark the site verified, switch automation
+ * on, and immediately submit the URLs discovered so far.
+ */
+export async function verifySiteForUser(userId: string, siteId: string) {
+	const site = await requireSite(userId, siteId);
 	const integration = await ensureIndexNowIntegration(site);
-	const result = await verifyIndexNowKey(getSiteHost(site), integration.key, integration.keyLocation);
+	const keyUrl = new URL(integration.keyLocation);
+	const result =
+		keyUrl.hostname === getSiteHost(site) && /^\/[A-Za-z0-9-]+\.txt$/.test(keyUrl.pathname)
+			? await verifyIndexNowKey(getSiteHost(site), integration.key, integration.keyLocation)
+			: { ok: false, status: 0, message: "The key file must be at the site root. Reset it under Settings > Use my own IndexNow key.", keyLocation: integration.keyLocation };
 	const now = new Date();
 
 	await db
 		.update(siteIntegrations)
 		.set({
 			status: result.ok ? "verified" : "failed",
-			verifiedAt: result.ok ? now : null,
+			verifiedAt: result.ok ? now : integration.verifiedAt,
+			automationEnabled: result.ok ? true : integration.automationEnabled,
 			lastCheckedAt: now,
 			lastErrorAt: result.ok ? null : now,
 			lastErrorMessage: result.ok ? null : truncateMessage(result.message),
-			publicConfig: { host: getSiteHost(site), keyLocation: result.keyLocation, storage: "plain" },
 			updatedAt: now,
 		})
 		.where(eq(siteIntegrations.id, integration.id));
 
-	return result;
-}
-
-export async function saveBingApiKeyForUser(userId: string, siteId: string, apiKey: string) {
-	const site = await getSiteForUser(siteId, userId);
-	if (!site) {
-		throw new Error("Site not found");
+	if (!result.ok) {
+		return { ok: false, message: result.message, queued: 0, submitted: 0 };
 	}
 
-	const cleanApiKey = apiKey.trim();
-	if (!cleanApiKey) {
-		throw new Error("Bing API key is required");
-	}
+	await db.update(sites).set({ verified: true, automationEnabled: true, updatedAt: now }).where(eq(sites.id, site.id));
+	const verifiedSite = { ...site, verified: true, automationEnabled: true };
 
-	const siteUrl = getSiteUrl(site);
-	const validation = await getBingSubmissionQuota(cleanApiKey, siteUrl);
-	const now = new Date();
-	const storedSecret = storePlainSecret(cleanApiKey);
-	const status = validation.ok ? "verified" : "failed";
-	const validationMessage = describeBingValidationMessage(siteUrl, validation.message);
+	// First verification: push the backlog of URLs found before the key was live.
+	const entitlement = await getUserEntitlement(userId);
+	const backlog = await db
+		.select({ id: urls.id, loc: urls.loc })
+		.from(urls)
+		.where(and(eq(urls.siteId, site.id), isNull(urls.lastSubmittedAt)))
+		.limit(Math.min(entitlement.limits.urlsPerSite, AUTOMATION_LIMITS.maxUrlsPerSitemap));
+	const queued = await enqueueUrlRows(verifiedSite, backlog, "new", entitlement, true);
+	const processed = queued > 0 ? await processSubmissionQueue({ siteId: site.id, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline }) : null;
 
-	await db
-		.insert(userIntegrations)
-		.values({
-			userId,
-			provider: "bing",
-			status,
-			encryptedSecret: storedSecret,
-			publicConfig: { lastValidationStatus: validation.status, siteUrl, storage: "plain" },
-			verifiedAt: validation.ok ? now : null,
-			lastCheckedAt: now,
-			lastErrorAt: validation.ok ? null : now,
-			lastErrorMessage: validation.ok ? null : truncateMessage(validationMessage),
-		})
-		.onConflictDoUpdate({
-			target: [userIntegrations.userId, userIntegrations.provider],
-			set: {
-				status,
-				encryptedSecret: storedSecret,
-				publicConfig: { lastValidationStatus: validation.status, siteUrl, storage: "plain" },
-				verifiedAt: validation.ok ? now : null,
-				lastCheckedAt: now,
-				lastErrorAt: validation.ok ? null : now,
-				lastErrorMessage: validation.ok ? null : truncateMessage(validationMessage),
-				updatedAt: now,
-			},
-		});
-
-	return validation;
+	return { ok: true, message: "Verified. Automation is on.", queued, submitted: processed?.successCount ?? 0 };
 }
 
-export async function removeBingApiKeyForUser(userId: string) {
-	await db
-		.delete(userIntegrations)
-		.where(and(eq(userIntegrations.userId, userId), eq(userIntegrations.provider, "bing")));
-}
+/** @deprecated name kept for older callers; verification is now the IndexNow key check. */
+export const verifyIndexNowForUser = verifySiteForUser;
 
 export async function setAutomationForUser(userId: string, siteId: string, enabled: boolean) {
-	const site = await getSiteForUser(siteId, userId);
-	if (!site) {
-		throw new Error("Site not found");
-	}
-
+	const site = await requireSite(userId, siteId);
 	const [integration] = await db
-		.select()
+		.select({ status: siteIntegrations.status })
 		.from(siteIntegrations)
 		.where(and(eq(siteIntegrations.siteId, siteId), eq(siteIntegrations.provider, "indexnow")))
 		.limit(1);
 
 	if (enabled && (!site.verified || integration?.status !== "verified")) {
-		throw new Error("Verify the site and IndexNow key before enabling automation.");
+		throw new Error("Verify the site's key file before turning automation on.");
 	}
 
 	const now = new Date();
@@ -357,347 +419,347 @@ export async function setAutomationForUser(userId: string, siteId: string, enabl
 	]);
 }
 
-export async function addSitemapSourceForUser(userId: string, siteId: string, sitemapUrl: string, isPrimary?: boolean) {
-	const site = await getSiteForUser(siteId, userId);
-	if (!site) {
-		throw new Error("Site not found");
+export async function updateUrlSubmissionRulesForUser(userId: string, siteId: string, submitNewUrls: boolean, submitChangedUrls: boolean) {
+	const site = await requireSite(userId, siteId);
+	const integration = await ensureIndexNowIntegration(site);
+	await db
+		.update(siteIntegrations)
+		.set({ publicConfig: { ...integration.config, submitNewUrls, submitChangedUrls }, updatedAt: new Date() })
+		.where(eq(siteIntegrations.id, integration.id));
+}
+
+// ---------------------------------------------------------------------------
+// Bing (optional, per-user key)
+// ---------------------------------------------------------------------------
+
+function describeBingValidationMessage(siteUrl: string, message: string) {
+	if (/InvalidParameter/i.test(message)) {
+		return `Bing returned InvalidParameter for ${siteUrl}. Add and verify this exact site URL in Bing Webmaster Tools first.`;
+	}
+	return message;
+}
+
+export async function saveBingApiKeyForUser(userId: string, siteId: string, apiKey: string) {
+	const site = await requireSite(userId, siteId);
+	const entitlement = await getUserEntitlement(userId);
+	if (!entitlement.limits.bing) {
+		throw new Error("Direct Bing submissions are included in Pro and Unlimited.");
 	}
 
-	const host = getSiteHost(site);
-	const cleanUrl = normalizeSitemapUrl(sitemapUrl, host);
+	const cleanApiKey = apiKey.trim();
+	if (!cleanApiKey) {
+		throw new Error("Bing API key is required");
+	}
+
+	const siteUrl = `https://${getSiteHost(site)}`;
+	const validation = await getBingSubmissionQuota(cleanApiKey, siteUrl);
+	const now = new Date();
+	const status = validation.ok ? "verified" : "failed";
+	const message = validation.ok ? null : truncateMessage(describeBingValidationMessage(siteUrl, validation.message));
+	const values = {
+		status,
+		encryptedSecret: await encryptSecret(cleanApiKey),
+		publicConfig: { lastValidationStatus: validation.status, siteUrl },
+		verifiedAt: validation.ok ? now : null,
+		lastCheckedAt: now,
+		lastErrorAt: validation.ok ? null : now,
+		lastErrorMessage: message,
+	};
+
+	await db
+		.insert(userIntegrations)
+		.values({ userId, provider: "bing", ...values })
+		.onConflictDoUpdate({ target: [userIntegrations.userId, userIntegrations.provider], set: { ...values, updatedAt: now } });
+
+	if (!validation.ok) {
+		throw new Error(message || "Bing rejected the API key.");
+	}
+	return validation;
+}
+
+export async function removeBingApiKeyForUser(userId: string) {
+	await db.delete(userIntegrations).where(and(eq(userIntegrations.userId, userId), eq(userIntegrations.provider, "bing")));
+}
+
+// ---------------------------------------------------------------------------
+// Sites and sitemap sources
+// ---------------------------------------------------------------------------
+
+/**
+ * One-call onboarding used by the dashboard, REST API and MCP: create the site, generate
+ * its key, find sitemaps, and run the first sync so URLs are visible right away.
+ * Discovery/sync failures are reported but never block site creation.
+ */
+export async function createSiteForUser(input: { userId: string; domain: string; name?: string; sitemapUrl?: string }) {
+	const host = normalizeHost(input.domain);
+	const cleanSitemapUrl = normalizeSitemapUrl(input.sitemapUrl, host);
+
+	const { entitlement } = await getUserAccess(input.userId);
+	const existingSites = await db.select({ id: sites.id, domain: sites.domain }).from(sites).where(eq(sites.userId, input.userId));
+	if (existingSites.some((row) => row.domain === host)) {
+		throw new Error(`${host} is already added.`);
+	}
+	if (existingSites.length >= entitlement.limits.sites) {
+		throw new Error(
+			`The ${entitlement.plan.name} plan includes ${formatLimit(entitlement.limits.sites)} site(s). Upgrade to add more.`,
+		);
+	}
+
+	const [site] = await db
+		.insert(sites)
+		.values({
+			userId: input.userId,
+			domain: host,
+			indexingHost: host,
+			name: input.name?.trim() || host,
+			verified: false,
+			verificationToken: `indexfast-verification-${crypto.randomUUID()}`,
+			sitemapUrl: cleanSitemapUrl,
+		})
+		.returning();
+
+	const setup = await getIndexNowSetup(site);
+
+	let discovered: string[] = [];
+	let sync: Awaited<ReturnType<typeof syncActiveSitemaps>> | null = null;
+	let warning: string | null = null;
+	try {
+		if (cleanSitemapUrl) {
+			await addSitemapSource(site, cleanSitemapUrl, true);
+			discovered = [cleanSitemapUrl];
+		} else {
+			discovered = await discoverAndSaveSitemaps(site);
+		}
+		if (discovered.length > 0) {
+			sync = await syncActiveSitemaps(site, entitlement);
+		} else {
+			warning = `No sitemap found at ${host}/robots.txt or common paths. Add your sitemap URL manually.`;
+		}
+	} catch (error) {
+		warning = getErrorMessage(error);
+	}
+
+	return { site, setup, discovered, sync, warning };
+}
+
+async function addSitemapSource(site: SiteRow, sitemapUrl: string, isPrimary?: boolean) {
+	const cleanUrl = normalizeSitemapUrl(sitemapUrl, getSiteHost(site));
 	if (!cleanUrl) {
 		throw new Error("Sitemap URL is required");
 	}
 
-	const existingSources = await db
-		.select({ id: siteSitemaps.id })
-		.from(siteSitemaps)
-		.where(eq(siteSitemaps.siteId, siteId))
-		.limit(1);
+	const existingSources = await db.select({ id: siteSitemaps.id }).from(siteSitemaps).where(eq(siteSitemaps.siteId, site.id)).limit(1);
 	const makePrimary = isPrimary ?? existingSources.length === 0;
 	const now = new Date();
 
 	if (makePrimary) {
-		await db.update(siteSitemaps).set({ isPrimary: false, updatedAt: now }).where(eq(siteSitemaps.siteId, siteId));
+		await db.update(siteSitemaps).set({ isPrimary: false, updatedAt: now }).where(eq(siteSitemaps.siteId, site.id));
 	}
 
 	const [source] = await db
 		.insert(siteSitemaps)
-		.values({
-			siteId,
-			url: cleanUrl,
-			isPrimary: makePrimary,
-			status: "active",
-			updatedAt: now,
-		})
+		.values({ siteId: site.id, url: cleanUrl, isPrimary: makePrimary, status: "active", lastDiscoveredAt: now, updatedAt: now })
 		.onConflictDoUpdate({
 			target: [siteSitemaps.siteId, siteSitemaps.url],
-			set: {
-				isPrimary: makePrimary,
-				status: "active",
-				lastErrorAt: null,
-				lastErrorMessage: null,
-				updatedAt: now,
-			},
+			set: { isPrimary: makePrimary, status: "active", lastErrorAt: null, lastErrorMessage: null, updatedAt: now },
 		})
 		.returning();
 
 	if (makePrimary) {
-		await db.update(sites).set({ sitemapUrl: cleanUrl, updatedAt: now }).where(eq(sites.id, siteId));
+		await db.update(sites).set({ sitemapUrl: cleanUrl, updatedAt: now }).where(eq(sites.id, site.id));
 	}
-
 	return source;
+}
+
+async function discoverAndSaveSitemaps(site: SiteRow) {
+	const discovered = await discoverSitemapUrls(getSiteHost(site));
+	for (const [index, sitemapUrl] of discovered.entries()) {
+		await addSitemapSource(site, sitemapUrl, index === 0);
+	}
+	return discovered;
+}
+
+export async function addSitemapSourceForUser(userId: string, siteId: string, sitemapUrl: string, isPrimary?: boolean) {
+	return addSitemapSource(await requireSite(userId, siteId), sitemapUrl, isPrimary);
+}
+
+export async function discoverSitemapsForUser(userId: string, siteId: string) {
+	return discoverAndSaveSitemaps(await requireSite(userId, siteId));
 }
 
 export async function removeSitemapSourceForUser(userId: string, sourceId: string) {
 	const [source] = await db
-		.select({
-			id: siteSitemaps.id,
-			siteId: siteSitemaps.siteId,
-			isPrimary: siteSitemaps.isPrimary,
-		})
+		.select({ id: siteSitemaps.id, siteId: siteSitemaps.siteId, isPrimary: siteSitemaps.isPrimary })
 		.from(siteSitemaps)
 		.innerJoin(sites, eq(siteSitemaps.siteId, sites.id))
 		.where(and(eq(siteSitemaps.id, sourceId), eq(sites.userId, userId)))
 		.limit(1);
 
 	if (!source) {
-		throw new Error("Sitemap source not found");
+		throw new Error("Sitemap not found");
 	}
 
 	await db.delete(siteSitemaps).where(eq(siteSitemaps.id, sourceId));
 
 	if (source.isPrimary) {
-		const [nextSource] = await db
+		const [next] = await db
 			.select({ id: siteSitemaps.id, url: siteSitemaps.url })
 			.from(siteSitemaps)
 			.where(eq(siteSitemaps.siteId, source.siteId))
 			.orderBy(desc(siteSitemaps.createdAt))
 			.limit(1);
-
-		if (nextSource) {
-			await db.update(siteSitemaps).set({ isPrimary: true, updatedAt: new Date() }).where(eq(siteSitemaps.id, nextSource.id));
-			await db.update(sites).set({ sitemapUrl: nextSource.url, updatedAt: new Date() }).where(eq(sites.id, source.siteId));
-		} else {
-			await db.update(sites).set({ sitemapUrl: null, updatedAt: new Date() }).where(eq(sites.id, source.siteId));
+		const now = new Date();
+		if (next) {
+			await db.update(siteSitemaps).set({ isPrimary: true, updatedAt: now }).where(eq(siteSitemaps.id, next.id));
 		}
+		await db.update(sites).set({ sitemapUrl: next?.url ?? null, updatedAt: now }).where(eq(sites.id, source.siteId));
 	}
+	return source.siteId;
 }
 
-export async function discoverSitemapsForUser(userId: string, siteId: string) {
-	const site = await getSiteForUser(siteId, userId);
-	if (!site) {
-		throw new Error("Site not found");
-	}
-
-	const discovered = await discoverSitemapUrls(getSiteHost(site));
-	for (const [index, sitemapUrl] of discovered.entries()) {
-		await addSitemapSourceForUser(userId, siteId, sitemapUrl, index === 0);
-	}
-
-	return discovered;
+export async function deleteSiteForUser(userId: string, siteId: string) {
+	await requireSite(userId, siteId);
+	await db.delete(sites).where(eq(sites.id, siteId));
 }
 
-async function getEligibleEngines(site: SiteRow, allowManual = false) {
-	const engines: Array<"indexnow" | "bing"> = [];
+// ---------------------------------------------------------------------------
+// Sync: sitemap -> urls (dedup + new/changed detection)
+// ---------------------------------------------------------------------------
 
-	if (!allowManual && !site.automationEnabled) {
-		return engines;
-	}
-
-	const [indexNowInt, bingInt] = await Promise.all([
-		db
-			.select({ status: siteIntegrations.status, automationEnabled: siteIntegrations.automationEnabled })
-			.from(siteIntegrations)
-			.where(and(eq(siteIntegrations.siteId, site.id), eq(siteIntegrations.provider, "indexnow")))
-			.limit(1)
-			.then(([row]) => row || null),
-		db
-			.select({ status: siteIntegrations.status, automationEnabled: siteIntegrations.automationEnabled })
-			.from(siteIntegrations)
-			.where(and(eq(siteIntegrations.siteId, site.id), eq(siteIntegrations.provider, "bing")))
-			.limit(1)
-			.then(([row]) => row || null),
-	]);
-
-	if (indexNowInt?.status === "verified" && (allowManual || indexNowInt.automationEnabled)) {
-		engines.push("indexnow");
-	}
-
-	const [bingUserInt] = await db
-		.select({ status: userIntegrations.status })
-		.from(userIntegrations)
-		.where(and(eq(userIntegrations.userId, site.userId), eq(userIntegrations.provider, "bing")))
-		.limit(1);
-
-	if (bingUserInt?.status === "verified") {
-		const bingEnabled = bingInt ? bingInt.automationEnabled : true;
-		if (allowManual || bingEnabled) {
-			engines.push("bing");
-		}
-	}
-
-	return engines;
-}
-
-async function enqueueSubmissionJob(siteId: string, url: UrlQueueRow, engine: "indexnow" | "bing", reason: string) {
-	const [existing] = await db
-		.select({ id: submissionJobs.id })
-		.from(submissionJobs)
-		.where(
-			and(
-				eq(submissionJobs.siteId, siteId),
-				eq(submissionJobs.loc, url.loc),
-				eq(submissionJobs.engine, engine),
-				or(eq(submissionJobs.status, "queued"), eq(submissionJobs.status, "processing")),
-			),
-		)
-		.limit(1);
-
-	if (existing) {
-		return false;
-	}
-
-	await db.insert(submissionJobs).values({
-		siteId,
-		urlId: url.id,
-		loc: url.loc,
-		engine,
-		reason,
-		status: "queued",
-	});
-
-	return true;
-}
-
-async function enqueueUrlRows(site: SiteRow, urlRows: UrlQueueRow[], reason: string, allowManual = false) {
-	const engines = await getEligibleEngines(site, allowManual);
-	let queued = 0;
-
-	for (const engine of engines) {
-		for (const urlRow of urlRows) {
-			if (await enqueueSubmissionJob(site.id, urlRow, engine, reason)) {
-				queued += 1;
-			}
-		}
-	}
-
-	return queued;
-}
-
-async function syncSitemapSource(site: SiteRow, source: SiteSitemapRow) {
-	const host = getSiteHost(site);
+async function syncSitemapSource(site: SiteRow, source: SiteSitemapRow, entitlement: Entitlement) {
 	const now = new Date();
-	const [syncRow] = await db
-		.insert(sitemaps)
-		.values({
-			siteId: site.id,
-			url: source.url,
-			status: "syncing",
-		})
-		.returning();
+	const [syncRow] = await db.insert(sitemaps).values({ siteId: site.id, url: source.url, status: "syncing" }).returning();
 
 	try {
-		const result = await fetchSitemapTree(source.url, host, AUTOMATION_LIMITS.maxUrlsPerSitemap);
+		const maxUrls = Math.min(entitlement.limits.urlsPerSite, AUTOMATION_LIMITS.maxUrlsPerSitemap);
+		const result = await fetchSitemapTree(source.url, getSiteHost(site), maxUrls);
 		if (result.urls.length === 0) {
-			throw new Error("No matching URL entries found in the sitemap.");
+			throw new Error("No URLs for this exact host were found in the sitemap.");
 		}
 
-		const locs = result.urls.map((entry) => entry.loc);
-		const existingRows = await db
-			.select({
-				id: urls.id,
-				loc: urls.loc,
-				lastmod: urls.lastmod,
-			})
-			.from(urls)
-			.where(and(eq(urls.siteId, site.id), inArray(urls.loc, locs)));
-		const existingByLoc = new Map(existingRows.map((row) => [row.loc, row]));
-
-		const newEntries = result.urls.filter((entry) => !existingByLoc.has(entry.loc));
-		const insertedRows =
-			newEntries.length > 0
-				? await db
-						.insert(urls)
-						.values(
-							newEntries.map((entry) => ({
-								siteId: site.id,
-								loc: entry.loc,
-								lastmod: entry.lastmod,
-								changefreq: entry.changefreq,
-								priority: entry.priority || "0.5",
-								indexingStatus: "unknown",
-								gscStatus: "unknown",
-								lastSeenInSitemapAt: now,
-							})),
-						)
-						.onConflictDoNothing({ target: [urls.siteId, urls.loc] })
-						.returning({ id: urls.id, loc: urls.loc })
-				: [];
-
-		const changedRows: UrlQueueRow[] = [];
-		for (const entry of result.urls) {
-			const existing = existingByLoc.get(entry.loc);
-			if (!existing || !hasLastmodChanged(existing, entry)) {
-				continue;
+		// Look up what we already track. URLs are canonicalized during parsing, so this
+		// lookup is the dedup step: same page from any sitemap or a manual submit = same row.
+		const existingByLoc = new Map<string, { id: string; loc: string; lastmod: Date | null; lastSubmittedAt: Date | null }>();
+		for (const locs of chunk(result.urls.map((entry) => entry.loc), 1000)) {
+			const rows = await db
+				.select({ id: urls.id, loc: urls.loc, lastmod: urls.lastmod, lastSubmittedAt: urls.lastSubmittedAt })
+				.from(urls)
+				.where(and(eq(urls.siteId, site.id), inArray(urls.loc, locs)));
+			for (const row of rows) {
+				existingByLoc.set(row.loc, row);
 			}
-
-			await db
-				.update(urls)
-				.set({
-					lastmod: entry.lastmod,
-					changefreq: entry.changefreq,
-					priority: entry.priority || "0.5",
-					lastSeenInSitemapAt: now,
-				})
-				.where(eq(urls.id, existing.id));
-			changedRows.push({ id: existing.id, loc: existing.loc });
 		}
+
+		// Respect the plan's total URL cap across all of the site's sitemaps.
+		const [{ tracked }] = await db
+			.select({ tracked: sql<number>`cast(count(*) as int)` })
+			.from(urls)
+			.where(eq(urls.siteId, site.id));
+		const capacity = Math.max(0, maxUrls - tracked);
+
+		const newEntries = result.urls.filter((entry) => !existingByLoc.has(entry.loc)).slice(0, capacity);
+		const changedEntries = result.urls.filter((entry) => {
+			const existing = existingByLoc.get(entry.loc);
+			return existing ? hasLastmodAdvanced(existing, entry) : false;
+		});
+		const changedLocs = new Set(changedEntries.map((entry) => entry.loc));
+		const unchangedIds = Array.from(existingByLoc.values())
+			.filter((row) => !changedLocs.has(row.loc))
+			.map((row) => row.id);
+
+		// New + changed rows in one upsert per chunk; ON CONFLICT also covers a concurrent sync.
+		const upserted: UrlQueueRow[] = [];
+		for (const entries of chunk([...newEntries, ...changedEntries], AUTOMATION_LIMITS.upsertChunkSize)) {
+			const rows = await db
+				.insert(urls)
+				.values(
+					entries.map((entry) => ({
+						siteId: site.id,
+						loc: entry.loc,
+						lastmod: entry.lastmod,
+						changefreq: entry.changefreq,
+						priority: entry.priority || "0.5",
+						lastSeenInSitemapAt: now,
+					})),
+				)
+				.onConflictDoUpdate({
+					target: [urls.siteId, urls.loc],
+					set: {
+						lastmod: sql`coalesce(excluded.lastmod, "urls"."lastmod")`,
+						changefreq: sql`coalesce(excluded.changefreq, "urls"."changefreq")`,
+						priority: sql`excluded.priority`,
+						lastSeenInSitemapAt: now,
+					},
+				})
+				.returning({ id: urls.id, loc: urls.loc });
+			upserted.push(...rows);
+		}
+
+		for (const ids of chunk(unchangedIds, 1000)) {
+			await db.update(urls).set({ lastSeenInSitemapAt: now }).where(inArray(urls.id, ids));
+		}
+
+		const newLocs = new Set(newEntries.map((entry) => entry.loc));
+		const cooldownCutoff = now.getTime() - AUTOMATION_LIMITS.resubmitCooldownHours * 60 * MINUTE_MS;
+		const newRows = upserted.filter((row) => newLocs.has(row.loc));
+		const changedRows = upserted.filter((row) => {
+			const existing = existingByLoc.get(row.loc);
+			return existing && !newLocs.has(row.loc) && (!existing.lastSubmittedAt || existing.lastSubmittedAt.getTime() < cooldownCutoff);
+		});
 
 		const [indexNowInt] = await db
 			.select({ publicConfig: siteIntegrations.publicConfig })
 			.from(siteIntegrations)
 			.where(and(eq(siteIntegrations.siteId, site.id), eq(siteIntegrations.provider, "indexnow")))
 			.limit(1);
-		const config = indexNowInt ? readPublicConfig(indexNowInt.publicConfig) : {};
-		const submitNew = config.submitNewUrls ?? true;
-		const submitChanged = config.submitChangedUrls ?? true;
-
-		let queuedNew = 0;
-		if (submitNew && insertedRows.length > 0) {
-			queuedNew = await enqueueUrlRows(site, insertedRows, "new");
-		}
-
-		let queuedChanged = 0;
-		if (submitChanged && changedRows.length > 0) {
-			queuedChanged = await enqueueUrlRows(site, changedRows, "changed");
-		}
+		const config = readPublicConfig(indexNowInt?.publicConfig);
+		const queued =
+			((config.submitNewUrls ?? true) ? await enqueueUrlRows(site, newRows, "new", entitlement) : 0) +
+			((config.submitChangedUrls ?? true) ? await enqueueUrlRows(site, changedRows, "changed", entitlement) : 0);
 
 		await Promise.all([
 			db
 				.update(siteSitemaps)
-				.set({
-					status: "active",
-					lastSyncAt: now,
-					lastErrorAt: null,
-					lastErrorMessage: null,
-					updatedAt: now,
-				})
+				.set({ status: "active", lastSyncAt: now, lastErrorAt: null, lastErrorMessage: null, updatedAt: now })
 				.where(eq(siteSitemaps.id, source.id)),
 			db
 				.update(sitemaps)
 				.set({
 					status: "success",
 					lastSyncTime: now,
+					urlCount: result.urls.length,
+					newCount: newRows.length,
+					changedCount: changedRows.length,
 				})
 				.where(eq(sitemaps.id, syncRow.id)),
+			resolveAlerts(site.id, "Sitemap sync failed"),
 		]);
 
 		return {
-			success: true,
 			sourceId: source.id,
+			url: source.url,
 			urlCount: result.urls.length,
-			insertedCount: insertedRows.length,
+			newCount: newRows.length,
 			changedCount: changedRows.length,
-			queuedCount: queuedNew + queuedChanged,
-			truncated: result.truncated,
+			queuedCount: queued,
+			truncated: result.truncated || newEntries.length < result.urls.length - existingByLoc.size,
 		};
-	} catch (error: unknown) {
+	} catch (error) {
 		const message = truncateMessage(getErrorMessage(error));
-
 		await Promise.all([
 			db
 				.update(siteSitemaps)
-				.set({
-					status: "failed",
-					lastErrorAt: now,
-					lastErrorMessage: message,
-					updatedAt: now,
-				})
+				.set({ status: "failed", lastSyncAt: now, lastErrorAt: now, lastErrorMessage: message, updatedAt: now })
 				.where(eq(siteSitemaps.id, source.id)),
-			db
-				.update(sitemaps)
-				.set({
-					status: "failed",
-					errorMessage: message,
-					lastSyncTime: now,
-				})
-				.where(eq(sitemaps.id, syncRow.id)),
-			db.insert(alerts).values({
-				siteId: site.id,
-				title: "Sitemap Sync Failed",
-				message: `Unable to sync ${source.url}: ${message}`,
-				alertType: "sitemap_failure",
-				resolved: false,
-			}),
+			db.update(sitemaps).set({ status: "failed", errorMessage: message, lastSyncTime: now }).where(eq(sitemaps.id, syncRow.id)),
+			raiseAlert(site.id, "Sitemap sync failed", message.includes(source.url) ? message : `${source.url}: ${message}`, "sitemap_failure"),
 		]);
-
 		throw error;
 	}
 }
 
-async function syncActiveSitemaps(site: SiteRow, sourceId?: string) {
-	const filters = [eq(siteSitemaps.siteId, site.id), eq(siteSitemaps.status, "active")];
+async function syncActiveSitemaps(site: SiteRow, entitlement: Entitlement, sourceId?: string) {
+	const filters = [eq(siteSitemaps.siteId, site.id), ne(siteSitemaps.status, "disabled")];
 	if (sourceId) {
 		filters.push(eq(siteSitemaps.id, sourceId));
 	}
@@ -706,20 +768,19 @@ async function syncActiveSitemaps(site: SiteRow, sourceId?: string) {
 		.select()
 		.from(siteSitemaps)
 		.where(and(...filters))
-		.orderBy(desc(siteSitemaps.isPrimary), desc(siteSitemaps.createdAt));
+		.orderBy(desc(siteSitemaps.isPrimary), asc(siteSitemaps.createdAt));
 
 	if (sources.length === 0) {
-		throw new Error("No active sitemap sources configured.");
+		throw new Error("No sitemap added yet. Add your sitemap URL or run discovery.");
 	}
 
-	const failures: string[] = [];
 	const results = [];
-
+	const failures: string[] = [];
 	for (const source of sources) {
 		try {
-			results.push(await syncSitemapSource(site, source));
+			results.push(await syncSitemapSource(site, source, entitlement));
 		} catch (error) {
-			failures.push(getErrorMessage(error));
+			failures.push(`${source.url}: ${getErrorMessage(error)}`);
 		}
 	}
 
@@ -727,78 +788,173 @@ async function syncActiveSitemaps(site: SiteRow, sourceId?: string) {
 		success: failures.length === 0,
 		results,
 		failures,
-		insertedCount: results.reduce((total, result) => total + result.insertedCount, 0),
+		urlCount: results.reduce((total, result) => total + result.urlCount, 0),
+		newCount: results.reduce((total, result) => total + result.newCount, 0),
 		changedCount: results.reduce((total, result) => total + result.changedCount, 0),
 		queuedCount: results.reduce((total, result) => total + result.queuedCount, 0),
 	};
 }
 
+/** Manual "Sync now": crawl, then immediately submit what was queued for this site. */
 export async function syncSitemapsForUser(userId: string, siteId: string, sourceId?: string) {
-	const site = await getSiteForUser(siteId, userId);
-	if (!site) {
-		throw new Error("Site not found");
-	}
-
-	return syncActiveSitemaps(site, sourceId);
+	const site = await requireSite(userId, siteId);
+	const entitlement = await assertSiteActive(userId, siteId);
+	const result = await syncActiveSitemaps(site, entitlement, sourceId);
+	const processed =
+		result.queuedCount > 0 ? await processSubmissionQueue({ siteId, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline }) : null;
+	return { ...result, submitted: processed?.successCount ?? 0 };
 }
 
-export async function enqueueManualSubmissionForUser(userId: string, siteId: string, urlLoc: string) {
-	const site = await getSiteForUser(siteId, userId);
-	if (!site) {
-		throw new Error("Site not found");
+// ---------------------------------------------------------------------------
+// Submission queue
+// ---------------------------------------------------------------------------
+
+async function getEligibleEngines(site: SiteRow, entitlement: Entitlement, manual = false): Promise<SubmissionEngine[]> {
+	if (!manual && !(site.verified && site.automationEnabled)) {
+		return [];
 	}
 
-	const loc = normalizeUrlForHost(urlLoc, getSiteHost(site));
-	const [existingUrl] = await db
+	const [[indexNow], [bingSite], [bingUser]] = await Promise.all([
+		db
+			.select({ status: siteIntegrations.status, automationEnabled: siteIntegrations.automationEnabled })
+			.from(siteIntegrations)
+			.where(and(eq(siteIntegrations.siteId, site.id), eq(siteIntegrations.provider, "indexnow")))
+			.limit(1),
+		db
+			.select({ automationEnabled: siteIntegrations.automationEnabled })
+			.from(siteIntegrations)
+			.where(and(eq(siteIntegrations.siteId, site.id), eq(siteIntegrations.provider, "bing")))
+			.limit(1),
+		db
+			.select({ status: userIntegrations.status })
+			.from(userIntegrations)
+			.where(and(eq(userIntegrations.userId, site.userId), eq(userIntegrations.provider, "bing")))
+			.limit(1),
+	]);
+
+	const engines: SubmissionEngine[] = [];
+	if (indexNow?.status === "verified" && (manual || indexNow.automationEnabled)) {
+		engines.push("indexnow");
+	}
+	if (entitlement.limits.bing && bingUser?.status === "verified" && (manual || (bingSite?.automationEnabled ?? true))) {
+		engines.push("bing");
+	}
+	return engines;
+}
+
+/**
+ * Bulk enqueue. Dedup is enforced by the partial unique index
+ * submission_jobs_open_unique_idx (one open job per site+loc+engine), so a URL that is
+ * already waiting is silently skipped instead of being submitted twice.
+ */
+async function enqueueUrlRows(site: SiteRow, rows: UrlQueueRow[], reason: SubmissionReason, entitlement: Entitlement, manual = false) {
+	// Domain proof gates every submission path: we must never ping search engines about a
+	// host the user has not proven they control.
+	if (!site.verified) {
+		if (manual) throw new Error("Verify the site's key file first, then submit.");
+		return 0;
+	}
+	if (rows.length === 0) {
+		return 0;
+	}
+	const engines = await getEligibleEngines(site, entitlement, manual);
+	let queued = 0;
+	for (const engine of engines) {
+		for (const batch of chunk(rows, AUTOMATION_LIMITS.upsertChunkSize)) {
+			const inserted = await db
+				.insert(submissionJobs)
+				.values(batch.map((row) => ({ siteId: site.id, urlId: row.id, loc: row.loc, engine, reason, status: "queued" })))
+				.onConflictDoNothing()
+				.returning({ id: submissionJobs.id });
+			queued += inserted.length;
+		}
+	}
+	return queued;
+}
+
+/**
+ * Manual submit for specific URLs (dashboard button, REST, MCP). URLs are canonicalized and
+ * must be on the site's exact host; unknown URLs are added to tracking first.
+ */
+export async function submitUrlsForUser(userId: string, siteId: string, rawUrls: string[]) {
+	const site = await requireSite(userId, siteId);
+	const entitlement = await assertSiteActive(userId, siteId);
+	const host = getSiteHost(site);
+
+	const valid = new Set<string>();
+	const rejected: Array<{ url: string; error: string }> = [];
+	for (const raw of rawUrls.slice(0, 1000)) {
+		try {
+			valid.add(normalizeUrlForHost(raw, host));
+		} catch (error) {
+			rejected.push({ url: raw, error: getErrorMessage(error) });
+		}
+	}
+	if (valid.size === 0) {
+		throw new Error(rejected[0]?.error || "No URLs to submit.");
+	}
+
+	const rows: UrlQueueRow[] = [];
+	for (const locs of chunk(Array.from(valid), AUTOMATION_LIMITS.upsertChunkSize)) {
+		rows.push(
+			...(await db
+				.insert(urls)
+				.values(locs.map((loc) => ({ siteId, loc })))
+				.onConflictDoUpdate({ target: [urls.siteId, urls.loc], set: { loc: sql`excluded.loc` } })
+				.returning({ id: urls.id, loc: urls.loc })),
+		);
+	}
+
+	const queued = await enqueueUrlRows(site, rows, "manual", entitlement, true);
+	if (queued === 0 && (await getEligibleEngines(site, entitlement, true)).length === 0) {
+		throw new Error("Verify the site's key file first, then submit.");
+	}
+	const processed = await processSubmissionQueue({ siteId, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline });
+	return { accepted: valid.size, rejected, queued, ...processed };
+}
+
+/** Back-compat wrapper for single URL callers. */
+export async function enqueueManualSubmissionForUser(userId: string, siteId: string, urlLoc: string) {
+	return submitUrlsForUser(userId, siteId, [urlLoc]);
+}
+
+/** Queue every tracked URL that has never been submitted (e.g. after re-enabling automation). */
+export async function submitPendingForUser(userId: string, siteId: string) {
+	const site = await requireSite(userId, siteId);
+	const entitlement = await assertSiteActive(userId, siteId);
+	const pending = await db
 		.select({ id: urls.id, loc: urls.loc })
 		.from(urls)
-		.where(and(eq(urls.siteId, siteId), eq(urls.loc, loc)))
-		.limit(1);
-	const [urlRow] = existingUrl
-		? [existingUrl]
-		: await db
-				.insert(urls)
-				.values({
-					siteId,
-					loc,
-					indexingStatus: "unknown",
-					gscStatus: "unknown",
-					lastSeenInSitemapAt: new Date(),
-				})
-				.onConflictDoUpdate({
-					target: [urls.siteId, urls.loc],
-					set: { lastSeenInSitemapAt: new Date() },
-				})
-				.returning({ id: urls.id, loc: urls.loc });
-
-	const queuedCount = await enqueueUrlRows(site, [urlRow], "manual", true);
-	if (queuedCount === 0) {
-		throw new Error("No verified submission engine is available for this site.");
+		.where(and(eq(urls.siteId, siteId), isNull(urls.lastSubmittedAt)))
+		.limit(Math.min(entitlement.limits.urlsPerSite, AUTOMATION_LIMITS.maxUrlsPerSitemap));
+	const queued = await enqueueUrlRows(site, pending, "manual", entitlement, true);
+	if (queued === 0 && pending.length > 0 && (await getEligibleEngines(site, entitlement, true)).length === 0) {
+		throw new Error("Verify the site's key file first, then submit.");
 	}
-
-	const processed = await processSubmissionQueue({ siteId, maxJobs: Math.min(queuedCount, 10) });
-	return { queuedCount, processed };
+	const processed = queued > 0 ? await processSubmissionQueue({ siteId, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline }) : null;
+	return { queued, submitted: processed?.successCount ?? 0 };
 }
 
-async function submitEngineBatch(siteId: string, engine: string, urlList: string[]) {
-	const [site] = await db.select().from(sites).where(eq(sites.id, siteId)).limit(1);
-	if (!site) {
-		return { ok: false, status: 0, message: "Site not found." };
-	}
+function isRetryable(result: EngineSubmissionResult) {
+	return result.status === 0 || result.status === 429 || result.status >= 500;
+}
 
+async function submitEngineBatch(site: SiteRow, engine: string, urlList: string[]): Promise<EngineSubmissionResult> {
 	if (engine === "indexnow") {
 		const [integration] = await db
 			.select()
 			.from(siteIntegrations)
-			.where(and(eq(siteIntegrations.siteId, siteId), eq(siteIntegrations.provider, "indexnow")))
+			.where(and(eq(siteIntegrations.siteId, site.id), eq(siteIntegrations.provider, "indexnow")))
 			.limit(1);
-
 		if (!integration?.encryptedSecret || integration.status !== "verified") {
-			return { ok: false, status: 0, message: "IndexNow key is not verified." };
+			return { ok: false, status: 403, message: "IndexNow key is not verified." };
 		}
-
 		const key = await readStoredSecret(integration.encryptedSecret);
-		const keyLocation = getConfiguredKeyLocation(integration.publicConfig, getSiteHost(site), key);
+		const upgraded = await upgradeLegacySecret(integration.encryptedSecret);
+		if (upgraded !== integration.encryptedSecret) {
+			await db.update(siteIntegrations).set({ encryptedSecret: upgraded, updatedAt: new Date() }).where(eq(siteIntegrations.id, integration.id));
+		}
+		const keyLocation = readPublicConfig(integration.publicConfig).keyLocation || getIndexNowKeyLocation(getSiteHost(site), key);
 		return submitIndexNowBatch(getSiteHost(site), key, urlList, keyLocation);
 	}
 
@@ -808,301 +964,295 @@ async function submitEngineBatch(siteId: string, engine: string, urlList: string
 			.from(userIntegrations)
 			.where(and(eq(userIntegrations.userId, site.userId), eq(userIntegrations.provider, "bing")))
 			.limit(1);
-
 		if (!integration?.encryptedSecret || integration.status !== "verified") {
-			return { ok: false, status: 0, message: "Bing API key is not verified." };
+			return { ok: false, status: 403, message: "Bing API key is not verified." };
 		}
-
 		const apiKey = await readStoredSecret(integration.encryptedSecret);
-		return submitBingBatch(apiKey, getSiteUrl(site), urlList);
+		const upgraded = await upgradeLegacySecret(integration.encryptedSecret);
+		if (upgraded !== integration.encryptedSecret) {
+			await db.update(userIntegrations).set({ encryptedSecret: upgraded, updatedAt: new Date() }).where(eq(userIntegrations.id, integration.id));
+		}
+		return submitBingBatch(apiKey, `https://${getSiteHost(site)}`, urlList);
 	}
 
-	return { ok: false, status: 0, message: `Unsupported submission engine: ${engine}.` };
+	return { ok: false, status: 400, message: `Unsupported engine: ${engine}` };
 }
 
+/**
+ * Drain the queue: recover orphaned locks, atomically claim due jobs (manual first), submit
+ * per site+engine in engine-sized batches, then record results. Transient failures
+ * (network/429/5xx) retry with exponential backoff; others fail fast and raise one alert.
+ */
 export async function processSubmissionQueue(options: { siteId?: string; maxJobs?: number } = {}) {
 	const now = new Date();
 	const maxJobs = options.maxJobs ?? AUTOMATION_LIMITS.maxSubmissionJobsPerRun;
-	const baseFilter = options.siteId
-		? and(eq(submissionJobs.status, "queued"), lte(submissionJobs.nextRunAt, now), eq(submissionJobs.siteId, options.siteId))
-		: and(eq(submissionJobs.status, "queued"), lte(submissionJobs.nextRunAt, now));
-	const jobs = await db
-		.select()
-		.from(submissionJobs)
-		.where(baseFilter)
-		.orderBy(submissionJobs.createdAt)
-		.limit(maxJobs);
-
-	if (jobs.length === 0) {
-		return { processedCount: 0, successCount: 0, failedCount: 0 };
-	}
 
 	await db
 		.update(submissionJobs)
-		.set({ status: "processing", lockedAt: now, updatedAt: now })
+		.set({ status: "queued", lockedAt: null, updatedAt: now })
 		.where(
-			inArray(
-				submissionJobs.id,
-				jobs.map((job) => job.id),
+			and(
+				eq(submissionJobs.status, "processing"),
+				lte(submissionJobs.lockedAt, new Date(now.getTime() - AUTOMATION_LIMITS.staleLockMinutes * MINUTE_MS)),
 			),
 		);
 
+	const dueFilter = and(
+		eq(submissionJobs.status, "queued"),
+		lte(submissionJobs.nextRunAt, now),
+		options.siteId ? eq(submissionJobs.siteId, options.siteId) : undefined,
+	);
+	const verifiedSiteIds = db.select({ id: sites.id }).from(sites).where(eq(sites.verified, true));
+	// SKIP LOCKED lets a concurrent run (cron + manual submit) claim disjoint rows. Works over
+	// Neon HTTP because the whole claim is a single UPDATE statement.
+	const candidateIds = db
+		.select({ id: submissionJobs.id })
+		.from(submissionJobs)
+		.where(and(dueFilter, inArray(submissionJobs.siteId, verifiedSiteIds)))
+		.orderBy(sql`case when ${submissionJobs.reason} = 'manual' then 0 else 1 end`, asc(submissionJobs.createdAt))
+		.limit(maxJobs)
+		.for("update", { skipLocked: true });
+	// The outer status check makes the claim safe if two runs race for the same rows.
+	const jobs = await db
+		.update(submissionJobs)
+		.set({ status: "processing", lockedAt: now, updatedAt: now })
+		.where(and(inArray(submissionJobs.id, candidateIds), eq(submissionJobs.status, "queued")))
+		.returning();
+
+	if (jobs.length === 0) {
+		return { processedCount: 0, successCount: 0, failedCount: 0, retryCount: 0 };
+	}
+
 	const groups = new Map<string, typeof jobs>();
 	for (const job of jobs) {
-		const groupKey = `${job.siteId}:${job.engine}`;
-		const group = groups.get(groupKey) ?? [];
-		group.push(job);
-		groups.set(groupKey, group);
+		const key = `${job.siteId}:${job.engine}`;
+		groups.set(key, [...(groups.get(key) ?? []), job]);
 	}
+
+	const siteRows = await db
+		.select()
+		.from(sites)
+		.where(inArray(sites.id, Array.from(new Set(jobs.map((job) => job.siteId)))));
+	const siteById = new Map(siteRows.map((site) => [site.id, site]));
 
 	let successCount = 0;
 	let failedCount = 0;
+	let retryCount = 0;
 
 	for (const group of groups.values()) {
-		for (let index = 0; index < group.length; index += AUTOMATION_LIMITS.engineBatchSize) {
-			const batch = group.slice(index, index + AUTOMATION_LIMITS.engineBatchSize);
-			const batchUrlList = batch.map((job) => job.loc);
-			const result = await submitEngineBatch(batch[0].siteId, batch[0].engine, batchUrlList).catch((error) => ({
-				ok: false,
-				status: 0,
-				message: getErrorMessage(error),
-			}));
-			const status = result.ok ? "success" : "failed";
-			const responseMessage = truncateMessage(result.message);
+		const { siteId, engine } = group[0];
+		const site = siteById.get(siteId);
+		const batchSize = ENGINE_BATCH_SIZE[engine as SubmissionEngine] ?? 100;
+
+		for (const batch of chunk(group, batchSize)) {
+			const urlList = batch.map((job) => job.loc);
+			const result: EngineSubmissionResult = site
+				? await submitEngineBatch(site, engine, urlList).catch((error) => ({ ok: false, status: 0, message: getErrorMessage(error) }))
+				: { ok: false, status: 404, message: "Site no longer exists." };
 			const completedAt = new Date();
+			const responseMessage = truncateMessage(result.message || `HTTP ${result.status}`);
+			const attempt = batch[0].attempts + 1;
+			const retry = !result.ok && isRetryable(result) && attempt < AUTOMATION_LIMITS.maxSubmitAttempts;
+			const jobIds = batch.map((job) => job.id);
 
-			await Promise.all([
-				db.insert(submissions).values(
-					batch.map((job) => ({
-						siteId: job.siteId,
-						loc: job.loc,
-						engine: job.engine,
-						status,
-						responseMessage,
-						attempt: job.attempts + 1,
-					})),
-				),
-				db
-					.update(submissionJobs)
-					.set({
-						status,
-						attempts: sql`${submissionJobs.attempts} + 1`,
-						lockedAt: null,
-						lastErrorMessage: result.ok ? null : responseMessage,
-						updatedAt: completedAt,
-					})
-					.where(
-						inArray(
-							submissionJobs.id,
-							batch.map((job) => job.id),
-						),
+			const writes: Promise<unknown>[] = [
+				...chunk(batch, AUTOMATION_LIMITS.upsertChunkSize).map((rows) =>
+					db.insert(submissions).values(
+						rows.map((job) => ({
+							siteId: job.siteId,
+							loc: job.loc,
+							engine: job.engine,
+							status: result.ok ? "success" : "failed",
+							responseMessage,
+							attempt: job.attempts + 1,
+						})),
 					),
-				db
-					.update(urls)
-					.set({
-						lastSubmittedAt: completedAt,
-						lastSubmissionStatus: status,
-					})
-					.where(and(eq(urls.siteId, batch[0].siteId), inArray(urls.loc, batchUrlList))),
-			]);
+				),
+			];
 
-			if (result.ok) {
-				successCount += batch.length;
+			if (retry) {
+				// 10 min, 20 min, 40 min ... keeps a flaky engine from being hammered.
+				const backoffMs = 10 * MINUTE_MS * 2 ** (attempt - 1);
+				writes.push(
+					db
+						.update(submissionJobs)
+						.set({
+							status: "queued",
+							attempts: attempt,
+							lockedAt: null,
+							nextRunAt: new Date(completedAt.getTime() + backoffMs),
+							lastErrorMessage: responseMessage,
+							updatedAt: completedAt,
+						})
+						.where(inArray(submissionJobs.id, jobIds)),
+				);
+				retryCount += batch.length;
 			} else {
-				failedCount += batch.length;
-				await db.insert(alerts).values({
-					siteId: batch[0].siteId,
-					title: "Submission Failed",
-					message: `${batch[0].engine} submission failed for ${batch.length} URL(s): ${responseMessage}`,
-					alertType: "error_detected",
-					resolved: false,
-				});
+				const status = result.ok ? "success" : "failed";
+				writes.push(
+					db
+						.update(submissionJobs)
+						.set({
+							status,
+							attempts: attempt,
+							lockedAt: null,
+							lastErrorMessage: result.ok ? null : responseMessage,
+							updatedAt: completedAt,
+						})
+						.where(inArray(submissionJobs.id, jobIds)),
+					...chunk(urlList, 1000).map((locs) =>
+						db
+							.update(urls)
+							.set({ lastSubmittedAt: completedAt, lastSubmissionStatus: status })
+							.where(and(eq(urls.siteId, siteId), inArray(urls.loc, locs))),
+					),
+				);
+				if (result.ok) {
+					successCount += batch.length;
+				} else {
+					failedCount += batch.length;
+				}
+			}
+
+			await Promise.all(writes);
+
+			if (!result.ok && !retry && site) {
+				await raiseAlert(siteId, `${engine === "bing" ? "Bing" : "IndexNow"} submission failed`, `${batch.length} URL(s): ${responseMessage}`, "error_detected");
+			} else if (result.ok && site) {
+				await resolveAlerts(siteId, `${engine === "bing" ? "Bing" : "IndexNow"} submission failed`);
 			}
 		}
 	}
 
-	return { processedCount: jobs.length, successCount, failedCount };
+	return { processedCount: jobs.length, successCount, failedCount, retryCount };
 }
 
-export async function runScheduledAutomation() {
-	const cutoff = new Date(Date.now() - 60 * 60 * 1000);
-	const dueRows = await db
-		.select({ siteId: sites.id })
+// ---------------------------------------------------------------------------
+// Cron
+// ---------------------------------------------------------------------------
+
+/**
+ * Pick sitemap sources whose site is due for a re-crawl under its owner's plan interval
+ * (Free daily, paid hourly). Paused sites (over the plan's site limit) are skipped.
+ */
+async function findDueSites(now: Date) {
+	const hourAgo = new Date(now.getTime() - 55 * MINUTE_MS);
+	const rows = await db
+		.select({
+			siteId: sites.id,
+			userId: sites.userId,
+			lastSyncAt: siteSitemaps.lastSyncAt,
+			billingTier: users.billingTier,
+			planExpiresAt: users.planExpiresAt,
+		})
 		.from(siteSitemaps)
 		.innerJoin(sites, eq(siteSitemaps.siteId, sites.id))
-		.where(
-			and(
-				eq(sites.automationEnabled, true),
-				eq(sites.verified, true),
-				eq(siteSitemaps.status, "active"),
-				or(isNull(siteSitemaps.lastSyncAt), lte(siteSitemaps.lastSyncAt, cutoff)),
-			),
-		)
-		.orderBy(siteSitemaps.lastSyncAt)
-		.limit(AUTOMATION_LIMITS.maxSitesPerRun);
-	const siteIds = Array.from(new Set(dueRows.map((row) => row.siteId)));
-	const syncResults = [];
+		.innerJoin(users, eq(sites.userId, users.id))
+		.where(and(ne(siteSitemaps.status, "disabled"), or(isNull(siteSitemaps.lastSyncAt), lte(siteSitemaps.lastSyncAt, hourAgo))))
+		.orderBy(sql`${siteSitemaps.lastSyncAt} asc nulls first`)
+		.limit(1000);
 
-	for (const siteId of siteIds) {
-		const [site] = await db.select().from(sites).where(eq(sites.id, siteId)).limit(1);
-		if (!site) {
-			continue;
+	const entitlements = new Map<string, Entitlement>();
+	for (const row of rows) {
+		if (!entitlements.has(row.userId)) {
+			entitlements.set(row.userId, resolveEntitlement(row, now));
 		}
-
-		syncResults.push(await syncActiveSitemaps(site).catch((error) => ({ success: false, failures: [getErrorMessage(error)] })));
 	}
+	const paused = await getPausedSiteIdsForUsers(entitlements);
 
-	const submissionsResult = await processSubmissionQueue();
-	return {
-		syncedSites: siteIds.length,
-		syncResults,
-		submissions: submissionsResult,
-	};
+	const due: Array<{ siteId: string; entitlement: Entitlement }> = [];
+	const seen = new Set<string>();
+	for (const row of rows) {
+		const entitlement = entitlements.get(row.userId)!;
+		// Small slack so an hourly cron does not skip a site synced 59m ago.
+		const intervalMs = (entitlement.limits.syncIntervalMinutes - 5) * MINUTE_MS;
+		const isDue = !row.lastSyncAt || now.getTime() - row.lastSyncAt.getTime() >= intervalMs;
+		if (isDue && !paused.has(row.siteId) && !seen.has(row.siteId)) {
+			seen.add(row.siteId);
+			due.push({ siteId: row.siteId, entitlement });
+		}
+	}
+	return due.slice(0, AUTOMATION_LIMITS.maxSitesPerRun);
 }
 
-export async function getSiteSettings(userId: string, siteId: string) {
-	const site = await getSiteForUser(siteId, userId);
-	if (!site) {
+/**
+ * Hourly entry point (worker.ts `scheduled`). Order matters: expire plans first so the
+ * sync step sees post-expiry limits, then crawl, then drain the queue. Each run is logged
+ * to cron_runs for the admin panel.
+ */
+export async function runScheduledAutomation() {
+	const startedAt = Date.now();
+	const now = new Date(startedAt);
+	const [run] = await db.insert(cronRuns).values({ status: "running" }).returning({ id: cronRuns.id });
+
+	try {
+		const { downgradeExpiredPlans } = await import("@/lib/platform/razorpay-billing");
+		const downgraded = await downgradeExpiredPlans(now);
+
+		const due = await findDueSites(now);
+		const syncResults: Array<{ siteId: string; ok: boolean; newCount?: number; error?: string }> = [];
+		for (const { siteId, entitlement } of due) {
+			if (Date.now() - startedAt > AUTOMATION_LIMITS.cronTimeBudgetMs) {
+				break;
+			}
+			const [site] = await db.select().from(sites).where(eq(sites.id, siteId)).limit(1);
+			if (!site) {
+				continue;
+			}
+			try {
+				const result = await syncActiveSitemaps(site, entitlement);
+				syncResults.push({ siteId, ok: result.success, newCount: result.newCount });
+			} catch (error) {
+				syncResults.push({ siteId, ok: false, error: getErrorMessage(error) });
+			}
+		}
+
+		const queue = await processSubmissionQueue();
+		const summary = {
+			downgraded,
+			sitesSynced: syncResults.length,
+			syncFailures: syncResults.filter((result) => !result.ok).length,
+			newUrls: syncResults.reduce((total, result) => total + (result.newCount ?? 0), 0),
+			queue,
+			durationMs: Date.now() - startedAt,
+		};
+		await db.update(cronRuns).set({ status: "success", summary, finishedAt: new Date() }).where(eq(cronRuns.id, run.id));
+		return summary;
+	} catch (error) {
+		await db
+			.update(cronRuns)
+			.set({ status: "failed", errorMessage: truncateMessage(getErrorMessage(error)), finishedAt: new Date() })
+			.where(eq(cronRuns.id, run.id));
+		throw error;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Read helpers for settings UI
+// ---------------------------------------------------------------------------
+
+export async function getBingStatusForUser(userId: string) {
+	const [integration] = await db
+		.select()
+		.from(userIntegrations)
+		.where(and(eq(userIntegrations.userId, userId), eq(userIntegrations.provider, "bing")))
+		.limit(1);
+	if (!integration) {
 		return null;
 	}
-
-	const [sitemapSources, indexNow, bing, bingSiteInt, googleSiteInt] = await Promise.all([
-		db
-			.select()
-			.from(siteSitemaps)
-			.where(eq(siteSitemaps.siteId, siteId))
-			.orderBy(desc(siteSitemaps.isPrimary), desc(siteSitemaps.createdAt)),
-		getIndexNowSettings(site),
-		db
-			.select()
-			.from(userIntegrations)
-			.where(and(eq(userIntegrations.userId, userId), eq(userIntegrations.provider, "bing")))
-			.limit(1),
-		db
-			.select()
-			.from(siteIntegrations)
-			.where(and(eq(siteIntegrations.siteId, siteId), eq(siteIntegrations.provider, "bing")))
-			.limit(1)
-			.then(([row]) => row || null),
-		db
-			.select()
-			.from(siteIntegrations)
-			.where(and(eq(siteIntegrations.siteId, siteId), eq(siteIntegrations.provider, "google")))
-			.limit(1)
-			.then(([row]) => row || null),
-	]);
-	const [bingIntegration] = bing;
-	let bingKey: string | null = null;
-	let bingErrorMessage = bingIntegration?.lastErrorMessage ?? null;
-	if (bingIntegration) {
-		try {
-			bingKey = await readStoredSecret(bingIntegration.encryptedSecret);
-		} catch (error) {
-			bingErrorMessage = `Unable to decrypt Bing key: ${getErrorMessage(error)}`;
-		}
-	}
-
+	const key = await readStoredSecret(integration.encryptedSecret).catch(() => null);
 	return {
-		site,
-		sitemapSources,
-		indexNow,
-		bing: bingIntegration
-			? {
-					status: bingIntegration.status,
-					maskedKey: bingKey ? maskCredential(bingKey) : null,
-					verifiedAt: bingIntegration.verifiedAt,
-					lastCheckedAt: bingIntegration.lastCheckedAt,
-					lastErrorMessage: bingErrorMessage,
-					automationEnabled: bingSiteInt ? bingSiteInt.automationEnabled : true,
-				}
-			: null,
-		google: {
-			automationEnabled: googleSiteInt ? googleSiteInt.automationEnabled : false,
-		},
+		status: integration.status,
+		maskedKey: key ? maskCredential(key) : null,
+		verifiedAt: integration.verifiedAt,
+		lastErrorMessage: integration.lastErrorMessage,
 	};
 }
 
-export async function updateEngineAutomationForUser(userId: string, siteId: string, provider: string, enabled: boolean) {
-	const site = await getSiteForUser(siteId, userId);
-	if (!site) {
-		throw new Error("Site not found");
-	}
-
-	if (provider === "indexnow" && enabled) {
-		const [indexNow] = await db
-			.select()
-			.from(siteIntegrations)
-			.where(and(eq(siteIntegrations.siteId, siteId), eq(siteIntegrations.provider, "indexnow")))
-			.limit(1);
-		if (!indexNow || indexNow.status !== "verified") {
-			throw new Error("Verify the IndexNow key before enabling automation.");
-		}
-	}
-
-	if (provider === "bing" && enabled) {
-		const [bingUserInt] = await db
-			.select()
-			.from(userIntegrations)
-			.where(and(eq(userIntegrations.userId, userId), eq(userIntegrations.provider, "bing")))
-			.limit(1);
-		if (!bingUserInt || bingUserInt.status !== "verified") {
-			throw new Error("Verify the Bing Webmaster API key in user settings first.");
-		}
-	}
-
-	const now = new Date();
-	await db
-		.insert(siteIntegrations)
-		.values({
-			siteId,
-			provider,
-			status: provider === "indexnow" ? "pending" : "verified",
-			automationEnabled: enabled,
-			createdAt: now,
-			updatedAt: now,
-		})
-		.onConflictDoUpdate({
-			target: [siteIntegrations.siteId, siteIntegrations.provider],
-			set: {
-				automationEnabled: enabled,
-				updatedAt: now,
-			},
-		});
-}
-
-export async function updateUrlSubmissionRulesForUser(
-	userId: string,
-	siteId: string,
-	submitNewUrls: boolean,
-	submitChangedUrls: boolean
-) {
-	const site = await getSiteForUser(siteId, userId);
-	if (!site) {
-		throw new Error("Site not found");
-	}
-
-	const integration = await ensureIndexNowIntegration(site);
-	const config = readPublicConfig(integration.publicConfig);
-	const updatedConfig = {
-		...config,
-		submitNewUrls,
-		submitChangedUrls,
-	};
-
-	await db
-		.update(siteIntegrations)
-		.set({
-			publicConfig: updatedConfig,
-			updatedAt: new Date(),
-		})
-		.where(eq(siteIntegrations.id, integration.id));
-}
-
-export async function deleteSiteForUser(userId: string, siteId: string) {
-	const site = await getSiteForUser(siteId, userId);
-	if (!site) {
-		throw new Error("Site not found");
-	}
-
-	await db.delete(sites).where(eq(sites.id, siteId));
+export async function countOpenJobs(siteId: string) {
+	const [row] = await db
+		.select({ count: sql<number>`cast(count(*) as int)` })
+		.from(submissionJobs)
+		.where(and(eq(submissionJobs.siteId, siteId), inArray(submissionJobs.status, ["queued", "processing"])));
+	return row?.count ?? 0;
 }

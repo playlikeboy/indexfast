@@ -1,8 +1,19 @@
+/**
+ * IndexFast MCP server (JSON-RPC over Streamable HTTP, stateless). Designed for vibe coders:
+ * an agent inside Claude Code / Cursor can add a site, write the verification key file
+ * into the user's repo, verify, and submit URLs without the user touching the dashboard.
+ *
+ * Rules: tools are thin wrappers over src/lib/platform/operations.ts (no business logic here),
+ * every `site` argument accepts a site id OR a domain, and tool results are JSON text.
+ */
 import type { AuthenticatedApiKey } from "@/lib/platform/api-keys";
 import {
+	addSitemapForApi,
 	bulkSubmitUrlsForApi,
 	createSiteForUser,
 	discoverSitemapsForApi,
+	getAccountStatus,
+	getSiteDetailsForUser,
 	listAlertsForUser,
 	listDirectoryResources,
 	listSeoToolResources,
@@ -11,8 +22,10 @@ import {
 	listUrlsForUser,
 	recommendSeoResources,
 	runDiagnosticsForUser,
-	submitUrlForApi,
+	submitPendingForApi,
 	syncSitemapsForApi,
+	verifySiteForApi,
+	type UrlFilter,
 } from "@/lib/platform/operations";
 
 export type JsonRpcRequest = {
@@ -22,148 +35,170 @@ export type JsonRpcRequest = {
 	params?: Record<string, unknown>;
 };
 
-const serverInfo = {
-	name: "indexfast",
-	title: "IndexFast",
-	version: "0.1.0",
-};
+export const SUPPORTED_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+
+const serverInfo = { name: "indexfast", title: "IndexFast", version: "1.0.0" };
+
+const instructions = `IndexFast gets a website's pages discovered by search engines (IndexNow + Bing) automatically.
+Typical flow for a project in the current repo:
+1. add_site { domain } -> finds sitemaps and URLs, returns a key file to create.
+2. Create that key file in the project's public/static folder (exact name and content), deploy.
+3. verify_site { site } -> proves ownership and turns on auto-submit. Done: new pages are submitted hourly.
+Use get_site to see status and issues. Every "site" argument accepts the domain or the site id.
+IndexFast never guarantees Google indexing; it speeds up discovery.`;
+
+const site = { type: "string", description: "Site domain (e.g. example.com) or site id" };
 
 const tools = [
 	{
-		name: "list_sites",
-		title: "List Sites",
-		description: "List connected IndexFast sites for the authenticated user.",
+		name: "account_status",
+		title: "Account status",
+		description: "Show the current plan, limits, expiry, and all sites with URL counts. Call this first.",
 		inputSchema: { type: "object", properties: {} },
 	},
 	{
 		name: "add_site",
-		title: "Add Site",
-		description: "Connect a new site to IndexFast.",
+		title: "Add website",
+		description: "Add a website by domain. Auto-discovers sitemaps, imports URLs, and returns the verification key file to create.",
 		inputSchema: {
 			type: "object",
 			properties: {
-				domain: { type: "string" },
-				name: { type: "string" },
-				sitemapUrl: { type: "string" },
+				domain: { type: "string", description: "Exact host, e.g. example.com or www.example.com" },
+				sitemapUrl: { type: "string", description: "Optional. Only if auto-discovery cannot find it." },
 			},
 			required: ["domain"],
 		},
 	},
 	{
+		name: "get_site",
+		title: "Get site",
+		description: "Status, setup instructions (key file), sitemaps, URL counts and open issues for one site.",
+		inputSchema: { type: "object", properties: { site }, required: ["site"] },
+	},
+	{
+		name: "verify_site",
+		title: "Verify site",
+		description:
+			"Check the key file is live. On success, turns on automatic submission and submits all pending URLs. If the site already hosts an IndexNow key, pass it (or its file URL) as existingKey instead of creating a new file.",
+		inputSchema: {
+			type: "object",
+			properties: { site, existingKey: { type: "string", description: "Optional. Existing IndexNow key, or full URL of the existing key file." } },
+			required: ["site"],
+		},
+	},
+	{
+		name: "add_sitemap",
+		title: "Add sitemap",
+		description: "Add a sitemap URL (must be on the site's exact host).",
+		inputSchema: { type: "object", properties: { site, sitemapUrl: { type: "string" } }, required: ["site", "sitemapUrl"] },
+	},
+	{
 		name: "discover_sitemaps",
-		title: "Discover Sitemaps",
-		description: "Probe robots.txt and common sitemap/feed paths for a site.",
-		inputSchema: { type: "object", properties: { siteId: { type: "string" } }, required: ["siteId"] },
+		title: "Discover sitemaps",
+		description: "Re-run sitemap discovery from robots.txt and common paths.",
+		inputSchema: { type: "object", properties: { site }, required: ["site"] },
 	},
 	{
-		name: "sync_sitemap",
-		title: "Sync Sitemap",
-		description: "Sync all active sitemap sources or a specific source.",
+		name: "sync_now",
+		title: "Sync now",
+		description: "Crawl the site's sitemaps now, detect new/updated URLs, and submit them.",
+		inputSchema: { type: "object", properties: { site }, required: ["site"] },
+	},
+	{
+		name: "submit_urls",
+		title: "Submit URLs",
+		description: "Submit specific URLs right now (max 1000). Use after publishing or updating pages.",
 		inputSchema: {
 			type: "object",
-			properties: { siteId: { type: "string" }, sourceId: { type: "string" } },
-			required: ["siteId"],
+			properties: { site, urls: { type: "array", items: { type: "string" } } },
+			required: ["site", "urls"],
 		},
 	},
 	{
-		name: "submit_url",
-		title: "Submit URL",
-		description: "Queue and process a manual IndexNow/Bing submission for one URL.",
-		inputSchema: {
-			type: "object",
-			properties: { siteId: { type: "string" }, url: { type: "string" } },
-			required: ["siteId", "url"],
-		},
-	},
-	{
-		name: "bulk_submit_urls",
-		title: "Bulk Submit URLs",
-		description: "Submit up to 50 URLs for a site.",
-		inputSchema: {
-			type: "object",
-			properties: { siteId: { type: "string" }, urls: { type: "array", items: { type: "string" } } },
-			required: ["siteId", "urls"],
-		},
-	},
-	{
-		name: "run_diagnostics",
-		title: "Run Diagnostics",
-		description: "Run a live indexability diagnostic check for a URL.",
-		inputSchema: {
-			type: "object",
-			properties: { siteId: { type: "string" }, urlId: { type: "string" }, url: { type: "string" } },
-			required: ["siteId"],
-		},
-	},
-	{
-		name: "list_alerts",
-		title: "List Alerts",
-		description: "List recent IndexFast alerts.",
-		inputSchema: { type: "object", properties: { limit: { type: "number" } } },
-	},
-	{
-		name: "list_submissions",
-		title: "List Submissions",
-		description: "List recent submission events for a site.",
-		inputSchema: {
-			type: "object",
-			properties: { siteId: { type: "string" }, limit: { type: "number" } },
-			required: ["siteId"],
-		},
+		name: "submit_pending",
+		title: "Submit pending",
+		description: "Submit every tracked URL that has never been submitted.",
+		inputSchema: { type: "object", properties: { site }, required: ["site"] },
 	},
 	{
 		name: "list_urls",
 		title: "List URLs",
-		description: "List ingested URLs and their indexing/crawling status for a site.",
+		description: "List tracked URLs. filter: all | new (last 7 days) | pending | submitted | failed.",
 		inputSchema: {
 			type: "object",
-			properties: { siteId: { type: "string" }, limit: { type: "number" } },
-			required: ["siteId"],
+			properties: {
+				site,
+				filter: { type: "string", enum: ["all", "new", "pending", "submitted", "failed"] },
+				limit: { type: "number" },
+			},
+			required: ["site"],
 		},
 	},
 	{
-		name: "list_seo_tools",
-		title: "List SEO Tools",
-		description: "List prioritized third-party SEO tools.",
-		inputSchema: {
-			type: "object",
-			properties: { priority: { type: "string", enum: ["P0", "P1", "P2", "P3"] } },
-		},
+		name: "list_submissions",
+		title: "Submission log",
+		description: "Recent submission attempts with engine responses.",
+		inputSchema: { type: "object", properties: { site, limit: { type: "number" } }, required: ["site"] },
 	},
 	{
-		name: "list_directories",
-		title: "List Directories",
-		description: "List prioritized SEO and launch submission directories.",
-		inputSchema: { type: "object", properties: { priority: { type: "string", enum: ["P0", "P1", "P2", "P3"] } } },
+		name: "check_url",
+		title: "Check URL",
+		description: "Live indexability check of a URL: HTTP status, noindex, canonical, title.",
+		inputSchema: { type: "object", properties: { site, url: { type: "string" } }, required: ["site", "url"] },
+	},
+	{
+		name: "list_issues",
+		title: "List issues",
+		description: "Recent alerts across all sites (sitemap failures, submission errors).",
+		inputSchema: { type: "object", properties: { limit: { type: "number" } } },
 	},
 	{
 		name: "recommend_seo_resources",
-		title: "Recommend SEO Resources",
-		description: "Recommend directories and tools for a launch, AI visibility, or indexing goal.",
+		title: "Recommend SEO resources",
+		description: "Launch directories and SEO tools for a goal (e.g. 'launch an AI SaaS').",
 		inputSchema: { type: "object", properties: { goal: { type: "string" } }, required: ["goal"] },
+	},
+	{
+		name: "list_directories",
+		title: "List directories",
+		description: "Prioritized startup/SEO submission directories.",
+		inputSchema: { type: "object", properties: { priority: { type: "string", enum: ["P0", "P1", "P2", "P3"] } } },
+	},
+	{
+		name: "list_seo_tools",
+		title: "List SEO tools",
+		description: "Prioritized third-party SEO tools.",
+		inputSchema: { type: "object", properties: { priority: { type: "string", enum: ["P0", "P1", "P2", "P3"] } } },
 	},
 ];
 
+// Old tool names from v0 of the MCP server, kept so existing agent configs keep working.
+const toolAliases: Record<string, string> = {
+	list_sites: "account_status",
+	sync_sitemap: "sync_now",
+	submit_url: "submit_urls",
+	bulk_submit_urls: "submit_urls",
+	run_diagnostics: "check_url",
+	list_alerts: "list_issues",
+};
+
 const prompts = [
 	{
-		name: "pseo_launch_audit",
-		title: "pSEO Launch Audit",
-		description: "Audit a programmatic SEO launch for sitemap, indexing, and submission readiness.",
+		name: "setup_indexing",
+		title: "Set up indexing for this project",
+		description: "Add this project's website to IndexFast, install the key file in the repo, and verify.",
+		arguments: [{ name: "domain", description: "Production domain of this project", required: true }],
 	},
 	{
 		name: "indexing_recovery_plan",
-		title: "Indexing Recovery Plan",
-		description: "Create a recovery plan for pages that are missing, blocked, or dropped.",
+		title: "Indexing recovery plan",
+		description: "Diagnose why pages are not getting discovered and produce fixes.",
+		arguments: [{ name: "domain", description: "Site domain", required: true }],
 	},
 	{
-		name: "directory_submission_plan",
-		title: "Directory Submission Plan",
-		description: "Prioritize directories and third-party resources for startup launch distribution.",
-	},
-	{
-		name: "agentic_seo_audit",
-		title: "Agentic SEO Audit",
-		description: "Tell an AI IDE how to inspect code, sitemaps, robots rules, and IndexFast data together.",
+		name: "launch_distribution_plan",
+		title: "Launch distribution plan",
+		description: "Prioritized directories and resources for launching this product.",
 	},
 ];
 
@@ -176,180 +211,160 @@ function asNumber(value: unknown, fallback = 100) {
 }
 
 function asStringArray(value: unknown) {
+	if (typeof value === "string") return [value];
 	return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-function textContent(value: unknown) {
+function textContent(value: unknown, isError = false) {
 	return {
-		content: [
-			{
-				type: "text",
-				text: typeof value === "string" ? value : JSON.stringify(value, null, 2),
-			},
-		],
-		isError: false,
+		content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }],
+		isError,
 	};
 }
 
 function jsonRpcResult(id: JsonRpcRequest["id"], result: unknown) {
-	return { jsonrpc: "2.0", id: id ?? null, result };
+	return { jsonrpc: "2.0" as const, id: id ?? null, result };
 }
 
 function jsonRpcError(id: JsonRpcRequest["id"], code: number, message: string) {
-	return { jsonrpc: "2.0", id: id ?? null, error: { code, message } };
+	return { jsonrpc: "2.0" as const, id: id ?? null, error: { code, message } };
 }
 
-async function callTool(auth: AuthenticatedApiKey, name: string, args: Record<string, unknown>) {
+async function callTool(auth: AuthenticatedApiKey, rawName: string, args: Record<string, unknown>) {
+	const name = toolAliases[rawName] ?? rawName;
+	const siteRef = asString(args.site) || asString(args.siteId) || asString(args.domain);
+
 	switch (name) {
-		case "list_sites":
-			return textContent(await listSitesForUser(auth.userId));
+		case "account_status":
+			return getAccountStatus(auth.userId);
 		case "add_site":
-			return textContent(
-				await createSiteForUser({
-					userId: auth.userId,
-					domain: asString(args.domain),
-					name: asString(args.name) || asString(args.domain),
-					sitemapUrl: asString(args.sitemapUrl) || undefined,
-				}),
-			);
+			return createSiteForUser({
+				userId: auth.userId,
+				domain: asString(args.domain),
+				sitemapUrl: asString(args.sitemapUrl) || undefined,
+			});
+		case "get_site":
+			return getSiteDetailsForUser(auth.userId, siteRef);
+		case "verify_site":
+			return verifySiteForApi(auth.userId, siteRef, asString(args.existingKey) || undefined);
+		case "add_sitemap":
+			return addSitemapForApi(auth.userId, siteRef, asString(args.sitemapUrl));
 		case "discover_sitemaps":
-			return textContent(await discoverSitemapsForApi(auth.userId, asString(args.siteId)));
-		case "sync_sitemap":
-			return textContent(await syncSitemapsForApi(auth.userId, asString(args.siteId), asString(args.sourceId) || undefined));
-		case "submit_url":
-			return textContent(await submitUrlForApi(auth.userId, asString(args.siteId), asString(args.url)));
-		case "bulk_submit_urls":
-			return textContent(await bulkSubmitUrlsForApi(auth.userId, asString(args.siteId), asStringArray(args.urls)));
-		case "run_diagnostics":
-			return textContent(
-				await runDiagnosticsForUser({
-					userId: auth.userId,
-					siteId: asString(args.siteId),
-					urlId: asString(args.urlId) || undefined,
-					url: asString(args.url) || undefined,
-				}),
-			);
-		case "list_alerts":
-			return textContent(await listAlertsForUser(auth.userId, asNumber(args.limit)));
-		case "list_submissions":
-			return textContent(await listSubmissionsForUser(auth.userId, asString(args.siteId), asNumber(args.limit)));
+			return { sitemaps: await discoverSitemapsForApi(auth.userId, siteRef) };
+		case "sync_now":
+			return syncSitemapsForApi(auth.userId, siteRef);
+		case "submit_urls":
+			return bulkSubmitUrlsForApi(auth.userId, siteRef, [...asStringArray(args.urls), ...asStringArray(args.url)]);
+		case "submit_pending":
+			return submitPendingForApi(auth.userId, siteRef);
 		case "list_urls":
-			return textContent(await listUrlsForUser(auth.userId, asString(args.siteId), asNumber(args.limit)));
-		case "list_seo_tools":
-			return textContent(listSeoToolResources(asString(args.priority) as "P0" | "P1" | "P2" | "P3" | undefined));
-		case "list_directories":
-			return textContent(listDirectoryResources(asString(args.priority) as "P0" | "P1" | "P2" | "P3" | undefined));
+			return listUrlsForUser(auth.userId, siteRef, asNumber(args.limit), (asString(args.filter) || "all") as UrlFilter);
+		case "list_submissions":
+			return listSubmissionsForUser(auth.userId, siteRef, asNumber(args.limit, 50));
+		case "check_url":
+			return runDiagnosticsForUser({ userId: auth.userId, siteId: siteRef, url: asString(args.url), urlId: asString(args.urlId) || undefined });
+		case "list_issues":
+			return listAlertsForUser(auth.userId, asNumber(args.limit, 50));
 		case "recommend_seo_resources":
-			return textContent(recommendSeoResources(asString(args.goal)));
+			return recommendSeoResources(asString(args.goal));
+		case "list_directories":
+			return listDirectoryResources((asString(args.priority) || undefined) as "P0" | "P1" | "P2" | "P3" | undefined);
+		case "list_seo_tools":
+			return listSeoToolResources((asString(args.priority) || undefined) as "P0" | "P1" | "P2" | "P3" | undefined);
 		default:
-			throw new Error(`Unknown tool: ${name}`);
+			throw new Error(`Unknown tool: ${rawName}`);
 	}
 }
 
 async function readResource(auth: AuthenticatedApiKey, uri: string) {
-	if (uri === "indexfast://sites") {
-		return listSitesForUser(auth.userId);
+	if (uri === "indexfast://account") return getAccountStatus(auth.userId);
+	if (uri === "indexfast://sites") return listSitesForUser(auth.userId);
+	if (uri === "indexfast://issues" || uri === "indexfast://alerts") return listAlertsForUser(auth.userId);
+	if (uri === "indexfast://resources/directories") return listDirectoryResources();
+	if (uri === "indexfast://resources/tools") return listSeoToolResources();
+	const siteMatch = /^indexfast:\/\/sites\/([^/]+)(\/urls)?$/.exec(uri);
+	if (siteMatch) {
+		return siteMatch[2] ? listUrlsForUser(auth.userId, decodeURIComponent(siteMatch[1])) : getSiteDetailsForUser(auth.userId, decodeURIComponent(siteMatch[1]));
 	}
-	if (uri === "indexfast://alerts") {
-		return listAlertsForUser(auth.userId);
-	}
-	if (uri === "indexfast://resources/directories") {
-		return listDirectoryResources();
-	}
-	if (uri === "indexfast://resources/tools") {
-		return listSeoToolResources();
-	}
-
-	const siteUrlsMatch = /^indexfast:\/\/sites\/([^/]+)\/urls$/.exec(uri);
-	if (siteUrlsMatch) {
-		return listUrlsForUser(auth.userId, siteUrlsMatch[1]);
-	}
-
 	throw new Error(`Unknown resource: ${uri}`);
 }
 
-function getPrompt(name: string) {
-	const prompt = prompts.find((item) => item.name === name);
-	if (!prompt) {
-		throw new Error(`Unknown prompt: ${name}`);
-	}
-
-	const text = {
-		pseo_launch_audit:
-			"Audit this pSEO launch with IndexFast. Check sitemap coverage, URL count, indexability blockers, IndexNow readiness, Bing setup, AI crawler access, and launch directory opportunities. Return prioritized fixes.",
-		indexing_recovery_plan:
-			"Use IndexFast data to build an indexing recovery plan. Separate technical blockers, sitemap issues, search-engine submission gaps, and content-quality risks. Do not promise guaranteed Google indexing.",
-		directory_submission_plan:
-			"Create a directory submission plan using IndexFast resources. Prioritize P0/P1 listings, explain effort, and separate launch, SaaS review, AI, developer, and community channels.",
-		agentic_seo_audit:
-			"Act as an agentic SEO engineer. Inspect code, robots.txt, sitemap routes, metadata, structured data, IndexFast diagnostics, API/MCP setup, and CLI workflows. Produce concise implementation tasks.",
-	}[name as keyof typeof promptText];
-
-	return {
-		description: prompt.description,
-		messages: [
-			{
-				role: "user",
-				content: { type: "text", text },
-			},
-		],
+function getPrompt(name: string, args: Record<string, unknown>) {
+	const domain = asString(args.domain) || "<your production domain>";
+	const texts: Record<string, string> = {
+		setup_indexing: `Set up IndexFast for ${domain}. Steps: call add_site with domain "${domain}". Create the returned key file in this repo's public/static folder with the exact name and content (no newline or extra text). Tell me to deploy, then call verify_site. Finally call get_site and summarise sitemaps, URL counts and any issues.`,
+		indexing_recovery_plan: `Use IndexFast to diagnose ${domain}: get_site, list_urls with filter "failed" and "pending", list_issues, and check_url on 3-5 important pages. Then inspect this codebase's robots.txt, sitemap generation, canonical and noindex logic. Output a prioritised fix list. Do not promise guaranteed Google indexing.`,
+		launch_distribution_plan:
+			"Call recommend_seo_resources with this product's category, then produce a launch plan: P0 directories first, effort per listing, and what copy/assets to prepare.",
 	};
+	const prompt = prompts.find((item) => item.name === name);
+	if (!prompt) throw new Error(`Unknown prompt: ${name}`);
+	return { description: prompt.description, messages: [{ role: "user", content: { type: "text", text: texts[name] } }] };
 }
 
-const promptText = {
-	pseo_launch_audit: "",
-	indexing_recovery_plan: "",
-	directory_submission_plan: "",
-	agentic_seo_audit: "",
-};
-
+/** Returns null for JSON-RPC notifications (no id): the HTTP layer answers 202 with no body. */
 export async function handleMcpRequest(auth: AuthenticatedApiKey, request: JsonRpcRequest) {
 	const method = request.method || "";
 	const params = request.params || {};
+	const isNotification = request.id === undefined || method.startsWith("notifications/");
+
+	if (isNotification) {
+		return null;
+	}
 
 	try {
 		switch (method) {
-			case "initialize":
+			case "initialize": {
+				const requested = asString(params.protocolVersion);
 				return jsonRpcResult(request.id, {
-					protocolVersion: "2025-11-25",
+					protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : SUPPORTED_PROTOCOL_VERSIONS[0],
 					serverInfo,
-					capabilities: {
-						tools: { listChanged: false },
-						resources: { listChanged: false },
-						prompts: { listChanged: false },
-					},
+					instructions,
+					capabilities: { tools: { listChanged: false }, resources: { listChanged: false }, prompts: { listChanged: false } },
 				});
+			}
+			case "ping":
+				return jsonRpcResult(request.id, {});
 			case "tools/list":
 				return jsonRpcResult(request.id, { tools });
-			case "tools/call":
-				return jsonRpcResult(request.id, await callTool(auth, asString(params.name), (params.arguments as Record<string, unknown>) || {}));
+			case "tools/call": {
+				// Tool failures are returned as isError results (not protocol errors) so the agent sees the message.
+				try {
+					const value = await callTool(auth, asString(params.name), (params.arguments as Record<string, unknown>) || {});
+					return jsonRpcResult(request.id, textContent(value));
+				} catch (error) {
+					return jsonRpcResult(request.id, textContent(error instanceof Error ? error.message : "Tool failed", true));
+				}
+			}
 			case "resources/list":
 				return jsonRpcResult(request.id, {
 					resources: [
-						{ uri: "indexfast://sites", name: "sites", title: "Connected Sites", mimeType: "application/json" },
-						{ uri: "indexfast://alerts", name: "alerts", title: "Recent Alerts", mimeType: "application/json" },
-						{ uri: "indexfast://resources/directories", name: "directories", title: "SEO Directories", mimeType: "application/json" },
-						{ uri: "indexfast://resources/tools", name: "tools", title: "SEO Tools", mimeType: "application/json" },
+						{ uri: "indexfast://account", name: "account", title: "Plan and sites", mimeType: "application/json" },
+						{ uri: "indexfast://sites", name: "sites", title: "Sites", mimeType: "application/json" },
+						{ uri: "indexfast://issues", name: "issues", title: "Open issues", mimeType: "application/json" },
+						{ uri: "indexfast://resources/directories", name: "directories", title: "Launch directories", mimeType: "application/json" },
+						{ uri: "indexfast://resources/tools", name: "tools", title: "SEO tools", mimeType: "application/json" },
+					],
+				});
+			case "resources/templates/list":
+				return jsonRpcResult(request.id, {
+					resourceTemplates: [
+						{ uriTemplate: "indexfast://sites/{site}", name: "site", title: "Site details", mimeType: "application/json" },
+						{ uriTemplate: "indexfast://sites/{site}/urls", name: "site-urls", title: "Site URLs", mimeType: "application/json" },
 					],
 				});
 			case "resources/read": {
 				const uri = asString(params.uri);
 				return jsonRpcResult(request.id, {
-					contents: [
-						{
-							uri,
-							mimeType: "application/json",
-							text: JSON.stringify(await readResource(auth, uri), null, 2),
-						},
-					],
+					contents: [{ uri, mimeType: "application/json", text: JSON.stringify(await readResource(auth, uri), null, 2) }],
 				});
 			}
 			case "prompts/list":
 				return jsonRpcResult(request.id, { prompts });
 			case "prompts/get":
-				return jsonRpcResult(request.id, getPrompt(asString(params.name)));
+				return jsonRpcResult(request.id, getPrompt(asString(params.name), (params.arguments as Record<string, unknown>) || {}));
 			default:
-				return jsonRpcError(request.id, -32601, `Unknown MCP method: ${method}`);
+				return jsonRpcError(request.id, -32601, `Method not found: ${method}`);
 		}
 	} catch (error) {
 		return jsonRpcError(request.id, -32000, error instanceof Error ? error.message : "Unknown MCP error");

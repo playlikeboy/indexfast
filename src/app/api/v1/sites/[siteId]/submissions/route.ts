@@ -1,4 +1,4 @@
-import { bulkSubmitUrlsForApi, listSubmissionsForUser, submitUrlForApi } from "@/lib/platform/operations";
+import { bulkSubmitUrlsForApi, listSubmissionsForUser, submitPendingForApi, submitUrlForApi } from "@/lib/platform/operations";
 import { readJsonBody, withApiAuth } from "@/lib/platform/http";
 
 type RouteContext = {
@@ -18,7 +18,10 @@ export async function GET(request: Request, context: RouteContext) {
 export async function POST(request: Request, context: RouteContext) {
 	const { siteId } = await context.params;
 	return withApiAuth(request, ["submissions:write"], async (auth) => {
-		const body = await readJsonBody<{ url?: string; urls?: string[] }>(request);
+		const body = await readJsonBody<{ url?: string; urls?: string[]; pending?: boolean }>(request);
+		if (body.pending) {
+			return { submission: await submitPendingForApi(auth.userId, siteId) };
+		}
 		if (Array.isArray(body.urls)) {
 			return { submissions: await bulkSubmitUrlsForApi(auth.userId, siteId, body.urls) };
 		}

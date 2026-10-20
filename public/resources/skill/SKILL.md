@@ -41,7 +41,7 @@ Use this skill when a user wants to improve search visibility, audit indexing pr
 
 ### Agentic SEO Setup
 
-1. Generate an IndexFast API key directly inside the `/dashboard/mcp` console (automatically configured with `mcp:use` and default data scopes).
+1. Create an IndexFast key at `https://indexfast.co/dashboard/connect` (works on every plan, including Free).
 2. Copy and add the generated MCP server config block to the user's AI IDE config (Cursor, Claude Desktop).
 3. Use IndexFast resources and MCP tools to automate site indexing checks.
 
@@ -66,16 +66,24 @@ You can use the CLI in GitHub Actions or Vercel deployments:
 
 ## MCP Tools
 
-- `list_sites`
-- `add_site`
-- `discover_sitemaps`
-- `sync_sitemap`
-- `submit_url`
-- `bulk_submit_urls`
-- `run_diagnostics`
-- `list_alerts`
-- `list_submissions`
-- `list_urls`
-- `list_seo_tools`
-- `list_directories`
-- `recommend_seo_resources`
+Every `site` argument accepts the domain (e.g. `example.com`) or the site id.
+
+- `account_status` - plan, limits, expiry, and all sites. Call first.
+- `add_site` - add by domain; discovers sitemaps, imports URLs, returns the key file to create.
+- `get_site` - status, setup steps, sitemaps, URL counts, open issues.
+- `verify_site` - confirms the key file is live, turns on auto-submit, submits pending URLs. If the site already hosts an IndexNow key, pass `existingKey` (the key or its file URL) and skip creating a new file.
+- `add_sitemap`, `discover_sitemaps`, `sync_now`
+- `submit_urls` - submit up to 1000 URLs now (after publishing or updating pages).
+- `submit_pending` - submit every URL that was never submitted.
+- `list_urls` - filter `all | new | pending | submitted | failed`.
+- `list_submissions`, `check_url`, `list_issues`
+- `recommend_seo_resources`, `list_directories`, `list_seo_tools`
+
+Older names (`list_sites`, `sync_sitemap`, `submit_url`, `bulk_submit_urls`, `run_diagnostics`, `list_alerts`) still work as aliases.
+
+## Setup flow for a project in the current repo
+
+1. `add_site { "domain": "<production domain>" }`
+2. Create the returned key file in the project's public/static folder: exact file name, content is only the key.
+3. Ask the user to deploy, then `verify_site { "site": "<domain>" }`.
+4. After publishing pages later: `submit_urls`.

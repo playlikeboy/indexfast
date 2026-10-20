@@ -9,7 +9,7 @@ const SITE_URL = "https://indexfast.co";
 export const metadata: Metadata = {
 	title: "Pricing | IndexFast",
 	description:
-		"Simple, transparent pricing for agentic SEO. Scale your indexing and monitoring as you grow.",
+		"Free, Pro at $19/month, or Unlimited at $99/month. Prepaid 30-day plans with no auto-renewal.",
 };
 
 export default function PricingPage() {

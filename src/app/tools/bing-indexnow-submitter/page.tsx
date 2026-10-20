@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
+import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -93,46 +93,7 @@ export default function BingIndexNowSubmitterPage() {
 							Free. No signup required.
 						</p>
 
-						<form className="mt-10 space-y-4" action="#" method="get">
-							<div>
-								<label htmlFor="key-input" className="block text-sm font-semibold text-ink">
-									IndexNow Key
-								</label>
-								<p className="mt-1 text-xs text-muted">
-									Enter the IndexNow key associated with your domain.
-								</p>
-								<input
-									id="key-input"
-									type="text"
-									name="key"
-									placeholder="your-indexnow-key"
-									required
-									className="mt-3 w-full border border-ink bg-surface px-4 py-3 text-sm placeholder:text-muted focus:border-accent focus:outline-none"
-								/>
-							</div>
-							<div>
-								<label htmlFor="urls-input" className="block text-sm font-semibold text-ink">
-									URLs to submit (one per line)
-								</label>
-								<p className="mt-1 text-xs text-muted">
-									Enter up to 10,000 URLs per request.
-								</p>
-								<textarea
-									id="urls-input"
-									name="urls"
-									rows={8}
-									required
-									placeholder="https://example.com/page-1&#10;https://example.com/page-2"
-									className="mt-3 w-full border border-ink bg-surface px-4 py-3 text-sm placeholder:text-muted focus:border-accent focus:outline-none"
-								/>
-							</div>
-							<button
-								type="submit"
-								className="bg-ink px-6 py-3 text-sm font-semibold text-surface transition-colors hover:bg-ink/85"
-							>
-								Submit URLs
-							</button>
-						</form>
+						<ToolRunner toolType="bing-indexnow-submitter" buttonLabel="Submit URLs to IndexNow" />
 
 						<div className="prose prose-muted mt-14 max-w-none space-y-6 text-sm leading-relaxed text-muted">
 							<h2 className="text-base font-bold text-ink">How IndexNow submission works</h2>

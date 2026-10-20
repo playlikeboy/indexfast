@@ -1,16 +1,85 @@
+import { sql } from "drizzle-orm";
 import { pgTable, text, timestamp, integer, boolean, uuid, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 
-// Users table mapping to Stack Auth profiles or internal users
+// Users table mapping to Stack Auth profiles.
+// Entitlement = billingTier + planExpiresAt. A null planExpiresAt on a paid tier means a
+// legacy Dodo subscription whose lifecycle is driven by Dodo webhooks, not by expiry.
 export const users = pgTable(
 	"users",
 	{
 		id: text("id").primaryKey(), // Stack Auth user ID
 		email: text("email").notNull(),
-		billingTier: text("billing_tier").default("free").notNull(), // 'free', 'indie', 'growth', 'agency', 'scale'
+		billingTier: text("billing_tier").default("free").notNull(), // 'free', 'pro', 'unlimited' (+ hidden legacy: 'indie', 'growth', 'agency', 'scale')
+		planExpiresAt: timestamp("plan_expires_at"), // End of the prepaid Razorpay period; see docs/billing.md for the grace policy
+		lastSeenAt: timestamp("last_seen_at"), // Throttled dashboard activity marker for admin analytics
 		createdAt: timestamp("created_at").defaultNow().notNull(),
 		updatedAt: timestamp("updated_at").defaultNow().notNull(),
 	},
 	(table) => [index("users_email_idx").on(table.email)],
+);
+
+// Razorpay payment ledger. One row per checkout order; the row is the source of truth for
+// which period a payment bought, so activation is idempotent across the client verify call
+// and the webhook (whichever arrives first wins via a conditional status update).
+export const payments = pgTable(
+	"payments",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		userId: text("user_id")
+			.references(() => users.id, { onDelete: "cascade" })
+			.notNull(),
+		provider: text("provider").default("razorpay").notNull(),
+		orderId: text("order_id").notNull(),
+		paymentId: text("payment_id"),
+		plan: text("plan").notNull(), // 'pro' | 'unlimited'
+		amount: integer("amount").notNull(), // Minor currency units (cents / paise)
+		currency: text("currency").notNull(),
+		status: text("status").default("created").notNull(), // 'created', 'paid', 'failed', 'refunded'
+		periodStart: timestamp("period_start"),
+		periodEnd: timestamp("period_end"),
+		failureReason: text("failure_reason"),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at").defaultNow().notNull(),
+	},
+	(table) => [
+		uniqueIndex("payments_order_unique_idx").on(table.orderId),
+		index("payments_user_created_idx").on(table.userId, table.createdAt),
+		index("payments_status_created_idx").on(table.status, table.createdAt),
+	],
+);
+
+// First-party, cookie-less page view analytics for the admin panel. visitorHash is a
+// daily-rotating SHA-256 of ip+ua so we can count uniques without storing PII.
+export const pageViews = pgTable(
+	"page_views",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		path: text("path").notNull(),
+		referrer: text("referrer"), // Referrer host only, never the full URL
+		country: text("country"),
+		device: text("device"), // 'mobile' | 'desktop' | 'tablet'
+		visitorHash: text("visitor_hash").notNull(),
+		userId: text("user_id"),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+	},
+	(table) => [
+		index("page_views_created_idx").on(table.createdAt),
+		index("page_views_path_created_idx").on(table.path, table.createdAt),
+	],
+);
+
+// One row per scheduled automation run so the admin panel can prove the cron is alive.
+export const cronRuns = pgTable(
+	"cron_runs",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		status: text("status").default("running").notNull(), // 'running', 'success', 'failed'
+		summary: jsonb("summary"),
+		errorMessage: text("error_message"),
+		startedAt: timestamp("started_at").defaultNow().notNull(),
+		finishedAt: timestamp("finished_at"),
+	},
+	(table) => [index("cron_runs_started_idx").on(table.startedAt)],
 );
 
 // Hashed IndexFast API keys for REST, MCP, and CLI access
@@ -262,6 +331,9 @@ export const sitemaps = pgTable(
 		status: text("status").default("pending").notNull(), // 'pending', 'syncing', 'success', 'failed'
 		lastSyncTime: timestamp("last_sync_time"),
 		errorMessage: text("error_message"),
+		urlCount: integer("url_count"), // URLs seen in this sync (after host filtering + dedup)
+		newCount: integer("new_count"), // URLs never seen before for this site
+		changedCount: integer("changed_count"), // Known URLs whose <lastmod> moved forward
 		createdAt: timestamp("created_at").defaultNow().notNull(),
 	},
 	(table) => [
@@ -342,6 +414,11 @@ export const submissionJobs = pgTable(
 		index("submission_jobs_site_id_idx").on(table.siteId),
 		index("submission_jobs_status_due_idx").on(table.status, table.nextRunAt),
 		index("submission_jobs_engine_status_idx").on(table.engine, table.status),
+		// Queue-level dedup: at most one open job per (site, url, engine). Lets enqueue be a
+		// single bulk INSERT ... ON CONFLICT DO NOTHING instead of a select-per-URL.
+		uniqueIndex("submission_jobs_open_unique_idx")
+			.on(table.siteId, table.loc, table.engine)
+			.where(sql`${table.status} in ('queued', 'processing')`),
 	],
 );
 

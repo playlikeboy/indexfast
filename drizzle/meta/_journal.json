@@ -29,6 +29,20 @@
       "when": 1780770095860,
       "tag": "0003_cold_thundra",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791982557377,
+      "tag": "0004_reverify_sites",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792054198291,
+      "tag": "0005_razorpay_admin_analytics",
+      "breakpoints": true
     }
   ]
 }

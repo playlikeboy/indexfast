@@ -1,3 +1,8 @@
+/**
+ * LEGACY: DodoPayments billing. Hidden from the UI (Razorpay is the only checkout now, see
+ * razorpay-billing.ts) but kept so existing Dodo subscribers keep receiving webhook updates.
+ * Do not build new features on this module.
+ */
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { billingCustomers, billingEvents, subscriptions, users } from "@/db/schema";
@@ -11,7 +16,7 @@ type DodoPayload = {
 	data?: Record<string, unknown>;
 };
 
-const productPlanEnv: Record<BillingTier, string | undefined> = {
+const productPlanEnv: Partial<Record<BillingTier, string | undefined>> = {
 	free: undefined,
 	indie: process.env.DODO_PRODUCT_ID_INDIE,
 	growth: process.env.DODO_PRODUCT_ID_GROWTH,
