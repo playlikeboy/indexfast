@@ -109,7 +109,7 @@ bun run preview            # build + wrangler preview
 └── src/
     ├── stack.ts                # StackServerApp singleton
     ├── app/                    # App Router
-    │   ├── layout.tsx          # root: fonts, StackProvider, JSON-LD (Org + SoftwareApplication + FAQ)
+    │   ├── layout.tsx          # root: fonts, StackProvider, JSON-LD (Org + SoftwareApplication), PageViewTracker
     │   ├── page.tsx            # marketing landing (composes Hero, Problem, Solution, ...)
     │   ├── actions.ts          # "use server" — all auth-gated mutating actions
     │   ├── globals.css         # Tailwind v4 + theme tokens
@@ -478,8 +478,9 @@ and `bun run cron:dev`.
   catalog. Do not auto-submit to third-party directories unless an official
   API supports it; provide deep links, checklists, and tracking instead.
 - `src/lib/resources/tools.ts` stores curated third-party SEO tools.
-- The root layout emits three JSON-LD blocks: `Organization`,
-  `SoftwareApplication`, and `FAQPage`. Keep the FAQ claims honest —
+- The root layout emits `Organization` and `SoftwareApplication` JSON-LD. `FAQPage`
+  is emitted only on `/`, generated from the exported `faqs` array in
+  `components/marketing/FAQ.tsx` so markup always matches the visible FAQ. Keep the FAQ claims honest —
   the platform explicitly does **not** guarantee Google indexing and uses
   Google's Indexing API only for eligible JobPosting/livestream pages.
 - The marketing design is brutalist: acid-lime accent (`#ccff00`), Geist

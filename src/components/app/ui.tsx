@@ -11,7 +11,7 @@ export function cn(...classes: Array<string | false | null | undefined>) {
 
 export function Card({ children, className, title, action, description }: { children?: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; description?: ReactNode }) {
 	return (
-		<section className={cn("rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[0_1px_2px_rgba(0,0,0,0.03)]", className)}>
+		<section className={cn("rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)]", className)}>
 			{title || action ? (
 				<header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--app-border)] px-5 py-4">
 					<div className="min-w-0">
@@ -42,7 +42,7 @@ export function Badge({ tone = "neutral", children }: { tone?: Tone; children: R
 
 export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
 	return (
-		<div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+		<div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3">
 			<div className="text-xs font-medium text-[var(--app-muted)]">{label}</div>
 			<div className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{value}</div>
 			{hint ? <div className="mt-0.5 text-xs text-[var(--app-muted)]">{hint}</div> : null}
@@ -66,8 +66,8 @@ export function PageHeader({ title, description, action }: { title: ReactNode; d
 const focusRing = "outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-text)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-bg)]";
 
 export const buttonClass = {
-	primary: `inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground shadow-sm transition hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`,
-	secondary: `inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3.5 py-2 text-sm font-medium shadow-sm transition hover:bg-[var(--app-subtle)] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`,
+	primary: `inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground transition hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`,
+	secondary: `inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3.5 py-2 text-sm font-medium transition hover:bg-[var(--app-subtle)] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`,
 	ghost: `inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--app-muted)] transition hover:bg-[var(--app-subtle)] hover:text-[var(--app-text)] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`,
 	danger: `inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-[var(--app-bad)]/30 px-3.5 py-2 text-sm font-medium text-[var(--app-bad)] transition hover:bg-[var(--app-bad-bg)] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`,
 };
@@ -89,6 +89,32 @@ export function ButtonLink({ href, children, variant = "secondary", external }: 
 		<Link href={href} className={buttonClass[variant]}>
 			{children}
 		</Link>
+	);
+}
+
+/** Letter tile for a site: recognisable at a glance without fetching third-party favicons. */
+export function SiteAvatar({ host, size = "md" }: { host: string; size?: "md" | "lg" }) {
+	const letter = host.replace(/^www\./, "").charAt(0).toUpperCase() || "?";
+	return (
+		<span
+			aria-hidden
+			className={cn(
+				"grid shrink-0 place-items-center rounded-lg border border-[var(--app-border)] bg-[var(--app-subtle)] font-semibold text-[var(--app-text)]",
+				size === "lg" ? "h-10 w-10 text-base" : "h-9 w-9 text-sm",
+			)}
+		>
+			{letter}
+		</span>
+	);
+}
+
+/** Thin progress bar (submitted / tracked). Neutral ink, not lime: lime is reserved for actions. */
+export function Progress({ value, max, label }: { value: number; max: number; label: string }) {
+	const percent = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
+	return (
+		<div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--app-subtle)]" role="progressbar" aria-label={label} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+			<div className="h-full rounded-full bg-[var(--app-ok)]" style={{ width: `${percent}%` }} />
+		</div>
 	);
 }
 

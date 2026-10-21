@@ -94,44 +94,6 @@ const softwareJsonLd = {
 	},
 };
 
-const faqJsonLd = {
-	"@context": "https://schema.org",
-	"@type": "FAQPage",
-	mainEntity: [
-		{
-			"@type": "Question",
-			name: "Can IndexFast guarantee Google indexing?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "No. Google decides what it indexes. IndexFast helps search engines discover URLs and helps you find technical blockers, but indexing is never guaranteed.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "Which search engines can I notify?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "IndexFast supports IndexNow workflows and direct Bing submissions. A successful submission is a discovery signal, not a promise that a page will be indexed.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "Can I connect AI agents and developer tools?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "Yes. Connect workflows through the API or remote MCP server, and use the CLI for terminal-based tasks.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "Do I need to verify my website?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "Yes, ownership verification is required for site-level automation and protected integrations.",
-			},
-		},
-	],
-};
 
 export default function RootLayout({
 	children,
@@ -149,7 +111,6 @@ export default function RootLayout({
 				/>
 				<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} />
 				<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }} />
-				<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
 			</head>
 			<body className={[geistSans.variable, geistMono.variable, "antialiased"].join(" ")}>
 				<StackProvider app={stack}>

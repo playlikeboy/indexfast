@@ -1,8 +1,8 @@
 export function Solution() {
 	const steps = [
-		{ number: "01", title: "Discover", desc: "Track sitemap URLs and spot new or changed pages." },
-		{ number: "02", title: "Diagnose", desc: "Find noindex tags, canonical issues, redirects, and HTTP errors." },
-		{ number: "03", title: "Submit", desc: "Notify supported search engines with IndexNow and Bing workflows." },
+		{ number: "01", title: "Add your domain", desc: "We find your sitemap and import every URL. Nothing to configure." },
+		{ number: "02", title: "Drop in one file", desc: "Put a tiny key file in public/, or ask your AI editor to do it over MCP." },
+		{ number: "03", title: "Forget about it", desc: "Every hour, new and updated pages are submitted automatically, with retries." },
 	];
 
 	return (
@@ -12,10 +12,10 @@ export function Solution() {
 					<div>
 						<p className="label-mono">How it works</p>
 						<h2 id="workflow-heading" className="display mt-3 max-w-xl text-3xl sm:text-4xl">
-							A clearer path to search discovery.
+							Live in two minutes. Then it runs itself.
 						</h2>
 					</div>
-					<p className="max-w-sm text-sm leading-relaxed text-muted">One workflow for people, publishing pipelines, and AI agents.</p>
+					<p className="max-w-sm text-sm leading-relaxed text-muted">No crawl budget guessing, no copy-pasting URLs into webmaster tools after every deploy.</p>
 				</div>
 				<div className="mt-8 grid gap-4 md:grid-cols-3">
 					{steps.map((step) => (

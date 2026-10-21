@@ -1,11 +1,11 @@
 export function Features() {
 	const features = [
-		{ title: "Sitemap monitoring", desc: "Keep tabs on sitemap sources and URL changes." },
-		{ title: "Indexability diagnostics", desc: "Spot noindex tags, canonical mismatches, redirects, and HTTP errors." },
-		{ title: "IndexNow + Bing", desc: "Submit new and updated URLs through supported discovery workflows." },
-		{ title: "Bulk URL workflows", desc: "Run checks and submissions across multiple URLs." },
-		{ title: "Submission history", desc: "Review job status, responses, and recent failures." },
-		{ title: "Developer access", desc: "Connect publishing workflows with the API, CLI, or MCP server." },
+		{ title: "Never miss a new page", desc: "Hourly sitemap checks catch every new URL and every page whose lastmod changed." },
+		{ title: "No duplicate pings", desc: "URLs are deduped across sitemaps, and unchanged pages are never resubmitted." },
+		{ title: "Works inside your AI editor", desc: "MCP for Claude Code, Cursor, VS Code and Windsurf: \"I just published a post, submit it\" works." },
+		{ title: "Catch what blocks indexing", desc: "Check any URL for noindex tags, canonical mismatches, redirects and HTTP errors." },
+		{ title: "IndexNow + Bing in one place", desc: "One key reaches every IndexNow engine. Add a Bing API key for direct submissions too." },
+		{ title: "Know when something breaks", desc: "A failing sitemap or rejected submission shows up as an issue, with the exact reason." },
 	];
 
 	return (
@@ -15,10 +15,10 @@ export function Features() {
 					<div>
 						<p className="label-mono">What you get</p>
 						<h2 id="features-heading" className="display mt-3 max-w-2xl text-3xl sm:text-4xl">
-							The essentials. Nothing extra to wade through.
+							Everything between deployed and discovered.
 						</h2>
 					</div>
-					<p className="max-w-xs text-sm leading-relaxed text-muted">Practical tools for keeping your URLs healthy and discoverable.</p>
+					<p className="max-w-xs text-sm leading-relaxed text-muted">Built for sites that publish often: blogs, docs, programmatic SEO and launch pages.</p>
 				</div>
 
 				<div className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -27,7 +27,7 @@ import {
 	verifySiteAction,
 } from "@/app/actions";
 import { ActionButton, ActionForm, CodeBlock, CopyButton } from "@/components/app/client";
-import { Badge, ButtonLink, Card, Code, EmptyState, PageHeader, Stat, cn, inputClass, timeAgo } from "@/components/app/ui";
+import { Badge, ButtonLink, Card, Code, EmptyState, PageHeader, Progress, SiteAvatar, Stat, cn, inputClass, timeAgo } from "@/components/app/ui";
 import { URL_PAGE_SIZE, type SitePageData, type UrlTab } from "@/db/app-queries";
 import { formatLimit } from "@/lib/platform/plans";
 import { getSiteHost } from "@/lib/url-utils";
@@ -67,7 +67,8 @@ export function SiteView({ data, tab, q, pageNumber }: { data: SitePageData; tab
 			</div>
 			<PageHeader
 				title={
-					<span className="flex items-center gap-2">
+					<span className="flex items-center gap-3">
+						<SiteAvatar host={host} size="lg" />
 						{host}
 						<a href={`https://${host}`} target="_blank" rel="noreferrer" className="text-[var(--app-muted)] hover:text-[var(--app-text)]" aria-label={`Open ${host}`}>
 							<ExternalLink className="h-4 w-4" />
@@ -91,7 +92,12 @@ export function SiteView({ data, tab, q, pageNumber }: { data: SitePageData; tab
 			/>
 
 			{!site.verified ? (
-				<Card className="mb-6 border-accent/60" title="Finish setup: add one file to your site" description="This proves you own the site and lets search engines accept your submissions.">
+				<Card
+					className="mb-6 border-[var(--app-text)]/25"
+					title="Finish setup: add one file to your site"
+					description="This proves you own the site and lets search engines accept your submissions."
+					action={<span className="text-xs font-medium text-[var(--app-muted)]">{sources.length > 0 && stats.total > 0 ? "Step 2 of 3" : "Step 1 of 3"}</span>}
+				>
 					<div className="space-y-5 p-5">
 						<ol className="space-y-5 text-sm">
 							<li className="flex gap-3">
@@ -162,7 +168,11 @@ export function SiteView({ data, tab, q, pageNumber }: { data: SitePageData; tab
 
 			<div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
 				<Stat label="Tracked URLs" value={stats.total.toLocaleString()} hint={`Limit ${formatLimit(entitlement.limits.urlsPerSite)}`} />
-				<Stat label="Submitted" value={stats.submitted.toLocaleString()} />
+				<Stat
+					label="Submitted"
+					value={stats.submitted.toLocaleString()}
+					hint={stats.total > 0 ? <span className="mt-1.5 block"><Progress value={stats.submitted} max={stats.total} label="Share of URLs submitted" /></span> : undefined}
+				/>
 				<Stat label="Pending" value={stats.pending.toLocaleString()} hint={stats.failed > 0 ? `${stats.failed} failed` : undefined} />
 				<Stat label="New this week" value={stats.new7d.toLocaleString()} />
 			</div>

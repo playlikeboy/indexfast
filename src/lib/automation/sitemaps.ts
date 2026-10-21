@@ -163,6 +163,27 @@ async function fetchCandidateSource(url: string, host: string) {
 }
 
 /**
+ * Check a user-supplied sitemap URL before saving it, so a blog post or HTML page pasted
+ * by mistake is rejected with a clear reason instead of failing every hour in the cron.
+ */
+export async function validateSitemapUrl(url: string, host: string) {
+	let res;
+	try {
+		res = await safeFetchText(url, { userAgent: "IndexFast Sitemap Discoverer/1.0", timeoutMs: 10000, maxBytes: MAX_SITEMAP_BYTES });
+	} catch (error) {
+		return `Could not fetch ${url}: ${error instanceof Error ? error.message : "network error"}`;
+	}
+	if (res.status !== 200) {
+		return `${url} returned HTTP ${res.status}.`;
+	}
+	const body = res.text.trim();
+	if (!body.startsWith("<") || !/<(?:[\w-]+:)?(urlset|sitemapindex|rss|feed)\b/i.test(body)) {
+		return `${url} is not a sitemap. Use an XML sitemap URL, usually ${`https://${host}/sitemap.xml`}.`;
+	}
+	return null;
+}
+
+/**
  * Breadth-first walk through sitemap indexes. Returns deduplicated URL entries (keyed by the
  * canonical loc produced in parseSitemapXml), so the same page listed in two child sitemaps
  * is only ingested once.
@@ -175,6 +196,9 @@ export async function fetchSitemapTree(
 	const queue = [startUrl];
 	const seenSitemaps = new Set<string>();
 	const urlEntries = new Map<string, ParsedSitemapUrl>();
+	// Hosts of <loc> entries dropped by the exact-host filter. Lets sync explain the classic
+	// mistake: adding "x.github.io" when the sitemap lists "customdomain.com".
+	const foreignHosts = new Map<string, number>();
 
 	while (queue.length > 0 && urlEntries.size < maxUrls && seenSitemaps.size < MAX_SITEMAP_FILES) {
 		const current = queue.shift();
@@ -185,6 +209,12 @@ export async function fetchSitemapTree(
 		seenSitemaps.add(current);
 		const xml = await fetchText(current, "IndexFast Sitemap Crawler/1.0");
 		const parsed = parseSitemapXml(xml, host);
+		if (parsed.urls.length === 0 && parsed.sitemaps.length === 0) {
+			for (const match of xml.matchAll(/<(?:[\w-]+:)?loc>\s*(?:<!\[CDATA\[)?\s*https?:\/\/([^/<\s\]:]+)/gi)) {
+				const foreign = match[1].toLowerCase();
+				if (foreign !== host) foreignHosts.set(foreign, (foreignHosts.get(foreign) ?? 0) + 1);
+			}
+		}
 
 		for (const sitemapUrl of parsed.sitemaps) {
 			if (!seenSitemaps.has(sitemapUrl)) {
@@ -208,6 +238,7 @@ export async function fetchSitemapTree(
 		sitemapCount: seenSitemaps.size,
 		urls: Array.from(urlEntries.values()),
 		truncated: urlEntries.size >= maxUrls || queue.length > 0,
+		foreignHosts: Array.from(foreignHosts.entries()).sort((a, b) => b[1] - a[1]).map(([name]) => name),
 	};
 }
 

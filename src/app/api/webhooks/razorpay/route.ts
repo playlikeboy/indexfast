@@ -16,6 +16,9 @@ export async function POST(request: Request) {
 	const rawBody = await request.text();
 	const valid = await verifyWebhookSignature(rawBody, request.headers.get("x-razorpay-signature"), webhookSecret);
 	if (!valid) {
+		// Visible in Workers logs: the usual cause is RAZORPAY_WEBHOOK_SECRET not matching the
+		// secret set on the webhook in the Razorpay dashboard.
+		console.warn("Razorpay webhook rejected: signature mismatch", { event: request.headers.get("x-razorpay-event-id") });
 		return Response.json({ error: "Invalid signature" }, { status: 401 });
 	}
 

@@ -42,7 +42,7 @@ import {
 	verifyIndexNowKey,
 	type EngineSubmissionResult,
 } from "./search-engines";
-import { discoverSitemapUrls, fetchSitemapTree, type ParsedSitemapUrl } from "./sitemaps";
+import { discoverSitemapUrls, fetchSitemapTree, validateSitemapUrl, type ParsedSitemapUrl } from "./sitemaps";
 
 type SiteRow = typeof sites.$inferSelect;
 type SiteSitemapRow = typeof siteSitemaps.$inferSelect;
@@ -524,14 +524,18 @@ export async function createSiteForUser(input: { userId: string; domain: string;
 	let sync: Awaited<ReturnType<typeof syncActiveSitemaps>> | null = null;
 	let warning: string | null = null;
 	try {
-		if (cleanSitemapUrl) {
+		const sitemapProblem = cleanSitemapUrl ? await validateSitemapUrl(cleanSitemapUrl, host) : null;
+		if (cleanSitemapUrl && !sitemapProblem) {
 			await addSitemapSource(site, cleanSitemapUrl, true);
 			discovered = [cleanSitemapUrl];
 		} else {
+			// A bad manual sitemap URL falls back to discovery rather than failing onboarding.
+			if (sitemapProblem) warning = `${sitemapProblem} Searched for one automatically instead.`;
 			discovered = await discoverAndSaveSitemaps(site);
 		}
 		if (discovered.length > 0) {
 			sync = await syncActiveSitemaps(site, entitlement);
+			if (!sync.success && sync.urlCount === 0) warning = sync.failures[0] ?? warning;
 		} else {
 			warning = `No sitemap found at ${host}/robots.txt or common paths. Add your sitemap URL manually.`;
 		}
@@ -580,7 +584,13 @@ async function discoverAndSaveSitemaps(site: SiteRow) {
 }
 
 export async function addSitemapSourceForUser(userId: string, siteId: string, sitemapUrl: string, isPrimary?: boolean) {
-	return addSitemapSource(await requireSite(userId, siteId), sitemapUrl, isPrimary);
+	const site = await requireSite(userId, siteId);
+	const cleanUrl = normalizeSitemapUrl(sitemapUrl, getSiteHost(site));
+	const problem = cleanUrl ? await validateSitemapUrl(cleanUrl, getSiteHost(site)) : "Sitemap URL is required";
+	if (problem) {
+		throw new Error(problem);
+	}
+	return addSitemapSource(site, sitemapUrl, isPrimary);
 }
 
 export async function discoverSitemapsForUser(userId: string, siteId: string) {
@@ -634,7 +644,11 @@ async function syncSitemapSource(site: SiteRow, source: SiteSitemapRow, entitlem
 		const maxUrls = Math.min(entitlement.limits.urlsPerSite, AUTOMATION_LIMITS.maxUrlsPerSitemap);
 		const result = await fetchSitemapTree(source.url, getSiteHost(site), maxUrls);
 		if (result.urls.length === 0) {
-			throw new Error("No URLs for this exact host were found in the sitemap.");
+			throw new Error(
+				result.foreignHosts[0]
+					? `This sitemap lists URLs on ${result.foreignHosts[0]}, not ${getSiteHost(site)}. Add ${result.foreignHosts[0]} as the website instead.`
+					: "The sitemap has no URLs yet.",
+			);
 		}
 
 		// Look up what we already track. URLs are canonicalized during parsing, so this

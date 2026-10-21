@@ -13,8 +13,8 @@ export function Pricing({ compact = false }: { compact?: boolean }) {
 				<div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
 					<div>
 						<p className="label-mono">Pricing</p>
-						<h2 id="pricing-heading" className={compact ? "mt-2 text-3xl font-bold tracking-tight" : "display mt-3 max-w-2xl text-4xl sm:text-5xl"}>
-							{compact ? "Simple pricing." : <>Two plans. <span className="text-highlight">No surprises.</span></>}
+						<h2 id="pricing-heading" className={compact ? "display mt-3 max-w-2xl text-3xl sm:text-4xl" : "display mt-3 max-w-2xl text-4xl sm:text-5xl"}>
+							{compact ? "Free to start. $19 when you grow." : <>Two plans. <span className="text-highlight">No surprises.</span></>}
 						</h2>
 						<p className="mt-3 max-w-2xl text-muted">Start free. Pay for 30 days when you need more. No auto-renewal, cancel by simply not renewing.</p>
 					</div>
@@ -29,7 +29,7 @@ export function Pricing({ compact = false }: { compact?: boolean }) {
 					{VISIBLE_PLANS.map((plan) => {
 						const highlight = plan.id === "unlimited";
 						return (
-							<article key={plan.id} className={`flex flex-col rounded-lg border p-6 ${highlight ? "border-accent bg-zinc-950 text-zinc-100 shadow-xl dark:bg-zinc-900" : "border-border/70 bg-card/40"}`}>
+							<article key={plan.id} className={`flex flex-col rounded-lg border p-6 ${highlight ? "border-accent bg-zinc-950 text-zinc-100 dark:bg-zinc-900" : "border-border/70 bg-card/40"}`}>
 								<div className="flex items-center justify-between">
 									<h3 className={`text-sm font-bold uppercase tracking-wide ${highlight ? "text-zinc-100" : "text-ink"}`}>{plan.name}</h3>
 									{highlight ? <span className="rounded-sm bg-accent/15 px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-accent">Everything</span> : null}

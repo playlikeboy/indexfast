@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { AddSiteForm } from "@/components/app/AddSiteForm";
-import { Badge, ButtonLink, Card, PageHeader, timeAgo } from "@/components/app/ui";
+import { Badge, ButtonLink, Card, PageHeader, Progress, SiteAvatar, timeAgo } from "@/components/app/ui";
 import { type DashboardHomeData, type SiteStatus } from "@/db/app-queries";
 import { formatLimit } from "@/lib/platform/plans";
 
@@ -70,7 +70,8 @@ export function HomeView({ data }: { data: Pick<DashboardHomeData, "sites" | "en
 				<ul className="divide-y divide-[var(--app-border)]">
 					{sites.map(({ site, status, stats, lastSyncAt, openIssues }) => (
 						<li key={site.id}>
-							<Link href={`/dashboard/sites/${site.id}`} className="flex items-center gap-4 px-5 py-4 transition hover:bg-[var(--app-subtle)]">
+							<Link href={`/dashboard/sites/${site.id}`} className="group flex items-center gap-4 px-5 py-4 transition hover:bg-[var(--app-subtle)]">
+								<SiteAvatar host={site.indexingHost || site.domain} />
 								<div className="min-w-0 flex-1">
 									<div className="flex flex-wrap items-center gap-2">
 										<span className="truncate font-medium">{site.indexingHost || site.domain}</span>
@@ -82,7 +83,13 @@ export function HomeView({ data }: { data: Pick<DashboardHomeData, "sites" | "en
 										{stats.new7d > 0 ? ` · ${stats.new7d.toLocaleString()} new this week` : ""} · {lastSyncAt ? `checked ${timeAgo(lastSyncAt)}` : "not checked yet"}
 									</p>
 								</div>
-								<ChevronRight className="h-4 w-4 shrink-0 text-[var(--app-muted)]" aria-hidden />
+								{stats.total > 0 ? (
+									<div className="hidden w-36 shrink-0 sm:block">
+										<Progress value={stats.submitted} max={stats.total} label={`${site.domain} submitted`} />
+										<p className="mt-1 text-right text-xs tabular-nums text-[var(--app-muted)]">{Math.round((stats.submitted / stats.total) * 100)}% submitted</p>
+									</div>
+								) : null}
+								<ChevronRight className="h-4 w-4 shrink-0 text-[var(--app-muted)] transition group-hover:translate-x-0.5" aria-hidden />
 							</Link>
 						</li>
 					))}

@@ -1,19 +1,24 @@
-const faqs = [
+/** Single source for the visible FAQ and its FAQPage JSON-LD (rendered on the home page). */
+export const faqs = [
 	{
-		q: "Can IndexFast guarantee Google indexing?",
-		a: "No. Google decides what it indexes. IndexFast helps search engines discover URLs and helps you find technical blockers, but indexing is never guaranteed.",
+		q: "How long does setup take?",
+		a: "About two minutes. Add your domain, we find your sitemap, then you put one small key file in your site's public folder and click Verify. Your AI editor can do the file step for you.",
 	},
 	{
-		q: "Which search engines can I notify?",
-		a: "IndexFast supports IndexNow workflows and direct Bing submissions. A successful submission is a discovery signal, not a promise that a page will be indexed.",
+		q: "Which search engines get my pages?",
+		a: "Every engine in the IndexNow network, including Bing, Yandex, Naver, Seznam and Yep. On Pro and Unlimited you can also add a Bing Webmaster API key for direct Bing submissions.",
 	},
 	{
-		q: "Can I connect AI agents and developer tools?",
-		a: "Yes. Connect workflows through the API or remote MCP server, and use the CLI for terminal-based tasks.",
+		q: "Does it work with Google?",
+		a: "Google does not take IndexNow submissions, and nobody can guarantee Google indexing. IndexFast still helps there: it keeps your sitemap monitored and flags noindex, canonical and HTTP problems that stop any engine from indexing a page.",
 	},
 	{
-		q: "Do I need to verify my website?",
-		a: "Yes, ownership verification is required for site-level automation and protected integrations.",
+		q: "Do I need to write code?",
+		a: "No. The dashboard covers everything. If you use Claude Code, Cursor, VS Code or Windsurf, connect our MCP server and just ask your AI to set it up or submit new pages.",
+	},
+	{
+		q: "What happens if I stop paying?",
+		a: "Plans are prepaid for 30 days and never auto-charge. After the end date you get 3 days of grace, then the account moves to Free: your first site keeps running, extra sites pause, and nothing is deleted.",
 	},
 ];
 

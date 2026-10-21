@@ -5,17 +5,16 @@ export function FinalCTA() {
 	return (
 		<section className="px-4 py-12 sm:px-6 sm:py-16" id="cta" aria-labelledby="cta-heading">
 			<div className="relative mx-auto max-w-6xl overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 p-7 text-zinc-100 sm:p-10 lg:flex lg:items-center lg:justify-between lg:gap-12">
-				<div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-accent/10 blur-3xl" aria-hidden="true" />
 				<div className="relative">
 					<p className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-accent">Get started</p>
 					<h2 id="cta-heading" className="display mt-3 max-w-2xl text-3xl text-zinc-100 sm:text-4xl">
-						Make indexing part of your release workflow.
+						Your next page deserves to be found.
 					</h2>
-					<p className="mt-3 max-w-xl text-sm leading-relaxed text-zinc-400">Find blockers, track URL changes, and automate discovery from one place.</p>
+					<p className="mt-3 max-w-xl text-sm leading-relaxed text-zinc-400">Add your site in two minutes. Free for one site, no credit card.</p>
 				</div>
 				<div className="relative mt-6 flex shrink-0 flex-col gap-3 sm:flex-row lg:mt-0">
 					<Link href="/signup" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-sm bg-accent px-5 py-3 text-xs font-mono font-bold uppercase tracking-wide text-accent-foreground transition hover:bg-accent-dark">
-						Start free <span aria-hidden="true">↗</span>
+						Add your site free <span aria-hidden="true">↗</span>
 					</Link>
 					<Link href="/dashboard/connect" className="inline-flex min-h-11 items-center justify-center rounded-sm border border-zinc-700 px-5 py-3 text-xs font-mono font-bold uppercase tracking-wide text-zinc-200 transition hover:border-zinc-400">
 						Connect MCP
@@ -36,7 +35,7 @@ export function Footer() {
 							<Logo />
 							IndexFast
 						</Link>
-						<p className="mt-3 max-w-xs text-sm leading-relaxed text-muted">Sitemap monitoring, indexing diagnostics, and URL submission workflows for teams that ship fast.</p>
+						<p className="mt-3 max-w-xs text-sm leading-relaxed text-muted">Automatic page discovery for sites that ship fast. IndexNow, Bing and MCP in one place.</p>
 					</div>
 					<div>
 						<h3 className="text-xs font-bold uppercase tracking-wider text-ink">Product</h3>
