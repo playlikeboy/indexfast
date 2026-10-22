@@ -1,0 +1,48 @@
+# IndexFast
+
+> SEO indexing automation and diagnostics. Find indexing issues. Ship fixes faster.
+> Discover → Diagnose → Submit: sitemap monitoring, indexing-blocker diagnosis
+> (noindex, canonical, redirects, HTTP errors), and IndexNow + Bing submission.
+
+IndexFast does not guarantee Google indexing. It speeds up discovery of new and
+updated URLs and finds the blockers that keep pages out of the index.
+
+## Product
+
+- [IndexFast](https://indexfast.co/): SEO indexing automation and diagnostics.
+- [Free SEO tools](https://indexfast.co/tools): 11 free tools including Google Index
+  Checker, Bulk Index Checker, Sitemap Extractor, Robots.txt Checker, Canonical
+  Checker, Noindex Checker, IndexNow Key Generator, llms.txt Generator, and
+  AI Crawler Checker.
+- [MCP endpoint](https://indexfast.co/api/mcp): live product MCP (JSON).
+- [Resources](https://indexfast.co/resources/directories): guides and directories,
+  including posts on programmatic SEO, IndexNow, and Google Search Console alerts.
+
+## Pricing
+
+- Free ($0): 1 site, 500 URLs, daily sitemap check, IndexNow auto-submit,
+  MCP + API access, no credit card required.
+- Pro ($19/month): 10 sites, 10,000 URLs per site, 20,000 API calls, hourly checks.
+- Unlimited ($99/month): unlimited sites and unlimited API calls.
+- All plans are prepaid for 30 days with no auto-renew.
+- The FAQ is explicit: IndexFast cannot guarantee Google indexing — it accelerates
+  discovery and surfaces blockers.
+
+## Who it's for
+
+- Programmatic SEO operators monitoring large sitemaps for indexing gaps.
+- Directory and database-site builders who publish pages at scale.
+- Indie hackers and portfolio builders who want new pages discovered faster.
+- SEO agencies and publishers managing many client or editorial URLs.
+- E-commerce, marketplace, B2B SaaS, and devtool teams with high URL churn.
+
+## Company
+
+- IndexFast is listed on AlternativeTo and G2 as a Google Search Console /
+  SimilarWeb alternative.
+- Contact for sales and support via the website. Replies are handled from the
+  founder's inbox.
+
+## Optional
+
+- [Blog](https://indexfast.co/blog): posts on pSEO, IndexNow, and GSC alerts.
