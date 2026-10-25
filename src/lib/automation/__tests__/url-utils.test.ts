@@ -29,6 +29,10 @@ describe("url utils", () => {
 		expect(() => normalizeHost("192.168.1.1")).toThrow("Private or local network");
 		expect(() => normalizeUrlForHost("https://127.0.0.1/admin", "example.com")).toThrow();
 		expect(() => normalizeUrlForHost("https://169.254.169.254/latest/meta-data", "example.com")).toThrow();
+		expect(() => normalizeUrlForHost("http://[::ffff:127.0.0.1]/admin", "example.com")).toThrow();
+		expect(() => normalizeUrlForHost("http://[::ffff:169.254.169.254]/meta", "example.com")).toThrow();
+		expect(() => normalizeUrlForHost("http://[fe80::1]/admin", "example.com")).toThrow();
+		expect(() => normalizeUrlForHost("http://user:pass@example.com/blog", "example.com")).toThrow("Credentials in URLs");
 	});
 });
 

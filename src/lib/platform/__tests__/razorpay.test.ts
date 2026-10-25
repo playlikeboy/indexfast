@@ -19,6 +19,8 @@ describe("Razorpay signatures", () => {
 		const body = '{"event":"payment.captured"}';
 		const signature = await hmacSha256Hex("whsec", body);
 		expect(await verifyWebhookSignature(body, signature, "whsec")).toBe(true);
+		expect(await verifyWebhookSignature(body, signature.toUpperCase(), "whsec")).toBe(true);
+		expect(await verifyWebhookSignature(body, ` ${signature} `, "whsec")).toBe(true);
 		expect(await verifyWebhookSignature(`${body} `, signature, "whsec")).toBe(false);
 		expect(await verifyWebhookSignature(body, null, "whsec")).toBe(false);
 	});

@@ -13,6 +13,7 @@ export function isPrivateOrDisallowedHost(hostname: string): boolean {
 	if (
 		host === "localhost" ||
 		host === "0.0.0.0" ||
+		host === "::" ||
 		host === "::1" ||
 		host.endsWith(".localhost") ||
 		host.endsWith(".local") ||
@@ -28,7 +29,7 @@ export function isPrivateOrDisallowedHost(hostname: string): boolean {
 	// Check IPv4
 	const ipv4Match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
 	if (ipv4Match) {
-		const [b0, b1] = [parseInt(ipv4Match[1], 10), parseInt(ipv4Match[2], 10)];
+		const [b0, b1, b2] = [parseInt(ipv4Match[1], 10), parseInt(ipv4Match[2], 10), parseInt(ipv4Match[3], 10)];
 		if (b0 === 0) return true; // 0.0.0.0/8
 		if (b0 === 10) return true; // 10.0.0.0/8
 		if (b0 === 127) return true; // 127.0.0.0/8
@@ -36,14 +37,36 @@ export function isPrivateOrDisallowedHost(hostname: string): boolean {
 		if (b0 === 172 && b1 >= 16 && b1 <= 31) return true; // 172.16.0.0/12
 		if (b0 === 192 && b1 === 168) return true; // 192.168.0.0/16
 		if (b0 === 100 && b1 >= 64 && b1 <= 127) return true; // 100.64.0.0/10 CGNAT
+		if (b0 === 198 && (b1 === 18 || b1 === 19)) return true; // 198.18.0.0/15 benchmarking
+		if (b0 === 192 && b1 === 0 && b2 === 2) return true; // 192.0.2.0/24 TEST-NET-1
+		if (b0 === 198 && b1 === 51 && b2 === 100) return true; // 198.51.100.0/24 TEST-NET-2
+		if (b0 === 203 && b1 === 0 && b2 === 113) return true; // 203.0.113.0/24 TEST-NET-3
 		if (b0 >= 224) return true; // 224.0.0.0+ multicast/reserved
 	}
 
 	// Check IPv6
 	if (host.includes(":")) {
-		if (host === "::" || host === "::1") return true;
-		if (host.startsWith("fe80:") || host.startsWith("fe8") || host.startsWith("fe9") || host.startsWith("fea") || host.startsWith("feb")) return true;
-		if (host.startsWith("fc00:") || host.startsWith("fd") || host.startsWith("fc")) return true;
+		if (
+			host === "::" ||
+			host === "::1" ||
+			host.includes(":ffff:") ||
+			host.startsWith("::ffff:") ||
+			host.startsWith("2002:") || // 6to4
+			host.startsWith("64:ff9b:") || // NAT64
+			host.startsWith("fe8") ||
+			host.startsWith("fe9") ||
+			host.startsWith("fea") ||
+			host.startsWith("feb") || // fe80::/10 link-local
+			host.startsWith("fc") ||
+			host.startsWith("fd") || // fc00::/7 unique local
+			host.startsWith("ff") || // ff00::/8 multicast
+			host.startsWith("100::") || // discard
+			host.startsWith("2001:db8:") || // documentation
+			host.startsWith("2001:10:") || // ORCHID
+			host.startsWith("2001:20:")
+		) {
+			return true;
+		}
 	}
 
 	return false;
@@ -59,6 +82,10 @@ export function assertSafeExternalUrl(input: string): URL {
 
 	if (url.protocol !== "http:" && url.protocol !== "https:") {
 		throw new Error("URL must use HTTP or HTTPS");
+	}
+
+	if (url.username || url.password) {
+		throw new Error("Credentials in URLs are not permitted");
 	}
 
 	if (isPrivateOrDisallowedHost(url.hostname)) {
@@ -137,6 +164,7 @@ export async function safeFetchText(
 				signal: controller.signal,
 			});
 			if (response.status >= 300 && response.status < 400) {
+				await response.body?.cancel().catch(() => undefined);
 				clearTimeout(timeoutId);
 				const location = response.headers.get("location");
 				if (!location) throw new Error("Redirect status " + response.status + " without Location header");

@@ -283,11 +283,11 @@ export async function createCheckoutAction(plan: string): Promise<ActionResult> 
 /** Called by the Checkout success handler. The webhook does the same work as a backstop. */
 export async function confirmPaymentAction(input: { orderId: string; paymentId: string; signature: string }): Promise<ActionResult> {
 	return run(async () => {
-		await requireActionUser();
+		const user = await requireActionUser();
 		const valid = await verifyCheckoutSignature({ ...input, keySecret: getRazorpayConfig().keySecret });
 		if (!valid) throw new Error("Payment signature mismatch. If you were charged, it will activate automatically within minutes.");
-		const result = await activatePaidOrder({ orderId: input.orderId, paymentId: input.paymentId });
-		if (!result.ok) throw new Error("Order not found.");
+		const result = await activatePaidOrder({ orderId: input.orderId, paymentId: input.paymentId, expectedUserId: user.id });
+		if (!result.ok) throw new Error(result.reason === "unauthorized" ? "Not allowed" : "Order not found.");
 		revalidatePath("/dashboard", "layout");
 		return `Payment received. Your plan is active until ${result.periodEnd?.toDateString() ?? "the end of the period"}.`;
 	});

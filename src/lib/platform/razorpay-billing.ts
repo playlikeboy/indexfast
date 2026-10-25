@@ -62,10 +62,13 @@ export async function createCheckoutOrder(user: { id: string; email: string; nam
 }
 
 /** Idempotent: grants the paid period once, returns the resulting expiry. */
-export async function activatePaidOrder(input: { orderId: string; paymentId: string }) {
+export async function activatePaidOrder(input: { orderId: string; paymentId: string; expectedUserId?: string }) {
 	const [payment] = await db.select().from(payments).where(eq(payments.orderId, input.orderId)).limit(1);
 	if (!payment) {
 		return { ok: false as const, reason: "unknown_order" };
+	}
+	if (input.expectedUserId && payment.userId !== input.expectedUserId) {
+		return { ok: false as const, reason: "unauthorized" };
 	}
 	if (payment.status === "paid" || payment.status === "refunded") {
 		return { ok: true as const, alreadyProcessed: true, periodEnd: payment.periodEnd, plan: payment.plan };

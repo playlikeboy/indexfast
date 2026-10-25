@@ -993,6 +993,24 @@ async function submitEngineBatch(site: SiteRow, engine: string, urlList: string[
 }
 
 /**
+ * Group submission jobs for batch delivery to engines.
+ *
+ * CRITICAL RULE: Retry state (`attempts`) MUST be part of the batch identity key:
+ * one search engine response is shared by every URL in its batch, so never mix jobs
+ * at different retry attempts. Mixing jobs at different attempts causes either
+ * premature terminal failure for fresh jobs (if grouped with a high-attempt job)
+ * or incorrect retry decisions across URLs.
+ */
+export function groupSubmissionJobs<T extends { siteId: string; engine: string; attempts: number }>(jobs: T[]): Map<string, T[]> {
+	const groups = new Map<string, T[]>();
+	for (const job of jobs) {
+		const key = `${job.siteId}:${job.engine}:${job.attempts}`;
+		groups.set(key, [...(groups.get(key) ?? []), job]);
+	}
+	return groups;
+}
+
+/**
  * Drain the queue: recover orphaned locks, atomically claim due jobs (manual first), submit
  * per site+engine in engine-sized batches, then record results. Transient failures
  * (network/429/5xx) retry with exponential backoff; others fail fast and raise one alert.
@@ -1037,13 +1055,7 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 		return { processedCount: 0, successCount: 0, failedCount: 0, retryCount: 0 };
 	}
 
-	const groups = new Map<string, typeof jobs>();
-	for (const job of jobs) {
-		// Retry state is part of the batch identity: one engine response is shared by
-		// every URL in its batch, so never mix jobs at different retry attempts.
-		const key = `${job.siteId}:${job.engine}:${job.attempts}`;
-		groups.set(key, [...(groups.get(key) ?? []), job]);
-	}
+	const groups = groupSubmissionJobs(jobs);
 
 	const siteRows = await db
 		.select()

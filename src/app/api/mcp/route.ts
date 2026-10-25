@@ -48,11 +48,15 @@ export async function POST(request: Request) {
 		return Response.json(Array.isArray(body) ? responses : responses[0]);
 	} catch (error) {
 		statusCode = statusForError(error);
+		const isParseError = error instanceof SyntaxError;
 		return Response.json(
 			{
 				jsonrpc: "2.0",
 				id: null,
-				error: { code: statusCode === 401 ? -32001 : statusCode === 429 ? -32002 : -32000, message: error instanceof Error ? error.message : "Unknown MCP error" },
+				error: {
+					code: statusCode === 401 ? -32001 : statusCode === 429 ? -32002 : isParseError ? -32700 : -32000,
+					message: isParseError ? "Parse error: invalid JSON" : error instanceof Error ? error.message : "Unknown MCP error",
+				},
 			},
 			{ status: statusCode, headers: statusCode === 401 ? { "WWW-Authenticate": 'Bearer realm="indexfast"' } : undefined },
 		);

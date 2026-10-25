@@ -57,7 +57,7 @@ export async function verifyCheckoutSignature(input: { orderId: string; paymentI
 		return false;
 	}
 	const expected = await hmacSha256Hex(input.keySecret, `${input.orderId}|${input.paymentId}`);
-	return safeEqual(expected, input.signature);
+	return safeEqual(expected, input.signature.trim().toLowerCase());
 }
 
 /** Webhook signature: HMAC_SHA256(raw request body, webhook secret). Must use the raw body. */
@@ -65,7 +65,7 @@ export async function verifyWebhookSignature(rawBody: string, signature: string 
 	if (!signature || !webhookSecret) {
 		return false;
 	}
-	return safeEqual(await hmacSha256Hex(webhookSecret, rawBody), signature);
+	return safeEqual(await hmacSha256Hex(webhookSecret, rawBody), signature.trim().toLowerCase());
 }
 
 async function razorpayFetch<T>(path: string, init: RequestInit = {}): Promise<T> {

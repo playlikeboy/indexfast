@@ -15,8 +15,8 @@ import {
 	normalizeApiScopes,
 	resolveEntitlement,
 } from "./plans";
-export { generateApiKey, getApiKeyPrefix, hashApiKey, maskApiKeyPrefix } from "./api-key-utils";
 import { generateApiKey, getApiKeyPrefix, hashApiKey, maskApiKeyPrefix } from "./api-key-utils";
+export { generateApiKey, getApiKeyPrefix, hashApiKey, maskApiKeyPrefix };
 
 /** Typed quota error so HTTP layers map it to 429 without string matching. */
 export class ApiRequestLimitError extends Error {
