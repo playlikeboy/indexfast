@@ -206,9 +206,9 @@ to `random()`.
 | `site_integrations` | Per-site provider integrations | `provider` (`indexnow` only today), `status` (`pending`/`verified`/`failed`/`disabled`), `encryptedSecret`, `publicConfig` (jsonb: host, keyLocation, submitNewUrls, submitChangedUrls), `automationEnabled` |
 | `user_integrations` | Per-user provider credentials | `provider` (`bing` only today), `encryptedSecret`, `publicConfig` (lastValidationStatus, siteUrl) |
 | `sitemaps` | Sync history log (per source sync) | `status` (`pending`/`syncing`/`success`/`failed`), `lastSyncTime`, `errorMessage`, `urlCount`, `newCount`, `changedCount` |
-| `urls` | Discovered / submitted URLs | `loc`, `priority`, `lastmod`, `changefreq`, `indexingStatus` (`indexed`/`not_indexed`/`unknown`/`blockers`), `gscStatus`, `httpStatus`, `lastCheckedAt`, `lastSeenInSitemapAt`, `lastSubmittedAt`, `lastSubmissionStatus`, unique `(siteId, loc)` |
+| `urls` | Discovered / submitted URLs | `loc`, `priority`, `lastmod`, `changefreq`, `indexingStatus` (`indexed`/`not_indexed`/`unknown`/`blockers`), `gscStatus`, `httpStatus`, `lastCheckedAt`, `lastSeenInSitemapAt`, `lastSubmittedAt`, `lastSubmissionStatus`, `lastSubmittedEngine`, unique `(siteId, loc)` |
 | `checks` | Diagnostic results | `checkType` (`diagnostics` from `checkUrlDiagnostics`), `status` (`pass`/`warn`/`fail`), `details` (jsonb) |
-| `submission_jobs` | Submission queue | `urlId?`, `loc`, `engine` (`indexnow`/`bing`), `reason` (`new`/`changed`/`manual`), `status` (`queued`/`processing`/`success`/`failed`), `attempts`, `nextRunAt`, `lockedAt`, `lastErrorMessage` |
+| `submission_jobs` | Submission queue | `urlId?`, `loc`, `engine` (`indexnow`/`bing`), `reason` (`new`/`changed`/`manual`), `status` (`queued`/`processing`/`success`/`failed`), `priority`, `attempts`, `httpStatus`, `retryAfterAt`, `nextRunAt`, `lockedAt`, `lastErrorMessage` |
 | `submissions` | Submission log | `engine` (`indexnow`/`google_indexing_api`/`bing`), `status` (`submitted`/`success`/`failed`), `responseMessage`, `attempt` |
 | `alerts` | Operator alerts | `alertType` (`indexing_drop`/`error_detected`/`sitemap_failure`), `resolved` |
 | `api_keys` | Hashed IndexFast API keys | `keyPrefix`, `keyHash`, `scopes`, `status`, `lastUsedAt`, `expiresAt`, unique `keyHash` |
@@ -221,7 +221,7 @@ to `random()`.
 Indexes worth knowing: partial unique `submission_jobs_open_unique_idx`
 `(siteId, loc, engine) WHERE status IN ('queued','processing')` (queue dedup),
 unique `(siteId, loc)` on `urls` (URL dedup), unique `orderId` on `payments`,
-`(siteId, indexingStatus)` on `urls`,
+`(siteId, indexingStatus)` on `urls`, `(siteId, status)` on `submission_jobs`,
 `(status, nextRunAt)` on `submission_jobs`, `(siteId, resolved, createdAt)` on
 `alerts`, unique `(userId, domain)` on `sites`.
 
@@ -269,8 +269,10 @@ Full detail in `docs/automation.md`. Summary:
 - URL dedup: `canonicalizeUrl()` + unique `(siteId, loc)`. Queue dedup: partial unique
   index + `ON CONFLICT DO NOTHING`. Changed URLs (lastmod moved) are not resubmitted
   within 24h.
-- Queue: stale lock recovery (15 min), atomic claim, manual first, IndexNow batches of
-  1000 / Bing 100, retry with backoff for network/429/5xx (3 attempts), de-duplicated alerts.
+- Queue: stale lock recovery (15 min), atomic claim ordered by priority (manual 1, new 5, refresh 10) then nextRunAt,
+  IndexNow batches of 1000 / Bing 100. 429 rate limit circuit breaker trips immediately per (site, engine)
+  to postpone remaining batches cleanly; exponential backoff with ±20% jitter and Retry-After header parsing (3 attempts),
+  de-duplicated alerts.
 - Sync bulk-upserts in chunks of 500; never loop one query per URL.
 - Runtime bounds: `src/lib/automation/constants.ts`. Plan limits: `plans.ts`.
 

@@ -75,6 +75,8 @@ Every `site` argument accepts the domain (e.g. `example.com`) or the site id.
 - `add_sitemap`, `discover_sitemaps`, `sync_now`
 - `submit_urls` - submit up to 1000 URLs now (after publishing or updating pages).
 - `submit_pending` - submit every URL that was never submitted.
+- `get_submission_queue` - inspect submission jobs, rate-limited (429) cooldowns, retry schedule, and per-engine breakdown.
+- `process_submission_queue` - trigger immediate draining of queued URLs with exponential backoff and 429 circuit breaker.
 - `list_urls` - filter `all | new | pending | submitted | failed`.
 - `list_submissions`, `check_url`, `list_issues`
 - `recommend_seo_resources`, `list_directories`, `list_seo_tools`, `list_search_engines`

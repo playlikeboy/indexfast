@@ -15,7 +15,21 @@ export type EngineSubmissionResult = {
 	ok: boolean;
 	status: number;
 	message: string;
+	retryAfterSeconds?: number;
 };
+
+export function parseRetryAfterHeader(header: string | null): number | undefined {
+	if (!header) return undefined;
+	const trimmed = header.trim();
+	const seconds = parseInt(trimmed, 10);
+	if (!isNaN(seconds) && seconds > 0) return seconds;
+	const date = Date.parse(trimmed);
+	if (!isNaN(date)) {
+		const diffSec = Math.round((date - Date.now()) / 1000);
+		return diffSec > 0 ? diffSec : undefined;
+	}
+	return undefined;
+}
 
 export function generateIndexNowKey() {
 	const bytes = crypto.getRandomValues(new Uint8Array(24));
@@ -77,11 +91,13 @@ export async function submitIndexNowBatch(host: string, key: string, urls: strin
 		signal: timeoutSignal(),
 	});
 	const message = await response.text().catch(() => "");
+	const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("retry-after"));
 
 	return {
 		ok: response.ok,
 		status: response.status,
 		message: message || `IndexNow returned HTTP ${response.status}.`,
+		retryAfterSeconds,
 	};
 }
 
@@ -116,10 +132,12 @@ export async function submitBingBatch(apiKey: string, siteUrl: string, urls: str
 		signal: timeoutSignal(),
 	});
 	const message = await response.text().catch(() => "");
+	const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("retry-after"));
 
 	return {
 		ok: response.ok,
 		status: response.status,
 		message: message || `Bing submission endpoint returned HTTP ${response.status}.`,
+		retryAfterSeconds,
 	};
 }

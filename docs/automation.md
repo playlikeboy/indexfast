@@ -55,10 +55,15 @@ The dashboard "New (7d)" tab is `urls.created_at > now() - 7 days`.
 
 1. Release `processing` jobs locked longer than 15 minutes (crashed runs).
 2. Atomically claim due jobs (`UPDATE ... WHERE id IN (subquery) AND status='queued' RETURNING`),
-   manual jobs first.
+   ordered by `priority ASC` (manual = 1, new sitemap = 5, refresh = 10), then `nextRunAt ASC`, then `createdAt ASC`.
 3. Submit per site+engine: IndexNow batches of 1000, Bing 100.
-4. Network/429/5xx -> retry with backoff 10, 20, 40 min up to 3 attempts. Other errors fail fast.
-5. Final outcomes update `urls.lastSubmittedAt/lastSubmissionStatus`; every attempt is
+4. **429 Circuit Breaker & Adaptive Retry**:
+   - Parses search engine `Retry-After` headers (both integer seconds and HTTP-date strings).
+   - If a 429 or `Retry-After` is encountered, trips the circuit breaker for that `siteId:engine` immediately.
+   - All subsequent claimed batches for that engine in the current run are postponed cleanly without incrementing attempt count or hammering search engine endpoints.
+   - Exponential backoff with randomized jitter (±20%) ensures retries are spread across time to prevent thundering herds (base 15 min for 429 cooling, 5 min for 5xx/network errors).
+   - Jobs store `httpStatus`, `retryAfterAt`, and scheduled `nextRunAt`.
+5. Final outcomes update `urls.lastSubmittedAt`, `urls.lastSubmissionStatus`, and `urls.lastSubmittedEngine`; every attempt is
    logged in `submissions`; failures raise one de-duplicated alert per site, success resolves it.
 
 Credentials are AES-GCM encrypted at rest and lazily re-encrypted if a legacy plaintext row

@@ -30,6 +30,8 @@ import {
 	submitPendingForApi,
 	syncSitemapsForApi,
 	verifySiteForApi,
+	drainSiteQueueForApi,
+	getSiteQueueForApi,
 	type UrlFilter,
 } from "@/lib/platform/operations";
 
@@ -124,6 +126,35 @@ const tools = [
 		title: "Submit pending",
 		description: "Submit every tracked URL that has never been submitted.",
 		inputSchema: { type: "object", properties: { site }, required: ["site"] },
+	},
+	{
+		name: "get_submission_queue",
+		title: "Get submission queue",
+		description: "Inspect queued submission jobs, rate-limited (429) cooldowns, retry schedule, and per-engine breakdown.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				site,
+				page: { type: "number" },
+				limit: { type: "number" },
+				status: { type: "string", enum: ["queued", "processing", "success", "failed"] },
+				engine: { type: "string", enum: ["indexnow", "bing"] },
+			},
+			required: ["site"],
+		},
+	},
+	{
+		name: "process_submission_queue",
+		title: "Process submission queue",
+		description: "Trigger immediate processing of in-flight queued submission jobs with exponential backoff and 429 rate limit circuit breaker.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				site,
+				maxJobs: { type: "number", description: "Maximum jobs to drain in this run (default 1000)" },
+			},
+			required: ["site"],
+		},
 	},
 	{
 		name: "list_urls",
@@ -312,6 +343,15 @@ async function callTool(auth: AuthenticatedApiKey, rawName: string, args: Record
 			return bulkSubmitUrlsForApi(auth.userId, siteRef, [...asStringArray(args.urls), ...asStringArray(args.url)]);
 		case "submit_pending":
 			return submitPendingForApi(auth.userId, siteRef);
+		case "get_submission_queue":
+			return getSiteQueueForApi(auth.userId, siteRef, {
+				page: asNumber(args.page),
+				limit: asNumber(args.limit),
+				status: asString(args.status) || undefined,
+				engine: asString(args.engine) || undefined,
+			});
+		case "process_submission_queue":
+			return drainSiteQueueForApi(auth.userId, siteRef, asNumber(args.maxJobs, 1000));
 		case "list_urls":
 			return listUrlsForUser(auth.userId, siteRef, asNumber(args.limit), (asString(args.filter) || "all") as UrlFilter);
 		case "list_submissions":
@@ -348,9 +388,12 @@ async function readResource(auth: AuthenticatedApiKey, uri: string) {
 	if (uri === "indexfast://resources/directories") return listDirectoryResources();
 	if (uri === "indexfast://resources/tools") return listSeoToolResources();
 	if (uri === "indexfast://resources/search-engines") return listSearchEngineResources();
-	const siteMatch = /^indexfast:\/\/sites\/([^/]+)(\/urls)?$/.exec(uri);
+	const siteMatch = /^indexfast:\/\/sites\/([^/]+)(\/(urls|queue))?$/.exec(uri);
 	if (siteMatch) {
-		return siteMatch[2] ? listUrlsForUser(auth.userId, decodeURIComponent(siteMatch[1])) : getSiteDetailsForUser(auth.userId, decodeURIComponent(siteMatch[1]));
+		const targetSite = decodeURIComponent(siteMatch[1]);
+		if (siteMatch[3] === "urls") return listUrlsForUser(auth.userId, targetSite);
+		if (siteMatch[3] === "queue") return getSiteQueueForApi(auth.userId, targetSite);
+		return getSiteDetailsForUser(auth.userId, targetSite);
 	}
 	throw new Error(`Unknown resource: ${uri}`);
 }

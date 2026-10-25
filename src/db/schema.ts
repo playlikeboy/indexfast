@@ -361,6 +361,7 @@ export const urls = pgTable(
 		lastSeenInSitemapAt: timestamp("last_seen_in_sitemap_at"),
 		lastSubmittedAt: timestamp("last_submitted_at"),
 		lastSubmissionStatus: text("last_submission_status"),
+		lastSubmittedEngine: text("last_submitted_engine"),
 		createdAt: timestamp("created_at").defaultNow().notNull(),
 	},
 	(table) => [
@@ -403,7 +404,10 @@ export const submissionJobs = pgTable(
 		engine: text("engine").notNull(), // 'indexnow', 'bing'
 		reason: text("reason").default("new").notNull(), // 'new', 'changed', 'manual'
 		status: text("status").default("queued").notNull(), // 'queued', 'processing', 'success', 'failed'
+		priority: integer("priority").default(5).notNull(), // 1 = manual/immediate, 5 = new sitemap url, 10 = refresh
 		attempts: integer("attempts").default(0).notNull(),
+		httpStatus: integer("http_status"), // last HTTP status returned by search engine (e.g. 200, 429, 500)
+		retryAfterAt: timestamp("retry_after_at"), // exact timestamp search engine requested via Retry-After
 		nextRunAt: timestamp("next_run_at").defaultNow().notNull(),
 		lockedAt: timestamp("locked_at"),
 		lastErrorMessage: text("last_error_message"),
@@ -412,6 +416,7 @@ export const submissionJobs = pgTable(
 	},
 	(table) => [
 		index("submission_jobs_site_id_idx").on(table.siteId),
+		index("submission_jobs_site_status_idx").on(table.siteId, table.status),
 		index("submission_jobs_status_due_idx").on(table.status, table.nextRunAt),
 		index("submission_jobs_engine_status_idx").on(table.engine, table.status),
 		// Queue-level dedup: at most one open job per (site, url, engine). Lets enqueue be a

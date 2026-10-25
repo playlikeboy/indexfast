@@ -21,6 +21,9 @@ import {
 	syncSitemapsForUser,
 	adoptExistingIndexNowKeyForUser,
 	verifySiteForUser,
+	drainSiteQueueForUser,
+	getSiteQueueJobs,
+	getSiteQueueSummary,
 } from "@/lib/automation/service";
 import { getUserAccess } from "./entitlements";
 import { formatLimit } from "./plans";
@@ -403,4 +406,32 @@ export function listSearchEngineResources(engineId?: string) {
 		return engine;
 	}
 	return getAllSearchEngines();
+}
+
+export async function getSiteQueueForApi(
+	userId: string,
+	siteRef: string,
+	options: { page?: number; limit?: number; status?: string; engine?: string } = {},
+) {
+	const site = await resolveSiteForUser(userId, siteRef);
+	const [summary, queueData] = await Promise.all([
+		getSiteQueueSummary(userId, site.id),
+		getSiteQueueJobs(userId, site.id, options),
+	]);
+	return {
+		site: { id: site.id, domain: site.domain, host: getSiteHost(site) },
+		summary,
+		queue: queueData,
+	};
+}
+
+export async function drainSiteQueueForApi(userId: string, siteRef: string, maxJobs = 1000) {
+	const site = await resolveSiteForUser(userId, siteRef);
+	const result = await drainSiteQueueForUser(userId, site.id, maxJobs);
+	const summary = await getSiteQueueSummary(userId, site.id);
+	return {
+		site: { id: site.id, domain: site.domain, host: getSiteHost(site) },
+		processed: result,
+		remainingQueue: summary,
+	};
 }

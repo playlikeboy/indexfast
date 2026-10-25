@@ -29,6 +29,7 @@ Every `site` argument accepts a domain or a site id.
 | `verify_site` | Check key file, enable automation, submit backlog. Optional `existingKey` (key or key file URL) reuses a key the site already hosts |
 | `add_sitemap` / `discover_sitemaps` / `sync_now` | Sitemap management |
 | `submit_urls` / `submit_pending` | Manual submission |
+| `get_submission_queue` / `process_submission_queue` | Inspect queue jobs, 429 cooldowns, retry schedule & trigger batch drain |
 | `list_urls` | Filter `all/new/pending/submitted/failed` |
 | `list_submissions` / `check_url` / `list_issues` | Debugging |
 | `recommend_seo_resources` / `list_directories` / `list_seo_tools` / `list_search_engines` | Launch resources & search engine API specs |

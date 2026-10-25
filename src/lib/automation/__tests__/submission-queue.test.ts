@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { groupSubmissionJobs } from "../service";
+import { calculateBackoffMs, groupSubmissionJobs } from "../service";
+import { parseRetryAfterHeader } from "../search-engines";
 import { AUTOMATION_LIMITS } from "../constants";
 
 describe("submission queue batching and retry isolation", () => {
@@ -68,5 +69,55 @@ describe("submission queue batching and retry isolation", () => {
 				expect(isRetry).toBe(false);
 			}
 		}
+	});
+});
+
+describe("calculateBackoffMs and Retry-After header parsing", () => {
+	it("honors server-provided Retry-After seconds with subtle jitter", () => {
+		const backoffMs = calculateBackoffMs(1, { retryAfterSeconds: 120 });
+		// 120s = 120,000ms. Jitter adds 0-5s, so backoff must be between 120,000ms and 125,000ms
+		expect(backoffMs).toBeGreaterThanOrEqual(120_000);
+		expect(backoffMs).toBeLessThanOrEqual(125_000);
+	});
+
+	it("uses 15-minute base backoff for 429 rate limit with jitter", () => {
+		const backoffMs = calculateBackoffMs(1, { status: 429 });
+		// 15 min = 900,000ms. Jitter is ±20%: between 720,000ms and 1,080,000ms
+		expect(backoffMs).toBeGreaterThanOrEqual(720_000);
+		expect(backoffMs).toBeLessThanOrEqual(1_080_000);
+	});
+
+	it("exponentially scales backoff for consecutive attempts", () => {
+		// Attempt 2 base is 15 * 2^1 = 30 min (1,800,000ms) with ±20% jitter
+		const attempt2Ms = calculateBackoffMs(2, { status: 429 });
+		expect(attempt2Ms).toBeGreaterThanOrEqual(1_440_000);
+		expect(attempt2Ms).toBeLessThanOrEqual(2_160_000);
+
+		// Attempt 3 base is 15 * 2^2 = 60 min (3,600,000ms) with ±20% jitter
+		const attempt3Ms = calculateBackoffMs(3, { status: 429 });
+		expect(attempt3Ms).toBeGreaterThanOrEqual(2_880_000);
+		expect(attempt3Ms).toBeLessThanOrEqual(4_320_000);
+	});
+
+	it("parses integer Retry-After header correctly", () => {
+		expect(parseRetryAfterHeader("60")).toBe(60);
+		expect(parseRetryAfterHeader(" 180 ")).toBe(180);
+		expect(parseRetryAfterHeader("0")).toBeUndefined();
+		expect(parseRetryAfterHeader("-10")).toBeUndefined();
+		expect(parseRetryAfterHeader(null)).toBeUndefined();
+		expect(parseRetryAfterHeader("")).toBeUndefined();
+		expect(parseRetryAfterHeader("invalid")).toBeUndefined();
+	});
+
+	it("parses HTTP-date Retry-After header correctly", () => {
+		const futureDate = new Date(Date.now() + 300_000).toUTCString();
+		const parsedSec = parseRetryAfterHeader(futureDate);
+		expect(parsedSec).toBeDefined();
+		expect(parsedSec).toBeGreaterThanOrEqual(295);
+		expect(parsedSec).toBeLessThanOrEqual(305);
+
+		// Past date should return undefined
+		const pastDate = new Date(Date.now() - 60_000).toUTCString();
+		expect(parseRetryAfterHeader(pastDate)).toBeUndefined();
 	});
 });

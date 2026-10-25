@@ -13,7 +13,7 @@
  *
  * Every *ForUser function re-checks ownership with the userId it is given.
  */
-import { and, asc, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import {
 	alerts,
@@ -941,12 +941,13 @@ async function enqueueUrlRows(site: SiteRow, rows: UrlQueueRow[], reason: Submis
 		return 0;
 	}
 	const engines = await getEligibleEngines(site, entitlement, manual);
+	const priority = reason === "manual" ? 1 : reason === "new" ? 5 : 10;
 	let queued = 0;
 	for (const engine of engines) {
 		for (const batch of chunk(rows, AUTOMATION_LIMITS.upsertChunkSize)) {
 			const inserted = await db
 				.insert(submissionJobs)
-				.values(batch.map((row) => ({ siteId: site.id, urlId: row.id, loc: row.loc, engine, reason, status: "queued" })))
+				.values(batch.map((row) => ({ siteId: site.id, urlId: row.id, loc: row.loc, engine, reason, status: "queued", priority })))
 				.onConflictDoNothing()
 				.returning({ id: submissionJobs.id });
 			queued += inserted.length;
@@ -1018,7 +1019,26 @@ export async function submitPendingForUser(userId: string, siteId: string) {
 	return { queued, submitted: processed?.successCount ?? 0 };
 }
 
-function isRetryable(result: EngineSubmissionResult) {
+export function calculateBackoffMs(attempt: number, options: { status?: number; retryAfterSeconds?: number } = {}): number {
+	if (options.retryAfterSeconds && options.retryAfterSeconds > 0) {
+		// Server provided exact Retry-After in seconds: add 0-5s random jitter to avoid lockstep retries
+		return (options.retryAfterSeconds + Math.floor(Math.random() * 5)) * 1000;
+	}
+
+	const is429 = options.status === 429;
+	// 15 minutes base for 429 rate limit (search engines need genuine cooling off), 5 mins for 5xx/network
+	const baseMs = is429 ? AUTOMATION_LIMITS.throttleCooldownMinutes * MINUTE_MS : 5 * MINUTE_MS;
+	const maxMs = is429 ? 4 * 60 * MINUTE_MS : 2 * 60 * MINUTE_MS;
+
+	// Full exponential backoff: base * 2^(attempt - 1)
+	const expMs = Math.min(maxMs, baseMs * 2 ** Math.max(0, attempt - 1));
+	// Jitter between (1 - jitter) and (1 + jitter) to prevent thundering herds across thousands of URLs
+	const jitter = AUTOMATION_LIMITS.retryJitterPercent ?? 0.2;
+	const factor = 1 - jitter + Math.random() * (2 * jitter);
+	return Math.round(expMs * factor);
+}
+
+export function isRetryable(result: EngineSubmissionResult) {
 	return result.status === 0 || result.status === 429 || result.status >= 500;
 }
 
@@ -1104,13 +1124,12 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 		options.siteId ? eq(submissionJobs.siteId, options.siteId) : undefined,
 	);
 	const verifiedSiteIds = db.select({ id: sites.id }).from(sites).where(eq(sites.verified, true));
-	// SKIP LOCKED lets a concurrent run (cron + manual submit) claim disjoint rows. Works over
-	// Neon HTTP because the whole claim is a single UPDATE statement.
+	// Priority order: manual submissions first (priority 1), then new URLs (priority 5), then refreshes (priority 10).
 	const candidateIds = db
 		.select({ id: submissionJobs.id })
 		.from(submissionJobs)
 		.where(and(dueFilter, inArray(submissionJobs.siteId, verifiedSiteIds)))
-		.orderBy(sql`case when ${submissionJobs.reason} = 'manual' then 0 else 1 end`, asc(submissionJobs.createdAt))
+		.orderBy(asc(submissionJobs.priority), asc(submissionJobs.nextRunAt), asc(submissionJobs.createdAt))
 		.limit(maxJobs)
 		.for("update", { skipLocked: true });
 	// The outer status check makes the claim safe if two runs race for the same rows.
@@ -1121,7 +1140,7 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 		.returning();
 
 	if (jobs.length === 0) {
-		return { processedCount: 0, successCount: 0, failedCount: 0, retryCount: 0 };
+		return { processedCount: 0, successCount: 0, failedCount: 0, retryCount: 0, throttledCount: 0 };
 	}
 
 	const groups = groupSubmissionJobs(jobs);
@@ -1135,13 +1154,59 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 	let successCount = 0;
 	let failedCount = 0;
 	let retryCount = 0;
+	let throttledCount = 0;
+
+	// Circuit breaker per (site, engine): if a batch returns 429 or server rate limit,
+	// trip the breaker immediately so subsequent batches in this run are safely postponed
+	// instead of being hammered against the throttled engine.
+	const throttledEngines = new Map<string, { resumeAt: Date; error: string; status: number }>();
 
 	for (const group of groups.values()) {
 		const { siteId, engine } = group[0];
+		const engineKey = `${siteId}:${engine}`;
+
+		// If this engine/site was already throttled earlier in this run, don't attempt more batches!
+		const currentThrottle = throttledEngines.get(engineKey);
+		if (currentThrottle) {
+			const jobIds = group.map((job) => job.id);
+			await db
+				.update(submissionJobs)
+				.set({
+					status: "queued",
+					lockedAt: null,
+					nextRunAt: currentThrottle.resumeAt,
+					httpStatus: currentThrottle.status,
+					lastErrorMessage: currentThrottle.error,
+					updatedAt: now,
+				})
+				.where(inArray(submissionJobs.id, jobIds));
+			throttledCount += group.length;
+			continue;
+		}
+
 		const site = siteById.get(siteId);
 		const batchSize = ENGINE_BATCH_SIZE[engine as SubmissionEngine] ?? 100;
 
 		for (const batch of chunk(group, batchSize)) {
+			// Check if this engine became throttled by a preceding batch in this same group
+			const throttleNow = throttledEngines.get(engineKey);
+			if (throttleNow) {
+				const batchJobIds = batch.map((job) => job.id);
+				await db
+					.update(submissionJobs)
+					.set({
+						status: "queued",
+						lockedAt: null,
+						nextRunAt: throttleNow.resumeAt,
+						httpStatus: throttleNow.status,
+						lastErrorMessage: throttleNow.error,
+						updatedAt: new Date(),
+					})
+					.where(inArray(submissionJobs.id, batchJobIds));
+				throttledCount += batch.length;
+				continue;
+			}
+
 			const urlList = batch.map((job) => job.loc);
 			const result: EngineSubmissionResult = site
 				? await submitEngineBatch(site, engine, urlList).catch((error) => ({ ok: false, status: 0, message: getErrorMessage(error) }))
@@ -1152,6 +1217,15 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 			const retry = !result.ok && isRetryable(result) && attempt < AUTOMATION_LIMITS.maxSubmitAttempts;
 			const jobIds = batch.map((job) => job.id);
 
+			// Calculate exponential backoff with full jitter, honoring Retry-After if present
+			const backoffMs = calculateBackoffMs(attempt, { status: result.status, retryAfterSeconds: result.retryAfterSeconds });
+			const resumeAt = new Date(completedAt.getTime() + backoffMs);
+
+			// If rate limited (429) or engine requested Retry-After: trip the circuit breaker for all subsequent batches of this engine!
+			if (result.status === 429 || (result.retryAfterSeconds && result.retryAfterSeconds > 0)) {
+				throttledEngines.set(engineKey, { resumeAt, error: responseMessage, status: result.status });
+			}
+
 			const writes: Promise<unknown>[] = [
 				...chunk(batch, AUTOMATION_LIMITS.upsertChunkSize).map((rows) =>
 					db.insert(submissions).values(
@@ -1161,15 +1235,13 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 							engine: job.engine,
 							status: result.ok ? "success" : "failed",
 							responseMessage,
-							attempt: job.attempts + 1,
+							attempt,
 						})),
 					),
 				),
 			];
 
 			if (retry) {
-				// 10 min, 20 min, 40 min ... keeps a flaky engine from being hammered.
-				const backoffMs = 10 * MINUTE_MS * 2 ** (attempt - 1);
 				writes.push(
 					db
 						.update(submissionJobs)
@@ -1177,7 +1249,9 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 							status: "queued",
 							attempts: attempt,
 							lockedAt: null,
-							nextRunAt: new Date(completedAt.getTime() + backoffMs),
+							nextRunAt: resumeAt,
+							httpStatus: result.status,
+							retryAfterAt: result.retryAfterSeconds ? new Date(completedAt.getTime() + result.retryAfterSeconds * 1000) : null,
 							lastErrorMessage: responseMessage,
 							updatedAt: completedAt,
 						})
@@ -1193,6 +1267,7 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 							status,
 							attempts: attempt,
 							lockedAt: null,
+							httpStatus: result.status,
 							lastErrorMessage: result.ok ? null : responseMessage,
 							updatedAt: completedAt,
 						})
@@ -1200,7 +1275,11 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 					...chunk(urlList, 1000).map((locs) =>
 						db
 							.update(urls)
-							.set({ lastSubmittedAt: completedAt, lastSubmissionStatus: status })
+							.set({
+								lastSubmittedAt: completedAt,
+								lastSubmissionStatus: status,
+								lastSubmittedEngine: engine,
+							})
 							.where(and(eq(urls.siteId, siteId), inArray(urls.loc, locs))),
 					),
 				);
@@ -1221,7 +1300,7 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 		}
 	}
 
-	return { processedCount: jobs.length, successCount, failedCount, retryCount };
+	return { processedCount: jobs.length, successCount, failedCount, retryCount, throttledCount };
 }
 
 // ---------------------------------------------------------------------------
@@ -1368,4 +1447,144 @@ export async function countOpenJobs(siteId: string) {
 		.from(submissionJobs)
 		.where(and(eq(submissionJobs.siteId, siteId), inArray(submissionJobs.status, ["queued", "processing"])));
 	return row?.count ?? 0;
+}
+
+export async function getSiteQueueSummary(userId: string, siteId: string) {
+	const site = await getSiteForUser(siteId, userId);
+	if (!site) return null;
+
+	const now = new Date();
+
+	const [statusCounts, throttledRows, engineCounts, [earliestNextRun]] = await Promise.all([
+		db
+			.select({
+				status: submissionJobs.status,
+				count: sql<number>`cast(count(*) as int)`,
+			})
+			.from(submissionJobs)
+			.where(eq(submissionJobs.siteId, siteId))
+			.groupBy(submissionJobs.status),
+		db
+			.select({
+				count: sql<number>`cast(count(*) as int)`,
+			})
+			.from(submissionJobs)
+			.where(
+				and(
+					eq(submissionJobs.siteId, siteId),
+					eq(submissionJobs.status, "queued"),
+					or(
+						eq(submissionJobs.httpStatus, 429),
+						isNotNull(submissionJobs.retryAfterAt),
+						gt(submissionJobs.nextRunAt, now),
+					),
+				),
+			),
+		db
+			.select({
+				engine: submissionJobs.engine,
+				count: sql<number>`cast(count(*) as int)`,
+			})
+			.from(submissionJobs)
+			.where(and(eq(submissionJobs.siteId, siteId), inArray(submissionJobs.status, ["queued", "processing"])))
+			.groupBy(submissionJobs.engine),
+		db
+			.select({
+				nextRunAt: sql<Date | null>`min(${submissionJobs.nextRunAt})`,
+			})
+			.from(submissionJobs)
+			.where(and(eq(submissionJobs.siteId, siteId), eq(submissionJobs.status, "queued"))),
+	]);
+
+	const summary = {
+		queued: 0,
+		processing: 0,
+		success: 0,
+		failed: 0,
+		throttled: throttledRows[0]?.count ?? 0,
+		openTotal: 0,
+		byEngine: {
+			indexnow: 0,
+			bing: 0,
+		} as Record<string, number>,
+		nextRunAt: earliestNextRun?.nextRunAt ?? null,
+	};
+
+	for (const row of statusCounts) {
+		if (row.status in summary) {
+			(summary as Record<string, unknown>)[row.status] = row.count;
+		}
+	}
+	summary.openTotal = summary.queued + summary.processing;
+
+	for (const row of engineCounts) {
+		summary.byEngine[row.engine] = row.count;
+	}
+
+	return summary;
+}
+
+export async function getSiteQueueJobs(
+	userId: string,
+	siteId: string,
+	options: { page?: number; limit?: number; status?: string; engine?: string } = {},
+) {
+	const site = await getSiteForUser(siteId, userId);
+	if (!site) return null;
+
+	const page = Math.max(1, options.page ?? 1);
+	const limit = Math.min(100, Math.max(1, options.limit ?? 50));
+	const offset = (page - 1) * limit;
+
+	const filters: SQL[] = [eq(submissionJobs.siteId, siteId)];
+	if (options.status) {
+		filters.push(eq(submissionJobs.status, options.status));
+	}
+	if (options.engine) {
+		filters.push(eq(submissionJobs.engine, options.engine));
+	}
+
+	const [jobs, [countRow]] = await Promise.all([
+		db
+			.select({
+				id: submissionJobs.id,
+				loc: submissionJobs.loc,
+				engine: submissionJobs.engine,
+				reason: submissionJobs.reason,
+				status: submissionJobs.status,
+				priority: submissionJobs.priority,
+				attempts: submissionJobs.attempts,
+				httpStatus: submissionJobs.httpStatus,
+				retryAfterAt: submissionJobs.retryAfterAt,
+				nextRunAt: submissionJobs.nextRunAt,
+				lastErrorMessage: submissionJobs.lastErrorMessage,
+				createdAt: submissionJobs.createdAt,
+				updatedAt: submissionJobs.updatedAt,
+			})
+			.from(submissionJobs)
+			.where(and(...filters))
+			.orderBy(asc(submissionJobs.priority), asc(submissionJobs.nextRunAt), desc(submissionJobs.createdAt))
+			.limit(limit)
+			.offset(offset),
+		db
+			.select({ total: sql<number>`cast(count(*) as int)` })
+			.from(submissionJobs)
+			.where(and(...filters)),
+	]);
+
+	return {
+		jobs,
+		total: countRow?.total ?? 0,
+		page,
+		limit,
+		totalPages: Math.ceil((countRow?.total ?? 0) / limit),
+	};
+}
+
+export async function drainSiteQueueForUser(userId: string, siteId: string, maxJobs = 1000) {
+	const site = await getSiteForUser(siteId, userId);
+	if (!site) {
+		throw new Error("Site not found or unauthorized");
+	}
+	return processSubmissionQueue({ siteId, maxJobs });
 }

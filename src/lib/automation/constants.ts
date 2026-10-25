@@ -13,6 +13,9 @@ export const AUTOMATION_LIMITS = {
 	maxSubmitAttempts: 3, // Then the job is marked failed and an alert is raised
 	staleLockMinutes: 15, // 'processing' jobs older than this were orphaned by a crashed run
 	resubmitCooldownHours: 24, // Do not resubmit an unchanged URL more often than this
+	throttleCooldownMinutes: 15, // Cooling off backoff after receiving HTTP 429 when no Retry-After header
+	retryJitterPercent: 0.2, // +/- 20% random jitter on retry backoff to prevent thundering herds
+	maxDrainJobsInline: 1_000, // Jobs processed on on-demand queue drain
 } as const;
 
 // IndexNow accepts up to 10,000 URLs per POST; Bing's SubmitUrlBatch caps at 500 and has a

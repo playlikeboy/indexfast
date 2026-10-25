@@ -3,10 +3,10 @@
  * reads run in parallel because each Neon HTTP query is a network round trip.
  * Writes never happen here; they go through src/lib/automation/service.ts.
  */
-import { and, desc, eq, ilike, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { alerts, apiKeys, apiUsageEvents, siteSitemaps, sites, submissionJobs, submissions, urls } from "@/db/schema";
-import { getIndexNowSetup, getBingStatusForUser, getSiteForUser } from "@/lib/automation/service";
+import { getIndexNowSetup, getBingStatusForUser, getSiteForUser, getSiteQueueSummary } from "@/lib/automation/service";
 import { getUserAccess } from "@/lib/platform/entitlements";
 import { maskApiKeyPrefix } from "@/lib/platform/api-key-utils";
 
@@ -72,42 +72,91 @@ export async function getDashboardHome(userId: string) {
 	};
 }
 
-export type UrlTab = "all" | "new" | "pending" | "submitted" | "failed";
+export type UrlTab = "all" | "new" | "pending" | "submitted" | "failed" | "queue";
 export const URL_PAGE_SIZE = 50;
 
 export async function getSitePage(userId: string, siteId: string, options: { tab: UrlTab; q: string; page: number }) {
 	const site = await getSiteForUser(siteId, userId);
 	if (!site) return null;
 
-	const filters: SQL[] = [eq(urls.siteId, siteId)];
-	if (options.tab === "pending") filters.push(isNull(urls.lastSubmittedAt));
-	if (options.tab === "submitted") filters.push(eq(urls.lastSubmissionStatus, "success"));
-	if (options.tab === "failed") filters.push(eq(urls.lastSubmissionStatus, "failed"));
-	if (options.tab === "new") filters.push(sql`${urls.createdAt} > now() - interval '7 days'`);
-	if (options.q) filters.push(ilike(urls.loc, `%${options.q.replace(/[%_\\]/g, (char) => `\\${char}`)}%`));
+	const isQueueTab = options.tab === "queue";
 
-	const [access, setup, sources, [stats], urlRows, [{ filtered }], activity, issues, bing, [{ openJobs }]] = await Promise.all([
+	const urlFilters: SQL[] = [eq(urls.siteId, siteId)];
+	if (options.tab === "pending") urlFilters.push(isNull(urls.lastSubmittedAt));
+	if (options.tab === "submitted") urlFilters.push(eq(urls.lastSubmissionStatus, "success"));
+	if (options.tab === "failed") urlFilters.push(eq(urls.lastSubmissionStatus, "failed"));
+	if (options.tab === "new") urlFilters.push(sql`${urls.createdAt} > now() - interval '7 days'`);
+	if (options.q && !isQueueTab) urlFilters.push(ilike(urls.loc, `%${options.q.replace(/[%_\\]/g, (char) => `\\${char}`)}%`));
+
+	const queueFilters: SQL[] = [eq(submissionJobs.siteId, siteId)];
+	if (options.q && isQueueTab) queueFilters.push(ilike(submissionJobs.loc, `%${options.q.replace(/[%_\\]/g, (char) => `\\${char}`)}%`));
+
+	const [
+		access,
+		setup,
+		sources,
+		[stats],
+		urlRows,
+		urlCountRow,
+		queueRows,
+		queueCountRow,
+		activity,
+		issues,
+		bing,
+		queueSummary,
+	] = await Promise.all([
 		getUserAccess(userId),
 		getIndexNowSetup(site),
 		db.select().from(siteSitemaps).where(eq(siteSitemaps.siteId, siteId)).orderBy(desc(siteSitemaps.isPrimary), siteSitemaps.createdAt),
 		db.select(urlStats).from(urls).where(eq(urls.siteId, siteId)),
-		db
-			.select({
-				id: urls.id,
-				loc: urls.loc,
-				createdAt: urls.createdAt,
-				lastmod: urls.lastmod,
-				lastSubmittedAt: urls.lastSubmittedAt,
-				lastSubmissionStatus: urls.lastSubmissionStatus,
-				httpStatus: urls.httpStatus,
-				indexingStatus: urls.indexingStatus,
-			})
-			.from(urls)
-			.where(and(...filters))
-			.orderBy(desc(urls.createdAt), urls.loc)
-			.limit(URL_PAGE_SIZE)
-			.offset((options.page - 1) * URL_PAGE_SIZE),
-		db.select({ filtered: sql<number>`cast(count(*) as int)` }).from(urls).where(and(...filters)),
+		!isQueueTab
+			? db
+					.select({
+						id: urls.id,
+						loc: urls.loc,
+						createdAt: urls.createdAt,
+						lastmod: urls.lastmod,
+						lastSubmittedAt: urls.lastSubmittedAt,
+						lastSubmissionStatus: urls.lastSubmissionStatus,
+						lastSubmittedEngine: urls.lastSubmittedEngine,
+						httpStatus: urls.httpStatus,
+						indexingStatus: urls.indexingStatus,
+					})
+					.from(urls)
+					.where(and(...urlFilters))
+					.orderBy(desc(urls.createdAt), urls.loc)
+					.limit(URL_PAGE_SIZE)
+					.offset((options.page - 1) * URL_PAGE_SIZE)
+			: Promise.resolve([]),
+		!isQueueTab
+			? db.select({ filtered: sql<number>`cast(count(*) as int)` }).from(urls).where(and(...urlFilters))
+			: Promise.resolve([{ filtered: 0 }]),
+		isQueueTab
+			? db
+					.select({
+						id: submissionJobs.id,
+						loc: submissionJobs.loc,
+						engine: submissionJobs.engine,
+						reason: submissionJobs.reason,
+						status: submissionJobs.status,
+						priority: submissionJobs.priority,
+						attempts: submissionJobs.attempts,
+						httpStatus: submissionJobs.httpStatus,
+						retryAfterAt: submissionJobs.retryAfterAt,
+						nextRunAt: submissionJobs.nextRunAt,
+						lastErrorMessage: submissionJobs.lastErrorMessage,
+						createdAt: submissionJobs.createdAt,
+						updatedAt: submissionJobs.updatedAt,
+					})
+					.from(submissionJobs)
+					.where(and(...queueFilters))
+					.orderBy(asc(submissionJobs.priority), asc(submissionJobs.nextRunAt), desc(submissionJobs.createdAt))
+					.limit(URL_PAGE_SIZE)
+					.offset((options.page - 1) * URL_PAGE_SIZE)
+			: Promise.resolve([]),
+		isQueueTab
+			? db.select({ filtered: sql<number>`cast(count(*) as int)` }).from(submissionJobs).where(and(...queueFilters))
+			: Promise.resolve([{ filtered: 0 }]),
 		db
 			.select({ loc: submissions.loc, engine: submissions.engine, status: submissions.status, responseMessage: submissions.responseMessage, createdAt: submissions.createdAt })
 			.from(submissions)
@@ -116,11 +165,11 @@ export async function getSitePage(userId: string, siteId: string, options: { tab
 			.limit(15),
 		db.select().from(alerts).where(and(eq(alerts.siteId, siteId), eq(alerts.resolved, false))).orderBy(desc(alerts.createdAt)).limit(5),
 		getBingStatusForUser(userId, siteId),
-		db
-			.select({ openJobs: sql<number>`cast(count(*) as int)` })
-			.from(submissionJobs)
-			.where(and(eq(submissionJobs.siteId, siteId), inArray(submissionJobs.status, ["queued", "processing"]))),
+		getSiteQueueSummary(userId, siteId),
 	]);
+
+	const filtered = isQueueTab ? (queueCountRow[0]?.filtered ?? 0) : (urlCountRow[0]?.filtered ?? 0);
+	const openJobs = queueSummary?.openTotal ?? 0;
 
 	return {
 		site,
@@ -130,6 +179,8 @@ export async function getSitePage(userId: string, siteId: string, options: { tab
 		sources,
 		stats,
 		urlRows,
+		queueRows,
+		queueSummary,
 		filtered,
 		activity,
 		issues,

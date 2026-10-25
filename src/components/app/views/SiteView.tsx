@@ -20,6 +20,7 @@ import {
 	saveCustomKeyAction,
 	setAutomationAction,
 	submitPendingAction,
+	drainQueueAction,
 	submitUrlsAction,
 	syncNowAction,
 	toggleBingAutoSubmitAction,
@@ -35,17 +36,19 @@ import { getSiteHost } from "@/lib/url-utils";
 
 export const TABS: Array<{ id: UrlTab; label: string }> = [
 	{ id: "all", label: "All" },
-	{ id: "new", label: "New (7d)" },
-	{ id: "pending", label: "Pending" },
 	{ id: "submitted", label: "Submitted" },
+	{ id: "queue", label: "In Queue" },
+	{ id: "pending", label: "Pending" },
+	{ id: "new", label: "New (7d)" },
 	{ id: "failed", label: "Failed" },
 ];
 
 /** Pure view: renders from loaded data so it can also be rendered with fixtures. */
 export function SiteView({ data, tab, q, pageNumber }: { data: SitePageData; tab: UrlTab; q: string; pageNumber: number }) {
-	const { site, setup, sources, stats, urlRows, filtered, activity, issues, bing, openJobs, paused, entitlement } = data;
+	const { site, setup, sources, stats, urlRows, queueRows, queueSummary, filtered, activity, issues, bing, openJobs, paused, entitlement } = data;
 	const host = getSiteHost(site);
 	const live = site.verified && site.automationEnabled;
+	const isQueueTab = tab === "queue";
 	const totalPages = Math.max(1, Math.ceil(filtered / URL_PAGE_SIZE));
 	const hrefFor = (next: { tab?: UrlTab; page?: number }) => {
 		const params = new URLSearchParams();
@@ -172,9 +175,28 @@ export function SiteView({ data, tab, q, pageNumber }: { data: SitePageData; tab
 				<Stat
 					label="Submitted"
 					value={stats.submitted.toLocaleString()}
-					hint={stats.total > 0 ? <span className="mt-1.5 block"><Progress value={stats.submitted} max={stats.total} label="Share of URLs submitted" /></span> : undefined}
+					hint={
+						stats.total > 0 ? (
+							<span className="mt-1.5 block space-y-1">
+								<Progress value={stats.submitted} max={stats.total} label="Share of URLs submitted" />
+								<span className="block text-[11px] text-[var(--app-muted)]">
+									{Math.round((stats.submitted / stats.total) * 100)}% of total catalog
+								</span>
+							</span>
+						) : undefined
+					}
 				/>
-				<Stat label="Pending" value={stats.pending.toLocaleString()} hint={stats.failed > 0 ? `${stats.failed} failed` : undefined} />
+				<Stat
+					label="In Queue"
+					value={openJobs.toLocaleString()}
+					hint={
+						queueSummary?.throttled && queueSummary.throttled > 0
+							? `${queueSummary.throttled} throttled (429)`
+							: stats.pending > 0
+							? `${stats.pending} pending backlog`
+							: undefined
+					}
+				/>
 				<Stat label="New this week" value={stats.new7d.toLocaleString()} />
 			</div>
 
@@ -199,36 +221,143 @@ export function SiteView({ data, tab, q, pageNumber }: { data: SitePageData; tab
 
 			<Card
 				className="mb-6"
-				title="URLs"
+				title="URLs & Submissions"
+				description={
+					isQueueTab
+						? `${openJobs.toLocaleString()} job(s) in queue for automated rate-limited submission.`
+						: tab === "submitted"
+						? `${stats.submitted.toLocaleString()} URLs confirmed submitted to search engines.`
+						: undefined
+				}
 				action={
-					site.verified && stats.pending > 0 && !paused ? (
-						<ActionButton action={submitPendingAction.bind(null, site.id)} variant="primary" pendingLabel="Submitting...">
-							Submit {stats.pending.toLocaleString()} pending
-						</ActionButton>
+					site.verified && !paused ? (
+						<div className="flex items-center gap-2">
+							{openJobs > 0 ? (
+								<ActionButton action={drainQueueAction.bind(null, site.id)} variant="primary" pendingLabel="Processing queue...">
+									Process queue ({openJobs.toLocaleString()})
+								</ActionButton>
+							) : stats.pending > 0 ? (
+								<ActionButton action={submitPendingAction.bind(null, site.id)} variant="primary" pendingLabel="Submitting...">
+									Submit {stats.pending.toLocaleString()} pending
+								</ActionButton>
+							) : null}
+						</div>
 					) : null
 				}
 			>
 				<div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--app-border)] px-5 py-2">
 					<div className="flex gap-1 overflow-x-auto">
-						{TABS.map((item) => (
-							<Link
-								key={item.id}
-								href={hrefFor({ tab: item.id, page: 1 })}
-								className={cn(
-									"whitespace-nowrap rounded-md px-2.5 py-1 text-sm",
-									item.id === tab ? "bg-[var(--app-subtle)] font-medium" : "text-[var(--app-muted)] hover:text-[var(--app-text)]",
-								)}
-							>
-								{item.label}
-							</Link>
-						))}
+						{TABS.map((item) => {
+							const count =
+								item.id === "all"
+									? stats.total
+									: item.id === "submitted"
+									? stats.submitted
+									: item.id === "queue"
+									? openJobs
+									: item.id === "pending"
+									? stats.pending
+									: item.id === "new"
+									? stats.new7d
+									: stats.failed;
+							return (
+								<Link
+									key={item.id}
+									href={hrefFor({ tab: item.id, page: 1 })}
+									className={cn(
+										"flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-sm",
+										item.id === tab ? "bg-[var(--app-subtle)] font-medium text-[var(--app-text)]" : "text-[var(--app-muted)] hover:text-[var(--app-text)]",
+									)}
+								>
+									<span>{item.label}</span>
+									<span
+										className={cn(
+											"rounded-full px-1.5 py-0.5 text-[10px] tabular-nums",
+											item.id === tab ? "bg-[var(--app-panel)] text-[var(--app-text)] font-semibold shadow-xs" : "bg-[var(--app-subtle)] text-[var(--app-muted)]",
+										)}
+									>
+										{count.toLocaleString()}
+									</span>
+								</Link>
+							);
+						})}
 					</div>
 					<form className="w-full sm:w-64" action={`/dashboard/sites/${site.id}`}>
 						{tab !== "all" ? <input type="hidden" name="tab" value={tab} /> : null}
-						<input name="q" defaultValue={q} placeholder="Search URLs" className={inputClass} aria-label="Search URLs" />
+						<input name="q" defaultValue={q} placeholder={isQueueTab ? "Search queue URLs" : "Search URLs"} className={inputClass} aria-label="Search URLs" />
 					</form>
 				</div>
-				{urlRows.length === 0 ? (
+
+				{isQueueTab && queueSummary ? (
+					<div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--app-border)] bg-[var(--app-subtle)]/40 px-5 py-2.5 text-xs">
+						<div className="flex flex-wrap items-center gap-3">
+							<span className="font-semibold text-[var(--app-text)]">
+								{queueSummary.openTotal.toLocaleString()} jobs in queue
+							</span>
+							{queueSummary.throttled > 0 ? (
+								<Badge tone="warn">{queueSummary.throttled.toLocaleString()} throttled (429 cooldown)</Badge>
+							) : null}
+							<span className="text-[var(--app-muted)]">
+								Next run: {queueSummary.nextRunAt && new Date(queueSummary.nextRunAt) > new Date() ? `in ${timeAgo(queueSummary.nextRunAt)}` : "Ready now"}
+							</span>
+							<span className="text-[var(--app-muted)]">
+								Engines: IndexNow ({queueSummary.byEngine.indexnow ?? 0}) · Bing ({queueSummary.byEngine.bing ?? 0})
+							</span>
+						</div>
+						{openJobs > 0 && site.verified && !paused ? (
+							<ActionButton action={drainQueueAction.bind(null, site.id)} variant="secondary" pendingLabel="...">
+								Process now
+							</ActionButton>
+						) : null}
+					</div>
+				) : null}
+
+				{isQueueTab ? (
+					!queueRows || queueRows.length === 0 ? (
+						<EmptyState title={q ? "No matching queue items" : "Queue is empty"}>
+							{q ? "Try another search term." : "All discovered URLs have been submitted to search engines."}
+						</EmptyState>
+					) : (
+						<ul className="divide-y divide-[var(--app-border)]">
+							{queueRows.map((job) => {
+								const is429 = job.httpStatus === 429 || (job.retryAfterAt && new Date(job.retryAfterAt) > new Date());
+								const isCooling = job.nextRunAt && new Date(job.nextRunAt) > new Date();
+								return (
+									<li key={job.id} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-2.5 text-sm">
+										<a
+											href={job.loc}
+											target="_blank"
+											rel="noreferrer"
+											className="min-w-0 basis-full truncate font-mono text-xs hover:underline sm:flex-1 sm:basis-auto"
+											title={job.loc}
+										>
+											{job.loc.replace(`https://${host}`, "") || "/"}
+										</a>
+										<Badge tone="neutral">{job.engine === "bing" ? "Bing" : "IndexNow"}</Badge>
+										<span className="text-xs text-[var(--app-muted)] capitalize">{job.reason}</span>
+										{is429 ? (
+											<Badge tone="warn">429 Rate limited</Badge>
+										) : job.attempts > 0 ? (
+											<Badge tone="warn">Retry #{job.attempts}</Badge>
+										) : job.status === "processing" ? (
+											<Badge tone="warn">Processing</Badge>
+										) : (
+											<Badge tone="neutral">Queued (P{job.priority})</Badge>
+										)}
+										<span className="text-xs text-[var(--app-muted)]">
+											{isCooling ? `runs ${timeAgo(job.nextRunAt)}` : "due now"}
+										</span>
+										{job.lastErrorMessage ? (
+											<span className="w-full text-xs text-[var(--app-bad)] truncate" title={job.lastErrorMessage}>
+												{job.lastErrorMessage}
+											</span>
+										) : null}
+									</li>
+								);
+							})}
+						</ul>
+					)
+				) : urlRows.length === 0 ? (
 					<EmptyState title={q || tab !== "all" ? "No matching URLs" : "No URLs yet"}>
 						{q || tab !== "all" ? "Try another filter." : "Add a sitemap below, then click Sync now."}
 					</EmptyState>
@@ -236,12 +365,11 @@ export function SiteView({ data, tab, q, pageNumber }: { data: SitePageData; tab
 					<ul className="divide-y divide-[var(--app-border)]">
 						{urlRows.map((row) => (
 							<li key={row.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-2.5 text-sm">
-								{/* Full-width path on mobile, so it never collapses to "/b..." next to the badges. */}
 								<a href={row.loc} target="_blank" rel="noreferrer" className="min-w-0 basis-full truncate font-mono text-xs hover:underline sm:flex-1 sm:basis-auto" title={row.loc}>
 									{row.loc.replace(`https://${host}`, "") || "/"}
 								</a>
 								<span className="hidden text-xs text-[var(--app-muted)] sm:inline">found {timeAgo(row.createdAt)}</span>
-								<UrlStatus status={row.lastSubmissionStatus} at={row.lastSubmittedAt} blockers={row.indexingStatus === "blockers"} />
+								<UrlStatus status={row.lastSubmissionStatus} at={row.lastSubmittedAt} blockers={row.indexingStatus === "blockers"} engine={row.lastSubmittedEngine} />
 								{!paused ? (
 									<span className="ml-auto flex items-center sm:ml-0">
 										{site.verified ? (
@@ -261,7 +389,7 @@ export function SiteView({ data, tab, q, pageNumber }: { data: SitePageData; tab
 				{totalPages > 1 ? (
 					<div className="flex items-center justify-between border-t border-[var(--app-border)] px-5 py-3 text-sm text-[var(--app-muted)]">
 						<span>
-							Page {pageNumber} of {totalPages} · {filtered.toLocaleString()} URLs
+							Page {pageNumber} of {totalPages} · {filtered.toLocaleString()} {isQueueTab ? "jobs" : "URLs"}
 						</span>
 						<span className="flex gap-2">
 							{pageNumber > 1 ? <ButtonLink href={hrefFor({ page: pageNumber - 1 })}>Previous</ButtonLink> : null}
@@ -469,9 +597,26 @@ function StepDot({ n, done }: { n: number; done?: boolean }) {
 	);
 }
 
-function UrlStatus({ status, at, blockers }: { status: string | null; at: Date | null; blockers: boolean }) {
+function UrlStatus({
+	status,
+	at,
+	blockers,
+	engine,
+}: {
+	status: string | null;
+	at: Date | null;
+	blockers: boolean;
+	engine?: string | null;
+}) {
 	if (blockers) return <Badge tone="bad">Blocked</Badge>;
-	if (status === "success") return <Badge tone="ok">Submitted {timeAgo(at)}</Badge>;
+	if (status === "success") {
+		return (
+			<span className="inline-flex items-center gap-1.5">
+				<Badge tone="ok">Submitted {timeAgo(at)}</Badge>
+				{engine ? <Badge tone="neutral">{engine === "bing" ? "Bing" : "IndexNow"}</Badge> : null}
+			</span>
+		);
+	}
 	if (status === "failed") return <Badge tone="bad">Failed</Badge>;
 	return <Badge>Pending</Badge>;
 }

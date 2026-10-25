@@ -32,6 +32,7 @@ import {
 	updateUrlSubmissionRulesForUser,
 	adoptExistingIndexNowKeyForUser,
 	verifySiteForUser,
+	drainSiteQueueForUser,
 } from "@/lib/automation/service";
 import { createApiKeyForUser, revokeApiKeyForUser } from "@/lib/platform/api-keys";
 import { DEFAULT_API_SCOPES, PLAN_PERIOD_DAYS, isPaidPlan, normalizeBillingTier } from "@/lib/platform/plans";
@@ -128,6 +129,23 @@ export async function submitPendingAction(siteId: string): Promise<ActionResult>
 		return result.queued === 0 ? "Nothing pending." : `Queued ${result.queued}, submitted ${result.submitted}.`;
 	});
 }
+
+export async function drainQueueAction(siteId: string): Promise<ActionResult> {
+	return run(async () => {
+		const userId = await sessionUserId();
+		const result = await drainSiteQueueForUser(userId, siteId, 1000);
+		revalidateSite(siteId);
+		if (result.processedCount === 0) {
+			return "Queue is empty.";
+		}
+		const parts = [`${result.successCount} submitted`];
+		if (result.throttledCount > 0) parts.push(`${result.throttledCount} throttled (cooling off)`);
+		if (result.retryCount > 0) parts.push(`${result.retryCount} scheduled for retry`);
+		if (result.failedCount > 0) parts.push(`${result.failedCount} failed`);
+		return `Processed ${result.processedCount} jobs: ${parts.join(", ")}.`;
+	});
+}
+
 
 export async function submitUrlsAction(siteId: string, _prev: ActionResult, formData: FormData): Promise<ActionResult> {
 	return run(async () => {
