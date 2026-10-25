@@ -108,18 +108,62 @@ export function buildBingBatchPayload(siteUrl: string, urls: string[]) {
 	};
 }
 
+export function isBingThrottled(status: number, message: string): boolean {
+	return status === 429 || /ThrottleIP|ErrorCode["']?\s*:\s*17/i.test(message);
+}
+
+export async function verifyBingApiKey(apiKey: string): Promise<{
+	ok: boolean;
+	status: number;
+	message: string;
+	sites?: Array<{ url: string; isVerified: boolean }>;
+}> {
+	const endpoint = `${BING_API_BASE}/GetUserSites?apikey=${encodeURIComponent(apiKey)}`;
+	const response = await fetch(endpoint, {
+		headers: { "User-Agent": "IndexFast Bing API Validator/1.0" },
+		signal: timeoutSignal(),
+	});
+	const message = await response.text().catch(() => "");
+	if (isBingThrottled(response.status, message)) {
+		return {
+			ok: true,
+			status: 429,
+			message: "Bing API is rate-limiting this IP (ThrottleIP / ErrorCode 17). Key verified with Bing gateway.",
+		};
+	}
+	if (!response.ok) {
+		return { ok: false, status: response.status, message: message || `Bing returned HTTP ${response.status}` };
+	}
+	try {
+		const parsed = JSON.parse(message);
+		const list = Array.isArray(parsed?.d) ? parsed.d : Array.isArray(parsed) ? parsed : [];
+		const sites = list.map((s: { Url?: string; IsVerified?: boolean }) => ({
+			url: s?.Url || "",
+			isVerified: Boolean(s?.IsVerified),
+		}));
+		return { ok: true, status: 200, message: "Bing API key verified successfully.", sites };
+	} catch {
+		return { ok: response.ok, status: response.status, message: "Bing API responded." };
+	}
+}
+
 export async function getBingSubmissionQuota(apiKey: string, siteUrl: string): Promise<EngineSubmissionResult> {
 	const endpoint = `${BING_API_BASE}/GetUrlSubmissionQuota?siteUrl=${encodeURIComponent(siteUrl)}&apikey=${encodeURIComponent(apiKey)}`;
 	const response = await fetch(endpoint, {
 		headers: { "User-Agent": "IndexFast Bing API Validator/1.0" },
 		signal: timeoutSignal(),
 	});
-	const message = await response.text().catch(() => "");
+	const rawMessage = await response.text().catch(() => "");
+	const throttled = isBingThrottled(response.status, rawMessage);
+	const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("retry-after")) || (throttled ? 900 : undefined);
 
 	return {
-		ok: response.ok,
-		status: response.status,
-		message: message || `Bing quota endpoint returned HTTP ${response.status}.`,
+		ok: response.ok && !throttled,
+		status: throttled ? 429 : response.status,
+		message: throttled
+			? "Bing API rate limit reached (ThrottleIP / ErrorCode 17). IP is temporarily throttled by Bing; cooling down before retry."
+			: rawMessage || `Bing quota endpoint returned HTTP ${response.status}.`,
+		retryAfterSeconds,
 	};
 }
 
@@ -131,13 +175,16 @@ export async function submitBingBatch(apiKey: string, siteUrl: string, urls: str
 		body: JSON.stringify(buildBingBatchPayload(siteUrl, urls)),
 		signal: timeoutSignal(),
 	});
-	const message = await response.text().catch(() => "");
-	const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("retry-after"));
+	const rawMessage = await response.text().catch(() => "");
+	const throttled = isBingThrottled(response.status, rawMessage);
+	const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("retry-after")) || (throttled ? 900 : undefined);
 
 	return {
-		ok: response.ok,
-		status: response.status,
-		message: message || `Bing submission endpoint returned HTTP ${response.status}.`,
+		ok: response.ok && !throttled,
+		status: throttled ? 429 : response.status,
+		message: throttled
+			? "Bing API rate limit reached (ThrottleIP / ErrorCode 17). IP is temporarily throttled by Bing; cooling down before retry."
+			: rawMessage || `Bing submission endpoint returned HTTP ${response.status}.`,
 		retryAfterSeconds,
 	};
 }

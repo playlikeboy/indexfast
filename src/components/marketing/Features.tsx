@@ -1,11 +1,11 @@
 export function Features() {
 	const features = [
-		{ title: "Never miss a new page", desc: "Hourly sitemap checks catch every new URL and every page whose lastmod changed." },
-		{ title: "No duplicate pings", desc: "URLs are deduped across sitemaps, and unchanged pages are never resubmitted." },
-		{ title: "Works inside your AI editor", desc: "MCP for Claude Code, Cursor, VS Code and Windsurf: \"I just published a post, submit it\" works." },
-		{ title: "Catch what blocks indexing", desc: "Check any URL for noindex tags, canonical mismatches, redirects and HTTP errors." },
-		{ title: "IndexNow + Bing in one place", desc: "One key reaches every IndexNow engine. Add a Bing API key for direct submissions too." },
-		{ title: "Know when something breaks", desc: "A failing sitemap or rejected submission shows up as an issue, with the exact reason." },
+		{ title: "Direct Bing Console + IndexNow", desc: "Submit directly to Bing Webmaster Console using your API key, plus instant IndexNow broadcast to Yandex, Naver, and Seznam." },
+		{ title: "Adaptive 429 Queue & Batching", desc: "Big sites with thousands of URLs are smoothly queued with jittered exponential backoff and search engine rate limit circuit breakers." },
+		{ title: "Submission Transparency & Logs", desc: "See every URL submitted till now with engine confirmation badges, in-flight queue monitoring, and one-click manual batch draining." },
+		{ title: "Agent-Native MCP & SKILL.md", desc: "Connect Claude Code, Cursor, Windsurf, or VS Code over JSON-RPC. Ask your AI to publish and submit in one step." },
+		{ title: "Catch what blocks indexing", desc: "Check any URL for noindex tags, canonical mismatches, redirects, and HTTP errors before search engines flag them." },
+		{ title: "Global Search Engine Specs & Tools", desc: "Built-in API guides for Google, Bing, Yandex, Naver, Baidu, and Seznam, plus 100+ curated launch submission directories." },
 	];
 
 	return (

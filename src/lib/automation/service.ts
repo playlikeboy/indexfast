@@ -39,6 +39,7 @@ import {
 	getIndexNowKeyLocation,
 	submitBingBatch,
 	submitIndexNowBatch,
+	verifyBingApiKey,
 	verifyIndexNowKey,
 	type EngineSubmissionResult,
 } from "./search-engines";
@@ -436,6 +437,9 @@ function describeBingValidationMessage(siteUrl: string, message: string) {
 	if (/InvalidParameter/i.test(message)) {
 		return `Bing returned InvalidParameter for ${siteUrl}. Add and verify this exact site URL in Bing Webmaster Tools first.`;
 	}
+	if (/ThrottleIP|ErrorCode["']?\s*:\s*17/i.test(message)) {
+		return `Bing API is temporarily rate-limiting requests from this IP (ThrottleIP / ErrorCode 17). Key is saved and automated retries will run once cooled down.`;
+	}
 	return message;
 }
 
@@ -448,7 +452,25 @@ export async function saveBingApiKeyForUser(userId: string, siteId: string, apiK
 	}
 
 	const siteUrl = `https://${getSiteHost(site)}`;
-	const validation = await getBingSubmissionQuota(cleanApiKey, siteUrl);
+	let validation = await getBingSubmissionQuota(cleanApiKey, siteUrl);
+
+	// If the quota endpoint hit ThrottleIP or failed, verify via GetUserSites
+	if (!validation.ok) {
+		const verifiedSites = await verifyBingApiKey(cleanApiKey).catch(() => null);
+		if (verifiedSites?.ok) {
+			const matchingSite = verifiedSites.sites?.find(
+				(s) => s.url.replace(/\/+$/, "").toLowerCase() === siteUrl.replace(/\/+$/, "").toLowerCase(),
+			);
+			validation = {
+				ok: true,
+				status: 200,
+				message: matchingSite
+					? `Bing key verified. Site ${siteUrl} is active in Bing Webmaster Tools.`
+					: `Bing key verified for ${verifiedSites.sites?.length ?? 0} site(s).`,
+			};
+		}
+	}
+
 	const now = new Date();
 	const status = validation.ok ? "verified" : "failed";
 	const message = validation.ok ? null : truncateMessage(describeBingValidationMessage(siteUrl, validation.message));
@@ -1039,7 +1061,12 @@ export function calculateBackoffMs(attempt: number, options: { status?: number; 
 }
 
 export function isRetryable(result: EngineSubmissionResult) {
-	return result.status === 0 || result.status === 429 || result.status >= 500;
+	return (
+		result.status === 0 ||
+		result.status === 429 ||
+		result.status >= 500 ||
+		/ThrottleIP|ErrorCode["']?\s*:\s*17/i.test(result.message)
+	);
 }
 
 async function submitEngineBatch(site: SiteRow, engine: string, urlList: string[]): Promise<EngineSubmissionResult> {
@@ -1221,9 +1248,9 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 			const backoffMs = calculateBackoffMs(attempt, { status: result.status, retryAfterSeconds: result.retryAfterSeconds });
 			const resumeAt = new Date(completedAt.getTime() + backoffMs);
 
-			// If rate limited (429) or engine requested Retry-After: trip the circuit breaker for all subsequent batches of this engine!
-			if (result.status === 429 || (result.retryAfterSeconds && result.retryAfterSeconds > 0)) {
-				throttledEngines.set(engineKey, { resumeAt, error: responseMessage, status: result.status });
+			// If rate limited (429), ThrottleIP, or engine requested Retry-After: trip the circuit breaker for all subsequent batches of this engine!
+			if (result.status === 429 || (result.retryAfterSeconds && result.retryAfterSeconds > 0) || /ThrottleIP|ErrorCode["']?\s*:\s*17/i.test(result.message)) {
+				throttledEngines.set(engineKey, { resumeAt, error: responseMessage, status: result.status === 429 ? 429 : 429 });
 			}
 
 			const writes: Promise<unknown>[] = [

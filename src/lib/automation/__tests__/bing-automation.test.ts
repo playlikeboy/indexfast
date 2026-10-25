@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildBingBatchPayload } from "../search-engines";
+import { buildBingBatchPayload, isBingThrottled } from "../search-engines";
+import { isRetryable } from "../service";
 
 describe("Bing automation utilities", () => {
 	it("formats Bing batch payload with siteUrl and urlList", () => {
@@ -41,5 +42,20 @@ describe("Bing automation utilities", () => {
 		const data = parsed?.d || parsed;
 
 		expect(data.DailyQuota).toBe(5000);
+	});
+
+	it("detects Bing ThrottleIP and ErrorCode 17 as rate limit", () => {
+		const throttleResponse = JSON.stringify({
+			ErrorCode: 17,
+			Message: "ERROR!!! ThrottleIP",
+		});
+
+		expect(isBingThrottled(400, throttleResponse)).toBe(true);
+		expect(isBingThrottled(429, "")).toBe(true);
+		expect(isBingThrottled(200, "OK")).toBe(false);
+
+		// isRetryable must recognize ThrottleIP
+		expect(isRetryable({ ok: false, status: 400, message: throttleResponse })).toBe(true);
+		expect(isRetryable({ ok: false, status: 429, message: "Rate limit" })).toBe(true);
 	});
 });

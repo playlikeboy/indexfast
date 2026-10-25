@@ -2,6 +2,7 @@ import { Navbar } from "@/components/marketing/Navbar";
 import { Hero } from "@/components/marketing/Hero";
 import { Solution } from "@/components/marketing/Solution";
 import { Features } from "@/components/marketing/Features";
+import { SearchEnginesShowcase } from "@/components/marketing/SearchEnginesShowcase";
 import { FreeTools } from "@/components/marketing/FreeTools";
 import { HomePricing } from "@/components/marketing/HomePricing";
 import { FAQ, faqs } from "@/components/marketing/FAQ";
@@ -23,6 +24,7 @@ export default function Home() {
 				<Hero />
 				<Solution />
 				<Features />
+				<SearchEnginesShowcase />
 				<FreeTools />
 				<HomePricing />
 				<FAQ />

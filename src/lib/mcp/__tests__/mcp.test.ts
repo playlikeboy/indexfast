@@ -70,6 +70,8 @@ describe("MCP server", () => {
 				"set_bing_auto_submit",
 				"remove_bing_api_key",
 				"list_search_engines",
+				"get_submission_queue",
+				"process_submission_queue",
 			]),
 		);
 	});
