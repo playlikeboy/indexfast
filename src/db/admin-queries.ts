@@ -5,7 +5,19 @@
  */
 import { and, desc, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { apiUsageEvents, cronRuns, pageViews, payments, siteSitemaps, sites, submissionJobs, submissions, urls, users } from "@/db/schema";
+import {
+	apiUsageEvents,
+	cronRuns,
+	pageViews,
+	payments,
+	siteSitemaps,
+	sites,
+	submissionJobs,
+	submissions,
+	urls,
+	userIntegrations,
+	users,
+} from "@/db/schema";
 import { PLANS, normalizeBillingTier, resolveEntitlement } from "@/lib/platform/plans";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -15,6 +27,7 @@ export async function getAdminOverview(rangeDays = 30) {
 	const now = new Date();
 	const since = new Date(now.getTime() - rangeDays * DAY_MS);
 	const week = new Date(now.getTime() - 7 * DAY_MS);
+	const today = new Date(now.getTime() - DAY_MS);
 
 	const [
 		userRows,
@@ -23,7 +36,11 @@ export async function getAdminOverview(rangeDays = 30) {
 		[urlCounts],
 		[submissionCounts],
 		[queue],
+		queueByEngine,
+		submissionsByEngine,
+		recentSubmissions,
 		[apiCount],
+		apiUsageByRoute,
 		revenue,
 		recentPayments,
 		dailyViews,
@@ -32,10 +49,12 @@ export async function getAdminOverview(rangeDays = 30) {
 		topReferrers,
 		countries,
 		devices,
-		dailySignups,
+		rawDailySignups,
+		rawDailySubmissions,
 		recentCron,
 		failingSitemaps,
 		topUsers,
+		[bingIntegrations],
 	] = await Promise.all([
 		db.select({ billingTier: users.billingTier, planExpiresAt: users.planExpiresAt }).from(users).where(ne(users.billingTier, "free")),
 		db
@@ -43,6 +62,7 @@ export async function getAdminOverview(rangeDays = 30) {
 				total: int(sql`count(*)`),
 				new7d: int(sql`count(*) filter (where ${users.createdAt} >= ${week})`),
 				newRange: int(sql`count(*) filter (where ${users.createdAt} >= ${since})`),
+				activeToday: int(sql`count(*) filter (where ${users.lastSeenAt} >= ${today})`),
 				active7d: int(sql`count(*) filter (where ${users.lastSeenAt} >= ${week})`),
 			})
 			.from(users),
@@ -52,6 +72,9 @@ export async function getAdminOverview(rangeDays = 30) {
 				verified: int(sql`count(*) filter (where ${sites.verified})`),
 				live: int(sql`count(*) filter (where ${sites.verified} and ${sites.automationEnabled})`),
 				new7d: int(sql`count(*) filter (where ${sites.createdAt} >= ${week})`),
+				bingConnected: int(
+					sql`count(*) filter (where exists (select 1 from ${userIntegrations} where ${userIntegrations.userId} = ${sites.userId} and ${userIntegrations.provider} = 'bing' and ${userIntegrations.status} = 'verified'))`,
+				),
 			})
 			.from(sites),
 		db
@@ -59,15 +82,17 @@ export async function getAdminOverview(rangeDays = 30) {
 				total: int(sql`count(*)`),
 				new7d: int(sql`count(*) filter (where ${urls.createdAt} >= ${week})`),
 				pending: int(sql`count(*) filter (where ${urls.lastSubmittedAt} is null)`),
+				indexed: int(sql`count(*) filter (where ${urls.indexingStatus} = 'indexed')`),
 			})
 			.from(urls),
 		db
 			.select({
-				total7d: int(sql`count(*)`),
-				success7d: int(sql`count(*) filter (where ${submissions.status} = 'success')`),
+				total7d: int(sql`count(*) filter (where ${submissions.createdAt} >= ${week})`),
+				success7d: int(sql`count(*) filter (where ${submissions.status} = 'success' and ${submissions.createdAt} >= ${week})`),
+				totalRange: int(sql`count(*) filter (where ${submissions.createdAt} >= ${since})`),
+				successRange: int(sql`count(*) filter (where ${submissions.status} = 'success' and ${submissions.createdAt} >= ${since})`),
 			})
-			.from(submissions)
-			.where(gte(submissions.createdAt, week)),
+			.from(submissions),
 		db
 			.select({
 				queued: int(sql`count(*) filter (where ${submissionJobs.status} = 'queued')`),
@@ -76,7 +101,50 @@ export async function getAdminOverview(rangeDays = 30) {
 			})
 			.from(submissionJobs)
 			.where(inArray(submissionJobs.status, ["queued", "processing", "failed"])),
+		db
+			.select({
+				engine: submissionJobs.engine,
+				status: submissionJobs.status,
+				count: int(sql`count(*)`),
+			})
+			.from(submissionJobs)
+			.where(inArray(submissionJobs.status, ["queued", "processing", "failed"]))
+			.groupBy(submissionJobs.engine, submissionJobs.status),
+		db
+			.select({
+				engine: submissions.engine,
+				status: submissions.status,
+				count: int(sql`count(*)`),
+			})
+			.from(submissions)
+			.where(gte(submissions.createdAt, since))
+			.groupBy(submissions.engine, submissions.status),
+		db
+			.select({
+				id: submissions.id,
+				domain: sites.domain,
+				engine: submissions.engine,
+				status: submissions.status,
+				responseMessage: submissions.responseMessage,
+				attempt: submissions.attempt,
+				createdAt: submissions.createdAt,
+			})
+			.from(submissions)
+			.innerJoin(sites, eq(submissions.siteId, sites.id))
+			.orderBy(desc(submissions.createdAt))
+			.limit(15),
 		db.select({ count: int(sql`count(*)`) }).from(apiUsageEvents).where(gte(apiUsageEvents.createdAt, week)),
+		db
+			.select({
+				route: apiUsageEvents.route,
+				method: apiUsageEvents.method,
+				count: int(sql`count(*)`),
+			})
+			.from(apiUsageEvents)
+			.where(gte(apiUsageEvents.createdAt, since))
+			.groupBy(apiUsageEvents.route, apiUsageEvents.method)
+			.orderBy(desc(sql`count(*)`))
+			.limit(8),
 		db
 			.select({
 				currency: payments.currency,
@@ -126,6 +194,16 @@ export async function getAdminOverview(rangeDays = 30) {
 			.where(gte(users.createdAt, since))
 			.groupBy(sql`1`)
 			.orderBy(sql`1`),
+		db
+			.select({
+				day: sql<string>`to_char(date_trunc('day', ${submissions.createdAt}), 'YYYY-MM-DD')`,
+				count: int(sql`count(*)`),
+				success: int(sql`count(*) filter (where ${submissions.status} = 'success')`),
+			})
+			.from(submissions)
+			.where(gte(submissions.createdAt, since))
+			.groupBy(sql`1`)
+			.orderBy(sql`1`),
 		db.select().from(cronRuns).orderBy(desc(cronRuns.startedAt)).limit(12),
 		db
 			.select({ url: siteSitemaps.url, error: siteSitemaps.lastErrorMessage, at: siteSitemaps.lastErrorAt, email: users.email })
@@ -149,6 +227,13 @@ export async function getAdminOverview(rangeDays = 30) {
 			.from(users)
 			.orderBy(desc(users.createdAt))
 			.limit(50),
+		db
+			.select({
+				total: int(sql`count(*)`),
+				verified: int(sql`count(*) filter (where ${userIntegrations.status} = 'verified')`),
+			})
+			.from(userIntegrations)
+			.where(eq(userIntegrations.provider, "bing")),
 	]);
 
 	// MRR = monthly list price of every paid plan currently in force (active or grace).
@@ -171,18 +256,28 @@ export async function getAdminOverview(rangeDays = 30) {
 		sites: siteCounts,
 		urls: urlCounts,
 		submissions: submissionCounts,
+		submissionsByEngine,
+		recentSubmissions,
 		queue,
+		queueByEngine,
+		bingIntegrations: bingIntegrations ?? { total: 0, verified: 0 },
 		apiCalls7d: apiCount?.count ?? 0,
+		apiUsageByRoute,
 		recentPayments,
 		traffic: { daily: fillDays(dailyViews, rangeDays, now), totals: viewTotals, topPages, topReferrers, countries, devices },
-		dailySignups,
+		dailySignups: fillCountDays(rawDailySignups, rangeDays, now),
+		dailySubmissions: fillSubmissionDays(rawDailySubmissions, rangeDays, now),
 		recentCron,
 		failingSitemaps,
 		topUsers,
 	};
 }
 
-function topBy(column: typeof pageViews.path | typeof pageViews.referrer | typeof pageViews.country | typeof pageViews.device, since: Date, extra?: ReturnType<typeof isNotNull>) {
+function topBy(
+	column: typeof pageViews.path | typeof pageViews.referrer | typeof pageViews.country | typeof pageViews.device,
+	since: Date,
+	extra?: ReturnType<typeof isNotNull>,
+) {
 	return db
 		.select({ label: sql<string>`${column}`, views: int(sql`count(*)`) })
 		.from(pageViews)
@@ -192,13 +287,36 @@ function topBy(column: typeof pageViews.path | typeof pageViews.referrer | typeo
 		.limit(10);
 }
 
-/** Zero-fill missing days so the chart's x-axis is continuous. */
+/** Zero-fill missing days so page view chart's x-axis is continuous. */
 function fillDays(rows: Array<{ day: string; views: number; visitors: number }>, days: number, now: Date) {
 	const byDay = new Map(rows.map((row) => [row.day, row]));
 	const result = [];
 	for (let offset = days - 1; offset >= 0; offset -= 1) {
 		const day = new Date(now.getTime() - offset * DAY_MS).toISOString().slice(0, 10);
 		result.push(byDay.get(day) ?? { day, views: 0, visitors: 0 });
+	}
+	return result;
+}
+
+/** Zero-fill missing days for single count series like daily user signups. */
+function fillCountDays(rows: Array<{ day: string; count: number }>, days: number, now: Date) {
+	const byDay = new Map(rows.map((row) => [row.day, row.count]));
+	const result = [];
+	for (let offset = days - 1; offset >= 0; offset -= 1) {
+		const day = new Date(now.getTime() - offset * DAY_MS).toISOString().slice(0, 10);
+		result.push({ day, value: byDay.get(day) ?? 0 });
+	}
+	return result;
+}
+
+/** Zero-fill missing days for daily submission series. */
+function fillSubmissionDays(rows: Array<{ day: string; count: number; success: number }>, days: number, now: Date) {
+	const byDay = new Map(rows.map((row) => [row.day, row]));
+	const result = [];
+	for (let offset = days - 1; offset >= 0; offset -= 1) {
+		const day = new Date(now.getTime() - offset * DAY_MS).toISOString().slice(0, 10);
+		const existing = byDay.get(day);
+		result.push({ day, value: existing?.count ?? 0, success: existing?.success ?? 0 });
 	}
 	return result;
 }

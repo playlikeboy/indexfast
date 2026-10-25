@@ -137,10 +137,14 @@ html {
 	--app-bad-bg: rgba(248, 113, 113, 0.1);
 }
 
-/* Single-series chart color, validated with the dataviz palette checker for both surfaces. */
+/* Dataviz palette tokens for single-series and category charts. */
 :root {
 	--chart-1: #3b6fd8;
+	--chart-2: #10b981;
+	--chart-3: #8b5cf6;
 }
 .dark {
 	--chart-1: #5585e6;
+	--chart-2: #34d399;
+	--chart-3: #a78bfa;
 }

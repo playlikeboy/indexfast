@@ -7,7 +7,15 @@
  */
 import { useState } from "react";
 
-export function BarChart({ data, valueLabel }: { data: Array<{ day: string; value: number }>; valueLabel: string }) {
+export function BarChart({
+	data,
+	valueLabel,
+	color = "var(--chart-1)",
+}: {
+	data: Array<{ day: string; value: number }>;
+	valueLabel: string;
+	color?: string;
+}) {
 	const [hover, setHover] = useState<number | null>(null);
 	const width = 720;
 	const height = 180;
@@ -34,7 +42,7 @@ export function BarChart({ data, valueLabel }: { data: Array<{ day: string; valu
 								{barHeight > 0 ? (
 									<path
 										d={`M${x},${y + barHeight} V${y + radius} Q${x},${y} ${x + radius},${y} H${x + barWidth - radius} Q${x + barWidth},${y} ${x + barWidth},${y + radius} V${y + barHeight} Z`}
-										fill="var(--chart-1)"
+										fill={color}
 										opacity={hover === null || hover === index ? 1 : 0.45}
 									/>
 								) : null}
