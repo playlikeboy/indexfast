@@ -31,7 +31,8 @@ Every `site` argument accepts a domain or a site id.
 | `submit_urls` / `submit_pending` | Manual submission |
 | `list_urls` | Filter `all/new/pending/submitted/failed` |
 | `list_submissions` / `check_url` / `list_issues` | Debugging |
-| `recommend_seo_resources` / `list_directories` / `list_seo_tools` | Launch resources |
+| `recommend_seo_resources` / `list_directories` / `list_seo_tools` / `list_search_engines` | Launch resources & search engine API specs |
+| `set_bing_api_key` / `get_bing_status` / `set_bing_auto_submit` / `remove_bing_api_key` | Bing Webmaster API direct key and auto-submit management |
 
 Aliases for v0 names: `list_sites`, `sync_sitemap`, `submit_url`, `bulk_submit_urls`,
 `run_diagnostics`, `list_alerts`.

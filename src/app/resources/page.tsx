@@ -19,6 +19,11 @@ export default function ResourcesPage() {
 			desc: `${stats.total} startup, SaaS, AI, developer, review, and community channels sorted by priority.`,
 		},
 		{
+			href: "/resources/search-engines",
+			title: "Search engine submission APIs",
+			desc: "Comprehensive developer guide to IndexNow, Bing Webmaster API, Google Indexing API, Baidu, and Yandex.",
+		},
+		{
 			href: "/resources/tools",
 			title: "Third-party SEO tools",
 			desc: `${seoTools.length} high-quality SEO tools for GSC, schema, crawls, performance, and research.`,

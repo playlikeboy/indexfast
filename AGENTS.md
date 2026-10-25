@@ -20,7 +20,7 @@ and a Cloudflare Worker cron job that runs automation in the background.
 |---|---|---|
 | Marketing site | `/`, `/about`, `/pricing`, `/contact`, `/privacy`, `/terms` | Public landing + blog + free tools + agent-first copy |
 | Free SEO tools | `/tools/*` (12 tools) | No-signup utilities — index checkers, sitemap extractor, IndexNow key generator, llms.txt generator, AI crawler checker, etc. |
-| Resources | `/resources`, `/resources/directories`, `/resources/tools`, `/resources/skill`, `/resources/google-indexing-api` | Free SEO resources, 100+ prioritized directories, third-party tools, downloadable SKILL.md, Google API guardrails |
+| Resources | `/resources`, `/resources/directories`, `/resources/tools`, `/resources/skill`, `/resources/google-indexing-api`, `/resources/search-engines` | Free SEO resources, 100+ prioritized directories, third-party tools, downloadable SKILL.md, Google API guardrails, search engine API specs |
 | Auth (Stack Auth) | `/handler/[...stack]`, `/login`, `/signup` | Sign-in / sign-up / account screens |
 | Dashboard | `/dashboard`, `/dashboard/sites/[siteId]`, `/dashboard/connect`, `/dashboard/billing` | Protected app for vibe coders: add a site by domain, install one key file, everything else is automatic. See `docs/dashboard.md` |
 | Admin | `/admin` | Verified `ADMIN_EMAILS` only (404 otherwise): revenue, MRR, users, traffic analytics, cron health, plan grants. See `docs/admin.md` |

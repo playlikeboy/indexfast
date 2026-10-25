@@ -13,15 +13,20 @@ import {
 	createSiteForUser,
 	discoverSitemapsForApi,
 	getAccountStatus,
+	getBingStatusForApi,
 	getSiteDetailsForUser,
 	listAlertsForUser,
 	listDirectoryResources,
+	listSearchEngineResources,
 	listSeoToolResources,
 	listSitesForUser,
 	listSubmissionsForUser,
 	listUrlsForUser,
 	recommendSeoResources,
+	removeBingApiKeyForApi,
 	runDiagnosticsForUser,
+	saveBingApiKeyForApi,
+	setBingAutomationForApi,
 	submitPendingForApi,
 	syncSitemapsForApi,
 	verifySiteForApi,
@@ -170,6 +175,56 @@ const tools = [
 		description: "Prioritized third-party SEO tools.",
 		inputSchema: { type: "object", properties: { priority: { type: "string", enum: ["P0", "P1", "P2", "P3"] } } },
 	},
+	{
+		name: "set_bing_api_key",
+		title: "Set Bing API key",
+		description: "Save and verify a Bing Webmaster API key for direct submissions to Bing Search Console. Enables auto-submit by default.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				site,
+				apiKey: { type: "string", description: "Bing Webmaster API key from Bing Webmaster Tools > Settings > API Access" },
+				autoSubmit: { type: "boolean", description: "Whether to auto-submit new and updated URLs to Bing (default true)" },
+			},
+			required: ["site", "apiKey"],
+		},
+	},
+	{
+		name: "get_bing_status",
+		title: "Get Bing status",
+		description: "Check Bing Webmaster API key verification status, daily quota, and auto-submit setting for a site.",
+		inputSchema: { type: "object", properties: { site }, required: ["site"] },
+	},
+	{
+		name: "set_bing_auto_submit",
+		title: "Set Bing auto-submit",
+		description: "Enable or disable auto-submitting new and updated URLs to Bing Search Console for a site.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				site,
+				enabled: { type: "boolean", description: "Whether Bing auto-submit should be enabled" },
+			},
+			required: ["site", "enabled"],
+		},
+	},
+	{
+		name: "remove_bing_api_key",
+		title: "Remove Bing API key",
+		description: "Disconnect the Bing Webmaster API key for a site.",
+		inputSchema: { type: "object", properties: { site }, required: ["site"] },
+	},
+	{
+		name: "list_search_engines",
+		title: "List search engines",
+		description: "Get structured specifications, submission APIs, daily quotas, auth types, and documentation for major search engines worldwide.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				engineId: { type: "string", description: "Optional engine ID (bing, google, yandex, baidu, naver, seznam, syndicated)" },
+			},
+		},
+	},
 ];
 
 // Old tool names from v0 of the MCP server, kept so existing agent configs keep working.
@@ -271,6 +326,16 @@ async function callTool(auth: AuthenticatedApiKey, rawName: string, args: Record
 			return listDirectoryResources((asString(args.priority) || undefined) as "P0" | "P1" | "P2" | "P3" | undefined);
 		case "list_seo_tools":
 			return listSeoToolResources((asString(args.priority) || undefined) as "P0" | "P1" | "P2" | "P3" | undefined);
+		case "set_bing_api_key":
+			return saveBingApiKeyForApi(auth.userId, siteRef, asString(args.apiKey), args.autoSubmit !== false);
+		case "get_bing_status":
+			return getBingStatusForApi(auth.userId, siteRef);
+		case "set_bing_auto_submit":
+			return setBingAutomationForApi(auth.userId, siteRef, Boolean(args.enabled));
+		case "remove_bing_api_key":
+			return removeBingApiKeyForApi(auth.userId, siteRef);
+		case "list_search_engines":
+			return listSearchEngineResources(asString(args.engineId) || undefined);
 		default:
 			throw new Error(`Unknown tool: ${rawName}`);
 	}
@@ -282,6 +347,7 @@ async function readResource(auth: AuthenticatedApiKey, uri: string) {
 	if (uri === "indexfast://issues" || uri === "indexfast://alerts") return listAlertsForUser(auth.userId);
 	if (uri === "indexfast://resources/directories") return listDirectoryResources();
 	if (uri === "indexfast://resources/tools") return listSeoToolResources();
+	if (uri === "indexfast://resources/search-engines") return listSearchEngineResources();
 	const siteMatch = /^indexfast:\/\/sites\/([^/]+)(\/urls)?$/.exec(uri);
 	if (siteMatch) {
 		return siteMatch[2] ? listUrlsForUser(auth.userId, decodeURIComponent(siteMatch[1])) : getSiteDetailsForUser(auth.userId, decodeURIComponent(siteMatch[1]));
@@ -344,6 +410,7 @@ export async function handleMcpRequest(auth: AuthenticatedApiKey, request: JsonR
 						{ uri: "indexfast://issues", name: "issues", title: "Open issues", mimeType: "application/json" },
 						{ uri: "indexfast://resources/directories", name: "directories", title: "Launch directories", mimeType: "application/json" },
 						{ uri: "indexfast://resources/tools", name: "tools", title: "SEO tools", mimeType: "application/json" },
+						{ uri: "indexfast://resources/search-engines", name: "search-engines", title: "Search engine API specifications", mimeType: "application/json" },
 					],
 				});
 			case "resources/templates/list":

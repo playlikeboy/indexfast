@@ -439,12 +439,8 @@ function describeBingValidationMessage(siteUrl: string, message: string) {
 	return message;
 }
 
-export async function saveBingApiKeyForUser(userId: string, siteId: string, apiKey: string) {
+export async function saveBingApiKeyForUser(userId: string, siteId: string, apiKey: string, autoSubmit = true) {
 	const site = await requireSite(userId, siteId);
-	const entitlement = await getUserEntitlement(userId);
-	if (!entitlement.limits.bing) {
-		throw new Error("Direct Bing submissions are included in Pro and Unlimited.");
-	}
 
 	const cleanApiKey = apiKey.trim();
 	if (!cleanApiKey) {
@@ -456,10 +452,24 @@ export async function saveBingApiKeyForUser(userId: string, siteId: string, apiK
 	const now = new Date();
 	const status = validation.ok ? "verified" : "failed";
 	const message = validation.ok ? null : truncateMessage(describeBingValidationMessage(siteUrl, validation.message));
-	const values = {
+
+	let quota: { dailyQuota?: number; monthlyQuota?: number } | null = null;
+	if (validation.ok && validation.message) {
+		try {
+			const parsed = JSON.parse(validation.message);
+			const data = parsed?.d || parsed;
+			if (typeof data?.DailyQuota === "number" || typeof data?.MonthlyQuota === "number") {
+				quota = { dailyQuota: data.DailyQuota, monthlyQuota: data.MonthlyQuota };
+			}
+		} catch {
+			// message might not be JSON, ignore
+		}
+	}
+
+	const userValues = {
 		status,
 		encryptedSecret: await encryptSecret(cleanApiKey),
-		publicConfig: { lastValidationStatus: validation.status, siteUrl },
+		publicConfig: { lastValidationStatus: validation.status, siteUrl, quota },
 		verifiedAt: validation.ok ? now : null,
 		lastCheckedAt: now,
 		lastErrorAt: validation.ok ? null : now,
@@ -468,16 +478,75 @@ export async function saveBingApiKeyForUser(userId: string, siteId: string, apiK
 
 	await db
 		.insert(userIntegrations)
-		.values({ userId, provider: "bing", ...values })
-		.onConflictDoUpdate({ target: [userIntegrations.userId, userIntegrations.provider], set: { ...values, updatedAt: now } });
+		.values({ userId, provider: "bing", ...userValues })
+		.onConflictDoUpdate({ target: [userIntegrations.userId, userIntegrations.provider], set: { ...userValues, updatedAt: now } });
+
+	const siteValues = {
+		status,
+		automationEnabled: autoSubmit,
+		publicConfig: { quota },
+		verifiedAt: validation.ok ? now : null,
+		lastCheckedAt: now,
+		lastErrorAt: validation.ok ? null : now,
+		lastErrorMessage: message,
+	};
+
+	await db
+		.insert(siteIntegrations)
+		.values({ siteId: site.id, provider: "bing", ...siteValues })
+		.onConflictDoUpdate({ target: [siteIntegrations.siteId, siteIntegrations.provider], set: { ...siteValues, updatedAt: now } });
 
 	if (!validation.ok) {
 		throw new Error(message || "Bing rejected the API key.");
 	}
-	return validation;
+
+	if (autoSubmit && site.verified) {
+		await submitPendingForUser(userId, site.id).catch(() => {});
+	}
+
+	return { ...validation, quota, autoSubmit };
 }
 
-export async function removeBingApiKeyForUser(userId: string) {
+export async function setBingAutomationForSite(userId: string, siteId: string, enabled: boolean) {
+	const site = await requireSite(userId, siteId);
+	const [userBing] = await db
+		.select({ status: userIntegrations.status })
+		.from(userIntegrations)
+		.where(and(eq(userIntegrations.userId, userId), eq(userIntegrations.provider, "bing")))
+		.limit(1);
+
+	if (userBing?.status !== "verified") {
+		throw new Error("Add and verify a Bing Webmaster API key before enabling auto-submission.");
+	}
+
+	const now = new Date();
+	await db
+		.insert(siteIntegrations)
+		.values({
+			siteId: site.id,
+			provider: "bing",
+			status: "verified",
+			automationEnabled: enabled,
+			updatedAt: now,
+		})
+		.onConflictDoUpdate({
+			target: [siteIntegrations.siteId, siteIntegrations.provider],
+			set: { automationEnabled: enabled, updatedAt: now },
+		});
+
+	if (enabled && site.verified) {
+		await submitPendingForUser(userId, site.id).catch(() => {});
+	}
+
+	return { ok: true, autoSubmit: enabled };
+}
+
+export async function removeBingApiKeyForUser(userId: string, siteId?: string) {
+	if (siteId) {
+		await db
+			.delete(siteIntegrations)
+			.where(and(eq(siteIntegrations.siteId, siteId), eq(siteIntegrations.provider, "bing")));
+	}
 	await db.delete(userIntegrations).where(and(eq(userIntegrations.userId, userId), eq(userIntegrations.provider, "bing")));
 }
 
@@ -850,7 +919,7 @@ async function getEligibleEngines(site: SiteRow, entitlement: Entitlement, manua
 	if (indexNow?.status === "verified" && (manual || indexNow.automationEnabled)) {
 		engines.push("indexnow");
 	}
-	if (entitlement.limits.bing && bingUser?.status === "verified" && (manual || (bingSite?.automationEnabled ?? true))) {
+	if (bingUser?.status === "verified" && (manual || (bingSite?.automationEnabled ?? true))) {
 		engines.push("bing");
 	}
 	return engines;
@@ -1259,7 +1328,7 @@ export async function runScheduledAutomation() {
 // Read helpers for settings UI
 // ---------------------------------------------------------------------------
 
-export async function getBingStatusForUser(userId: string) {
+export async function getBingStatusForUser(userId: string, siteId?: string) {
 	const [integration] = await db
 		.select()
 		.from(userIntegrations)
@@ -1268,12 +1337,28 @@ export async function getBingStatusForUser(userId: string) {
 	if (!integration) {
 		return null;
 	}
+
+	let siteIntegration: { automationEnabled: boolean; lastErrorMessage: string | null } | undefined;
+	if (siteId) {
+		const [row] = await db
+			.select({ automationEnabled: siteIntegrations.automationEnabled, lastErrorMessage: siteIntegrations.lastErrorMessage })
+			.from(siteIntegrations)
+			.where(and(eq(siteIntegrations.siteId, siteId), eq(siteIntegrations.provider, "bing")))
+			.limit(1);
+		siteIntegration = row;
+	}
+
 	const key = await readStoredSecret(integration.encryptedSecret).catch(() => null);
+	const publicCfg = readPublicConfig(integration.publicConfig);
+	const quota = (publicCfg as Record<string, unknown>)?.quota as { dailyQuota?: number; monthlyQuota?: number } | undefined;
+
 	return {
 		status: integration.status,
 		maskedKey: key ? maskCredential(key) : null,
+		autoSubmit: siteIntegration ? siteIntegration.automationEnabled : true,
+		quota: quota ?? null,
 		verifiedAt: integration.verifiedAt,
-		lastErrorMessage: integration.lastErrorMessage,
+		lastErrorMessage: siteIntegration?.lastErrorMessage || integration.lastErrorMessage,
 	};
 }
 

@@ -59,4 +59,36 @@ describe("MCP server", () => {
 		const res = await call("prompts/get", { name: "setup_indexing", arguments: { domain: "example.com" } });
 		expect(JSON.stringify(res.result)).toContain("example.com");
 	});
+
+	it("lists Bing and search engine automation tools", async () => {
+		const res = await call("tools/list");
+		const names = (res.result?.tools as Array<{ name: string }>).map((tool) => tool.name);
+		expect(names).toEqual(
+			expect.arrayContaining([
+				"set_bing_api_key",
+				"get_bing_status",
+				"set_bing_auto_submit",
+				"remove_bing_api_key",
+				"list_search_engines",
+			]),
+		);
+	});
+
+	it("calls list_search_engines tool and returns specifications", async () => {
+		const res = await call("tools/call", { name: "list_search_engines", arguments: { engineId: "bing" } });
+		const content = res.result?.content as Array<{ text: string }>;
+		expect(res.result?.isError).toBe(false);
+		const data = JSON.parse(content[0].text);
+		expect(data.id).toBe("bing");
+		expect(data.name).toBe("Microsoft Bing");
+	});
+
+	it("reads search-engines resource via URI", async () => {
+		const res = await call("resources/read", { uri: "indexfast://resources/search-engines" });
+		const contents = res.result?.contents as Array<{ text: string }>;
+		expect(contents).toBeDefined();
+		const engines = JSON.parse(contents[0].text);
+		expect(Array.isArray(engines)).toBe(true);
+		expect(engines.length).toBeGreaterThanOrEqual(6);
+	});
 });

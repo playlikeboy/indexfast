@@ -77,7 +77,9 @@ Every `site` argument accepts the domain (e.g. `example.com`) or the site id.
 - `submit_pending` - submit every URL that was never submitted.
 - `list_urls` - filter `all | new | pending | submitted | failed`.
 - `list_submissions`, `check_url`, `list_issues`
-- `recommend_seo_resources`, `list_directories`, `list_seo_tools`
+- `recommend_seo_resources`, `list_directories`, `list_seo_tools`, `list_search_engines`
+- `set_bing_api_key` - add/verify developer's Bing API key with auto-submit
+- `get_bing_status`, `set_bing_auto_submit`, `remove_bing_api_key` - manage direct Bing Search Console auto-submission
 
 Older names (`list_sites`, `sync_sitemap`, `submit_url`, `bulk_submit_urls`, `run_diagnostics`, `list_alerts`) still work as aliases.
 

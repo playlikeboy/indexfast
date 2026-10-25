@@ -22,6 +22,7 @@ import {
 	submitPendingAction,
 	submitUrlsAction,
 	syncNowAction,
+	toggleBingAutoSubmitAction,
 	updateRulesAction,
 	adoptExistingKeyAction,
 	verifySiteAction,
@@ -361,25 +362,81 @@ export function SiteView({ data, tab, q, pageNumber }: { data: SitePageData; tab
 					) : null}
 
 					<section className="space-y-3">
-						<h3 className="font-medium">Bing Webmaster API (optional)</h3>
+						<div className="flex flex-wrap items-center justify-between gap-2">
+							<h3 className="font-medium">Bing Webmaster API</h3>
+							{bing ? (
+								<div className="flex items-center gap-2">
+									<Badge tone={bing.status === "verified" ? "ok" : "bad"}>
+										{bing.status === "verified" ? "Connected" : bing.status}
+									</Badge>
+									{bing.autoSubmit ? (
+										<Badge tone="ok">Auto-submit active</Badge>
+									) : (
+										<Badge tone="neutral">Auto-submit paused</Badge>
+									)}
+								</div>
+							) : null}
+						</div>
 						<p className="text-[var(--app-muted)]">
-							IndexNow already reaches Bing. A Bing API key adds direct submissions using your Bing quota.
-							{!entitlement.limits.bing ? " Included in Pro and Unlimited." : ""}
+							IndexNow pings Bing, Yandex, Naver, and Seznam. Adding your Bing Webmaster API key enables direct, guaranteed batch submissions into your Bing Search Console quota.
 						</p>
+
 						{bing ? (
-							<div className="flex flex-wrap items-center gap-3">
-								<Badge tone={bing.status === "verified" ? "ok" : "bad"}>{bing.status}</Badge>
-								<span className="font-mono text-xs">{bing.maskedKey}</span>
-								<ActionButton action={removeBingKeyAction.bind(null, site.id)} variant="ghost">
-									Remove
-								</ActionButton>
+							<div className="rounded-lg border border-[var(--app-border)] bg-[var(--app-subtle)]/40 p-3 space-y-3">
+								<div className="flex flex-wrap items-center justify-between gap-3">
+									<div className="flex items-center gap-2">
+										<span className="font-mono text-xs">{bing.maskedKey}</span>
+										{bing.quota?.dailyQuota ? (
+											<span className="text-xs text-[var(--app-muted)]">
+												(Daily quota: {bing.quota.dailyQuota.toLocaleString()} URLs)
+											</span>
+										) : null}
+									</div>
+									<ActionButton action={removeBingKeyAction.bind(null, site.id)} variant="ghost">
+										Disconnect
+									</ActionButton>
+								</div>
+
+								{bing.status === "verified" ? (
+									<div className="flex items-center justify-between border-t border-[var(--app-border)] pt-2.5">
+										<div>
+											<p className="text-xs font-medium">Bing Search Console auto-submit</p>
+											<p className="text-xs text-[var(--app-muted)]">Automatically queue new and modified pages for direct Bing submission.</p>
+										</div>
+										<ActionButton
+											action={toggleBingAutoSubmitAction.bind(null, site.id, !bing.autoSubmit)}
+											variant={bing.autoSubmit ? "ghost" : "secondary"}
+										>
+											{bing.autoSubmit ? "Disable" : "Enable"}
+										</ActionButton>
+									</div>
+								) : null}
+
+								{bing.lastErrorMessage ? (
+									<p className="text-xs text-[var(--app-bad)]">{bing.lastErrorMessage}</p>
+								) : null}
 							</div>
-						) : null}
-						{entitlement.limits.bing ? (
-							<ActionForm action={saveBingKeyAction.bind(null, site.id)} submitLabel="Save key" variant="secondary" inline>
-								<input name="apiKey" type="password" required placeholder="Bing Webmaster API key" className={`${inputClass} min-w-0 flex-1`} aria-label="Bing API key" />
-							</ActionForm>
-						) : null}
+						) : (
+							<div className="space-y-2">
+								<ActionForm action={saveBingKeyAction.bind(null, site.id)} submitLabel="Connect & Verify" variant="secondary">
+									<input
+										name="apiKey"
+										type="password"
+										required
+										placeholder="Paste Bing Webmaster API key"
+										className={`${inputClass} min-w-0 flex-1`}
+										aria-label="Bing API key"
+									/>
+									<label className="flex items-center gap-2 text-xs text-[var(--app-muted)] cursor-pointer">
+										<input type="checkbox" name="autoSubmit" defaultChecked className="accent-[var(--app-accent)]" />
+										<span>Auto-submit new &amp; updated URLs to Bing Search Console</span>
+									</label>
+								</ActionForm>
+								<p className="text-xs text-[var(--app-muted)]">
+									Get your key in <a href="https://www.bing.com/webmasters" target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--app-fg)]">Bing Webmaster Tools</a> &rarr; Settings &rarr; API Access &rarr; API Key. Make sure this site is already added to Bing Webmaster Tools.
+								</p>
+							</div>
+						)}
 					</section>
 
 					<section className="space-y-3">

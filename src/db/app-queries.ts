@@ -115,7 +115,7 @@ export async function getSitePage(userId: string, siteId: string, options: { tab
 			.orderBy(desc(submissions.createdAt))
 			.limit(15),
 		db.select().from(alerts).where(and(eq(alerts.siteId, siteId), eq(alerts.resolved, false))).orderBy(desc(alerts.createdAt)).limit(5),
-		getBingStatusForUser(userId),
+		getBingStatusForUser(userId, siteId),
 		db
 			.select({ openJobs: sql<number>`cast(count(*) as int)` })
 			.from(submissionJobs)

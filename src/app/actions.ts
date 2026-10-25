@@ -25,6 +25,7 @@ import {
 	saveBingApiKeyForUser,
 	saveIndexNowKeyForUser,
 	setAutomationForUser,
+	setBingAutomationForSite,
 	submitPendingForUser,
 	submitUrlsForUser,
 	syncSitemapsForUser,
@@ -204,15 +205,25 @@ export async function saveCustomKeyAction(siteId: string, _prev: ActionResult, f
 
 export async function saveBingKeyAction(siteId: string, _prev: ActionResult, formData: FormData): Promise<ActionResult> {
 	return run(async () => {
-		await saveBingApiKeyForUser(await sessionUserId(), siteId, text(formData, "apiKey"));
+		const apiKey = text(formData, "apiKey");
+		const autoSubmit = formData.get("autoSubmit") === "on" || formData.get("autoSubmit") === "true";
+		await saveBingApiKeyForUser(await sessionUserId(), siteId, apiKey, autoSubmit);
 		revalidateSite(siteId);
-		return "Bing key verified.";
+		return "Bing key verified and auto-submission configured.";
+	});
+}
+
+export async function toggleBingAutoSubmitAction(siteId: string, enabled: boolean): Promise<ActionResult> {
+	return run(async () => {
+		await setBingAutomationForSite(await sessionUserId(), siteId, enabled);
+		revalidateSite(siteId);
+		return enabled ? "Bing auto-submit enabled." : "Bing auto-submit disabled.";
 	});
 }
 
 export async function removeBingKeyAction(siteId: string): Promise<ActionResult> {
 	return run(async () => {
-		await removeBingApiKeyForUser(await sessionUserId());
+		await removeBingApiKeyForUser(await sessionUserId(), siteId);
 		revalidateSite(siteId);
 		return "Bing key removed.";
 	});

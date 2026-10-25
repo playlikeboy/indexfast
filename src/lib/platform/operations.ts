@@ -10,8 +10,12 @@ import {
 	addSitemapSourceForUser,
 	createSiteForUser as createSite,
 	discoverSitemapsForUser,
+	getBingStatusForUser,
 	getIndexNowSetup,
+	removeBingApiKeyForUser,
 	resolveSiteForUser,
+	saveBingApiKeyForUser,
+	setBingAutomationForSite,
 	submitPendingForUser,
 	submitUrlsForUser,
 	syncSitemapsForUser,
@@ -23,6 +27,7 @@ import { formatLimit } from "./plans";
 import { getSiteHost, normalizeUrlForHost } from "@/lib/url-utils";
 import { getDirectoriesByPriority } from "@/lib/resources/directories";
 import { getToolsByPriority } from "@/lib/resources/tools";
+import { getAllSearchEngines, getSearchEngineById } from "@/lib/resources/search-engines";
 
 export type UrlFilter = "all" | "new" | "pending" | "submitted" | "failed";
 
@@ -349,4 +354,53 @@ export function recommendSeoResources(goal: string) {
 		};
 	}
 	return { directories: getDirectoriesByPriority().slice(0, 20), tools: getToolsByPriority().slice(0, 12) };
+}
+
+export async function getBingStatusForApi(userId: string, siteRef: string) {
+	const site = await resolveSiteForUser(userId, siteRef);
+	const status = await getBingStatusForUser(userId, site.id);
+	return {
+		site: { id: site.id, domain: site.domain, host: getSiteHost(site) },
+		bing: status,
+	};
+}
+
+export async function saveBingApiKeyForApi(userId: string, siteRef: string, apiKey: string, autoSubmit = true) {
+	const site = await resolveSiteForUser(userId, siteRef);
+	const result = await saveBingApiKeyForUser(userId, site.id, apiKey, autoSubmit);
+	const status = await getBingStatusForUser(userId, site.id);
+	return {
+		site: { id: site.id, domain: site.domain, host: getSiteHost(site) },
+		bing: status,
+		result,
+	};
+}
+
+export async function setBingAutomationForApi(userId: string, siteRef: string, enabled: boolean) {
+	const site = await resolveSiteForUser(userId, siteRef);
+	const result = await setBingAutomationForSite(userId, site.id, enabled);
+	const status = await getBingStatusForUser(userId, site.id);
+	return {
+		site: { id: site.id, domain: site.domain, host: getSiteHost(site) },
+		bing: status,
+		result,
+	};
+}
+
+export async function removeBingApiKeyForApi(userId: string, siteRef: string) {
+	const site = await resolveSiteForUser(userId, siteRef);
+	await removeBingApiKeyForUser(userId, site.id);
+	return {
+		site: { id: site.id, domain: site.domain, host: getSiteHost(site) },
+		message: "Bing API key removed.",
+	};
+}
+
+export function listSearchEngineResources(engineId?: string) {
+	if (engineId) {
+		const engine = getSearchEngineById(engineId);
+		if (!engine) throw new Error(`Search engine not found: ${engineId}`);
+		return engine;
+	}
+	return getAllSearchEngines();
 }
