@@ -1039,7 +1039,9 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 
 	const groups = new Map<string, typeof jobs>();
 	for (const job of jobs) {
-		const key = `${job.siteId}:${job.engine}`;
+		// Retry state is part of the batch identity: one engine response is shared by
+		// every URL in its batch, so never mix jobs at different retry attempts.
+		const key = `${job.siteId}:${job.engine}:${job.attempts}`;
 		groups.set(key, [...(groups.get(key) ?? []), job]);
 	}
 
