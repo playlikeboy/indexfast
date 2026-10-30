@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { AddSiteForm } from "@/components/app/AddSiteForm";
-import { Badge, ButtonLink, Card, PageHeader, Progress, SiteAvatar, timeAgo } from "@/components/app/ui";
+import { Badge, ButtonLink, Card, PageHeader, Progress, SiteAvatar, Stat, timeAgo } from "@/components/app/ui";
 import { type DashboardHomeData, type SiteStatus } from "@/db/app-queries";
 import { formatLimit } from "@/lib/platform/plans";
 
@@ -21,6 +21,13 @@ export function HomeView({ data }: { data: Pick<DashboardHomeData, "sites" | "en
 	const { sites, entitlement } = data;
 
 	const atLimit = sites.length >= entitlement.limits.sites;
+	const totals = sites.reduce(
+		(sum, { stats }) => ({ total: sum.total + stats.total, submitted: sum.submitted + stats.submitted, pending: sum.pending + stats.pending }),
+		{ total: 0, submitted: 0, pending: 0 },
+	);
+	const needsAttention = sites.filter(({ status, openIssues }) => status === "setup" || status === "error" || openIssues > 0).length;
+	// Sites that need the user float to the top; healthy ones keep their creation order.
+	const ordered = [...sites].sort((a, b) => Number(b.status !== "live" || b.openIssues > 0) - Number(a.status !== "live" || a.openIssues > 0));
 
 	if (sites.length === 0) {
 		return (
@@ -66,9 +73,16 @@ export function HomeView({ data }: { data: Pick<DashboardHomeData, "sites" | "en
 				action={atLimit ? <ButtonLink href="/dashboard/billing" variant="primary">Upgrade to add more</ButtonLink> : null}
 			/>
 
+			<div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+				<Stat label="Tracked URLs" value={totals.total.toLocaleString()} />
+				<Stat label="Submitted" value={totals.submitted.toLocaleString()} hint={totals.total > 0 ? `${Math.round((totals.submitted / totals.total) * 100)}% of tracked` : undefined} />
+				<Stat label="Not sent yet" value={totals.pending.toLocaleString()} />
+				<Stat label="Need attention" value={needsAttention.toLocaleString()} hint={needsAttention > 0 ? "sites with setup or issues" : "all sites healthy"} />
+			</div>
+
 			<Card>
 				<ul className="divide-y divide-[var(--app-border)]">
-					{sites.map(({ site, status, stats, lastSyncAt, openIssues }) => (
+					{ordered.map(({ site, status, stats, lastSyncAt, openIssues }) => (
 						<li key={site.id}>
 							<Link href={`/dashboard/sites/${site.id}`} className="group flex items-center gap-4 px-5 py-4 transition hover:bg-[var(--app-subtle)]">
 								<SiteAvatar host={site.indexingHost || site.domain} />
@@ -80,6 +94,7 @@ export function HomeView({ data }: { data: Pick<DashboardHomeData, "sites" | "en
 									</div>
 									<p className="mt-1 text-sm text-[var(--app-muted)]">
 										{stats.total.toLocaleString()} URLs · {stats.submitted.toLocaleString()} submitted
+										{stats.failed > 0 ? ` · ${stats.failed.toLocaleString()} failed` : ""}
 										{stats.new7d > 0 ? ` · ${stats.new7d.toLocaleString()} new this week` : ""} · {lastSyncAt ? `checked ${timeAgo(lastSyncAt)}` : "not checked yet"}
 									</p>
 								</div>

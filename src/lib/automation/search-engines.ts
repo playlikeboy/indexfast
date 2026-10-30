@@ -74,10 +74,16 @@ export async function verifyIndexNowKey(host: string, key: string, keyLocation =
 		}
 		return { ok, status: response.status, message, keyLocation };
 	} catch (error) {
+		const reason = error instanceof Error ? error.message : "network error";
+		// A key file is ~50 bytes. A huge body means the host served a full web page instead
+		// (typically its 404 or SPA fallback), i.e. the file is not deployed at that path.
+		const servedPage = /exceeds maximum limit/i.test(reason);
 		return {
 			ok: false,
 			status: 0,
-			message: `Could not fetch ${keyLocation}: ${error instanceof Error ? error.message : "network error"}`,
+			message: servedPage
+				? `${keyLocation} returns a web page instead of the key file, so the file is not deployed yet. Add it to your public folder, deploy, and open the URL to check it shows only the key.`
+				: `Could not fetch ${keyLocation}: ${reason}`,
 			keyLocation,
 		};
 	}

@@ -51,3 +51,4 @@ next-env.d.ts
 
 !.dev.vars.example
 email-mcp/*
+graphify-out/

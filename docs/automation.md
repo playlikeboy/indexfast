@@ -59,10 +59,16 @@ The dashboard "New (7d)" tab is `urls.created_at > now() - 7 days`.
 3. Submit per site+engine: IndexNow batches of 1000, Bing 100.
 4. **429 Circuit Breaker & Adaptive Retry**:
    - Parses search engine `Retry-After` headers (both integer seconds and HTTP-date strings).
-   - If a 429 or `Retry-After` is encountered, trips the circuit breaker for that `siteId:engine` immediately.
-   - All subsequent claimed batches for that engine in the current run are postponed cleanly without incrementing attempt count or hammering search engine endpoints.
-   - Exponential backoff with randomized jitter (±20%) ensures retries are spread across time to prevent thundering herds (base 15 min for 429 cooling, 5 min for 5xx/network errors).
-   - Jobs store `httpStatus`, `retryAfterAt`, and scheduled `nextRunAt`.
+   - A rate limit (IndexNow 429 `TooManyRequests`, Bing `ThrottleIP` / ErrorCode 17) trips the breaker for that `siteId:engine`
+     and parks **every** queued job of that site+engine (not only this run's) until the cooldown ends.
+   - The cooldown is persisted in `submission_jobs` (`httpStatus = 429`, future `nextRunAt`). `getActiveThrottle()` checks it
+     before every send, so the cron, "Process now" and manual submits never re-hit an engine mid-cooldown (that extends the ban).
+   - Throttled jobs never fail terminally: the 3-attempt cap only applies to network/5xx errors. 429 backoff starts at 1h,
+     doubles per attempt and caps at 24h (+/-20% jitter). Network/5xx backoff is 5 min base, 2h cap.
+   - Throttled attempts are not logged per URL in `submissions` (that produced 57k noise rows). One deduped alert
+     "<Engine> is rate limiting this site" is raised and auto-resolved on the next success.
+   - `retryFailedForUser` re-queues URLs whose last submission failed (dashboard "Retry failed").
+   - A manual submit promotes already-queued jobs for those URLs to priority 1.
 5. Final outcomes update `urls.lastSubmittedAt`, `urls.lastSubmissionStatus`, and `urls.lastSubmittedEngine`; every attempt is
    logged in `submissions`; failures raise one de-duplicated alert per site, success resolves it.
 

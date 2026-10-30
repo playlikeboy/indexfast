@@ -13,7 +13,10 @@ export const AUTOMATION_LIMITS = {
 	maxSubmitAttempts: 3, // Then the job is marked failed and an alert is raised
 	staleLockMinutes: 15, // 'processing' jobs older than this were orphaned by a crashed run
 	resubmitCooldownHours: 24, // Do not resubmit an unchanged URL more often than this
-	throttleCooldownMinutes: 15, // Cooling off backoff after receiving HTTP 429 when no Retry-After header
+	// IndexNow's 429 ("potential spam") is a per-host quota that lasts hours, not seconds:
+	// a short cooldown just re-trips it and burns the job's retries. Start at 1h, double, cap at 24h.
+	throttleCooldownMinutes: 60, // Base backoff after HTTP 429 when no Retry-After header
+	maxThrottleBackoffHours: 24, // Ceiling for 429 backoff; throttled jobs never fail terminally
 	retryJitterPercent: 0.2, // +/- 20% random jitter on retry backoff to prevent thundering herds
 	maxDrainJobsInline: 1_000, // Jobs processed on on-demand queue drain
 } as const;

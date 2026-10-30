@@ -33,6 +33,7 @@ import {
 	adoptExistingIndexNowKeyForUser,
 	verifySiteForUser,
 	drainSiteQueueForUser,
+	retryFailedForUser,
 } from "@/lib/automation/service";
 import { createApiKeyForUser, revokeApiKeyForUser } from "@/lib/platform/api-keys";
 import { DEFAULT_API_SCOPES, PLAN_PERIOD_DAYS, isPaidPlan, normalizeBillingTier } from "@/lib/platform/plans";
@@ -122,11 +123,29 @@ export async function syncNowAction(siteId: string): Promise<ActionResult> {
 	});
 }
 
+/**
+ * Engines rate-limit per site for hours. When that happens the user must hear that the URLs
+ * are safely queued and when the retry is, not a bare "0 submitted".
+ */
+function throttleNote(until: Date | null | undefined) {
+	if (!until) return "";
+	const hours = Math.max(1, Math.round((new Date(until).getTime() - Date.now()) / 3_600_000));
+	return ` The search engine is rate limiting this site, so the rest stays queued and retries automatically in about ${hours}h.`;
+}
+
 export async function submitPendingAction(siteId: string): Promise<ActionResult> {
 	return run(async () => {
 		const result = await submitPendingForUser(await sessionUserId(), siteId);
 		revalidateSite(siteId);
-		return result.queued === 0 ? "Nothing pending." : `Queued ${result.queued}, submitted ${result.submitted}.`;
+		return result.queued === 0 ? "Nothing pending." : `Queued ${result.queued}, submitted ${result.submitted}.${throttleNote(result.throttledUntil)}`;
+	});
+}
+
+export async function retryFailedAction(siteId: string): Promise<ActionResult> {
+	return run(async () => {
+		const result = await retryFailedForUser(await sessionUserId(), siteId);
+		revalidateSite(siteId);
+		return result.queued === 0 ? "No failed URLs to retry." : `Re-queued ${result.queued}, submitted ${result.submitted}.${throttleNote(result.throttledUntil)}`;
 	});
 }
 
@@ -136,16 +155,14 @@ export async function drainQueueAction(siteId: string): Promise<ActionResult> {
 		const result = await drainSiteQueueForUser(userId, siteId, 1000);
 		revalidateSite(siteId);
 		if (result.processedCount === 0) {
-			return "Queue is empty.";
+			return "Nothing is due right now. Queued URLs are waiting out a search engine cooldown and will retry automatically.";
 		}
 		const parts = [`${result.successCount} submitted`];
-		if (result.throttledCount > 0) parts.push(`${result.throttledCount} throttled (cooling off)`);
 		if (result.retryCount > 0) parts.push(`${result.retryCount} scheduled for retry`);
 		if (result.failedCount > 0) parts.push(`${result.failedCount} failed`);
-		return `Processed ${result.processedCount} jobs: ${parts.join(", ")}.`;
+		return `Processed ${result.processedCount}: ${parts.join(", ")}.${throttleNote(result.throttledUntil)}`;
 	});
 }
-
 
 export async function submitUrlsAction(siteId: string, _prev: ActionResult, formData: FormData): Promise<ActionResult> {
 	return run(async () => {
@@ -153,7 +170,7 @@ export async function submitUrlsAction(siteId: string, _prev: ActionResult, form
 		const result = await submitUrlsForUser(await sessionUserId(), siteId, list);
 		revalidateSite(siteId);
 		const rejected = result.rejected.length > 0 ? ` ${result.rejected.length} skipped (wrong host or invalid).` : "";
-		return `Submitted ${result.successCount} of ${result.accepted}.${rejected}`;
+		return `Submitted ${result.successCount} of ${result.accepted}.${rejected}${throttleNote(result.throttledUntil)}`;
 	});
 }
 
@@ -161,7 +178,9 @@ export async function resubmitUrlAction(siteId: string, loc: string): Promise<Ac
 	return run(async () => {
 		const result = await submitUrlsForUser(await sessionUserId(), siteId, [loc]);
 		revalidateSite(siteId);
-		return result.successCount > 0 ? "Submitted." : result.failedCount > 0 ? "Engine rejected it, see activity." : "Queued.";
+		if (result.successCount > 0) return "Submitted.";
+		if (result.throttledUntil) return `Queued.${throttleNote(result.throttledUntil)}`;
+		return result.failedCount > 0 ? "The search engine rejected it. See Activity for the reason." : "Queued.";
 	});
 }
 

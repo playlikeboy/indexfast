@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateBackoffMs, groupSubmissionJobs } from "../service";
+import { calculateBackoffMs, groupSubmissionJobs, isRetryable, isThrottled } from "../service";
 import { parseRetryAfterHeader } from "../search-engines";
 import { AUTOMATION_LIMITS } from "../constants";
 
@@ -80,23 +80,33 @@ describe("calculateBackoffMs and Retry-After header parsing", () => {
 		expect(backoffMs).toBeLessThanOrEqual(125_000);
 	});
 
-	it("uses 15-minute base backoff for 429 rate limit with jitter", () => {
+	it("uses a 1-hour base backoff for 429 rate limit with jitter", () => {
 		const backoffMs = calculateBackoffMs(1, { status: 429 });
-		// 15 min = 900,000ms. Jitter is ±20%: between 720,000ms and 1,080,000ms
-		expect(backoffMs).toBeGreaterThanOrEqual(720_000);
-		expect(backoffMs).toBeLessThanOrEqual(1_080_000);
+		// 60 min = 3,600,000ms. Jitter is +/-20%: between 2,880,000ms and 4,320,000ms
+		expect(backoffMs).toBeGreaterThanOrEqual(2_880_000);
+		expect(backoffMs).toBeLessThanOrEqual(4_320_000);
 	});
 
-	it("exponentially scales backoff for consecutive attempts", () => {
-		// Attempt 2 base is 15 * 2^1 = 30 min (1,800,000ms) with ±20% jitter
+	it("doubles 429 backoff per attempt and caps it at 24 hours", () => {
+		// Attempt 2 base is 60 * 2 = 120 min with +/-20% jitter
 		const attempt2Ms = calculateBackoffMs(2, { status: 429 });
-		expect(attempt2Ms).toBeGreaterThanOrEqual(1_440_000);
-		expect(attempt2Ms).toBeLessThanOrEqual(2_160_000);
+		expect(attempt2Ms).toBeGreaterThanOrEqual(5_760_000);
+		expect(attempt2Ms).toBeLessThanOrEqual(8_640_000);
 
-		// Attempt 3 base is 15 * 2^2 = 60 min (3,600,000ms) with ±20% jitter
-		const attempt3Ms = calculateBackoffMs(3, { status: 429 });
-		expect(attempt3Ms).toBeGreaterThanOrEqual(2_880_000);
-		expect(attempt3Ms).toBeLessThanOrEqual(4_320_000);
+		// Attempt 10 would be 512h uncapped; the 24h ceiling (+/-20% jitter) applies
+		const attempt10Ms = calculateBackoffMs(10, { status: 429 });
+		expect(attempt10Ms).toBeGreaterThanOrEqual(24 * 3_600_000 * 0.8);
+		expect(attempt10Ms).toBeLessThanOrEqual(24 * 3_600_000 * 1.2);
+	});
+
+	it("treats rate limits as retryable and throttled, without using up attempts", () => {
+		const tooMany = { ok: false, status: 429, message: '{"errorCode":"TooManyRequests"}' };
+		const bingThrottle = { ok: false, status: 400, message: '{"ErrorCode":17,"Message":"ERROR!!! ThrottleIP"}' };
+		expect(isThrottled(tooMany)).toBe(true);
+		expect(isThrottled(bingThrottle)).toBe(true);
+		expect(isRetryable(bingThrottle)).toBe(true);
+		expect(isThrottled({ status: 422, message: "Unprocessable Entity" })).toBe(false);
+		expect(isRetryable({ ok: false, status: 403, message: "Key not valid" })).toBe(false);
 	});
 
 	it("parses integer Retry-After header correctly", () => {

@@ -22,7 +22,7 @@ and a Cloudflare Worker cron job that runs automation in the background.
 | Free SEO tools | `/tools/*` (12 tools) | No-signup utilities — index checkers, sitemap extractor, IndexNow key generator, llms.txt generator, AI crawler checker, etc. |
 | Resources | `/resources`, `/resources/directories`, `/resources/tools`, `/resources/skill`, `/resources/google-indexing-api`, `/resources/search-engines` | Free SEO resources, 100+ prioritized directories, third-party tools, downloadable SKILL.md, Google API guardrails, search engine API specs |
 | Auth (Stack Auth) | `/handler/[...stack]`, `/login`, `/signup` | Sign-in / sign-up / account screens |
-| Dashboard | `/dashboard`, `/dashboard/sites/[siteId]`, `/dashboard/connect`, `/dashboard/billing` | Protected app for vibe coders: add a site by domain, install one key file, everything else is automatic. See `docs/dashboard.md` |
+| Dashboard | `/dashboard`, `/dashboard/sites/[siteId]?view=overview\|urls\|queue\|sitemaps\|settings`, `/dashboard/connect`, `/dashboard/billing` | Protected app for vibe coders: add a site by domain, install one key file, everything else is automatic. See `docs/dashboard.md` |
 | Admin | `/admin` | Verified `ADMIN_EMAILS` only (404 otherwise): revenue, MRR, users, traffic analytics, cron health, plan grants. See `docs/admin.md` |
 | REST API | `/api/v1/*` | Bearer API-key interface for sites, verify, sitemaps, URLs, submissions, diagnostics, and resources |
 | MCP | `/api/mcp` | Authenticated JSON-RPC MCP server for AI IDEs (all plans). See `docs/mcp.md` |
@@ -270,9 +270,10 @@ Full detail in `docs/automation.md`. Summary:
   index + `ON CONFLICT DO NOTHING`. Changed URLs (lastmod moved) are not resubmitted
   within 24h.
 - Queue: stale lock recovery (15 min), atomic claim ordered by priority (manual 1, new 5, refresh 10) then nextRunAt,
-  IndexNow batches of 1000 / Bing 100. 429 rate limit circuit breaker trips immediately per (site, engine)
-  to postpone remaining batches cleanly; exponential backoff with ±20% jitter and Retry-After header parsing (3 attempts),
-  de-duplicated alerts.
+  IndexNow batches of 1000 / Bing 100. A 429 / ThrottleIP parks every queued job of that (site, engine) and the
+  cooldown is persisted (checked by `getActiveThrottle` before each send); rate limits never fail a job, backoff
+  1h doubling to 24h. Network/5xx errors get 3 attempts (5 min base). Exponential backoff with +/-20% jitter,
+  Retry-After parsing, de-duplicated alerts.
 - Sync bulk-upserts in chunks of 500; never loop one query per URL.
 - Runtime bounds: `src/lib/automation/constants.ts`. Plan limits: `plans.ts`.
 

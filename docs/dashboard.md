@@ -6,8 +6,8 @@ Audience: vibe coders. Principle: one obvious next step per screen, no jargon up
 
 | Route | Purpose |
 |---|---|
-| `/dashboard` | Empty: one domain input (onboarding). Otherwise: list of sites with status and counts. |
-| `/dashboard/sites/[siteId]` | Setup card (until verified) -> stats -> issues -> URL list (tabs New/Pending/Submitted/Failed, search, pagination) -> sitemaps + activity -> collapsed settings. |
+| `/dashboard` | Empty: one domain input (onboarding). Otherwise: totals row, then sites (ones needing attention first) with status and counts. |
+| `/dashboard/sites/[siteId]` | Section nav via `?view=`: **Overview** (setup card until verified, search-engine health, stats, submit/retry bar, issues, quick submit, activity), **URLs** (`?tab=` all/pending/submitted/failed/new, search, pagination), **Queue** (jobs and cooldowns), **Sitemaps**, **Settings** (automation, IndexNow key re-check, Bing, delete). Legacy `?tab=queue` opens Queue. |
 | `/dashboard/connect` | Create MCP/API key; editor snippets are filled with the new key; REST examples; key list. |
 | `/dashboard/billing` | Current plan + expiry, Pro/Unlimited via Razorpay, expiry policy, payment history. |
 | `/admin` | Admin only (see docs/admin.md). |
@@ -40,4 +40,5 @@ redirect via `next.config.ts`.
   `#t=4` poster frame, so the 9 MB file only downloads when played.
 - Mutations: `ActionButton action={someAction.bind(null, id)}` or `ActionForm` with `useActionState`.
 - Status is never color-only: badges carry text.
+- Engine health (IndexNow/Bing: sending, rate limited until, key failing) is shown on Overview so users always see why nothing went out.
 - Analytics beacon: `PageViewTracker` in the root layout posts to `/api/track` on route change.
