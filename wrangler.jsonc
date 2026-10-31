@@ -2,14 +2,10 @@
  * For more details on how to configure Wrangler, refer to:
  * https://developers.cloudflare.com/workers/wrangler/configuration/
  */
-/**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
- */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "indexfast",
-	"account_id": "091539408595ba99a0ef106d42391d5b",
+	"account_id": "70d46aeb4751ec62e251eda308bfbf7f",
 	"main": "worker.ts",
 	"compatibility_date": "2026-06-01",
 	"compatibility_flags": [

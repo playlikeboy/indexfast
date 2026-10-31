@@ -22,8 +22,12 @@ Runtime secrets live in Cloudflare (`wrangler secret put NAME`) and are mirrored
 | `ADMIN_EMAILS` | Worker + GitHub |
 | `DODO_*` (legacy, hidden) | Worker |
 
-Local: `.env` (Next/Drizzle) and `.dev.vars` (wrangler). Both gitignored; templates in
-`.env.example` / `.dev.vars.example`.
+Local (all gitignored; templates in `.env.example` / `.dev.vars.example`):
+- `.env`: everything shared across modes, plus `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN`
+  (wrangler reads these for deploy) and `R2_*`.
+- `.env.development` / `.env.production`: only the Dodo test vs live keys.
+- `.dev.vars`: only `NEXTJS_ENV=development` (OpenNext then loads `.env` + `.env.development`)
+  and `DATABASE_URL` (the scheduled handler reads it from bindings).
 
 ## Migrations
 

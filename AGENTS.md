@@ -334,18 +334,16 @@ ADMIN_EMAILS=sh20raj@gmail.com      # comma separated, must be verified in Stack
 All runtime secrets are also set with `wrangler secret put` and mirrored with
 `gh secret set`. See `docs/deployment.md`.
 
-**Cloudflare `.dev.vars` / secrets (consumed by the Worker at runtime):**
+**Cloudflare `.dev.vars` (wrangler dev / cron:dev only):**
 ```
-DATABASE_URL=                       # mirrored as a secret so the cron can run
-DODO_PAYMENTS_API_KEY=
-DODO_PAYMENTS_WEBHOOK_KEY=
-DODO_PAYMENTS_RETURN_URL=
-DODO_PAYMENTS_ENVIRONMENT=
-DODO_PRODUCT_ID_INDIE=
-DODO_PRODUCT_ID_GROWTH=
-DODO_PRODUCT_ID_AGENCY=
-DODO_PRODUCT_ID_SCALE=
+NEXTJS_ENV=development              # OpenNext then loads .env + .env.development
+DATABASE_URL=                       # scheduled handler reads it from bindings
 ```
+
+`.env.development` / `.env.production` hold only the Dodo test vs live keys.
+`.env` also holds `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` (wrangler deploy
+credentials, account must match `wrangler.jsonc` `account_id`) and `R2_*`.
+Production Worker secrets are set with `wrangler secret put` (see `docs/deployment.md`).
 
 > Credentials (IndexNow keys, Bing API keys) are stored AES-GCM encrypted
 > (`enc:v1:` prefix, `credentials.ts`). The key derives from
