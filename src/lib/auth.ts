@@ -92,9 +92,9 @@ export function getAdminEmails() {
 export function isAdmin(user: SessionUser | null) {
 	if (!user || !user.email) return false;
 	const email = user.email.trim().toLowerCase();
-	const allowed = getAdminEmails().includes(email);
-	if (!allowed) return false;
-	return user.emailVerified || DEFAULT_ADMIN_EMAILS.includes(email);
+	// Verification is required for every address, defaults included: an unverified signup
+	// using the admin's email must never be treated as the admin.
+	return user.emailVerified && getAdminEmails().includes(email);
 }
 
 /** 404 (not 403) for non-admins so the panel's existence is not advertised. */

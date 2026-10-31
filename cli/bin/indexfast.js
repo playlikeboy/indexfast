@@ -185,7 +185,9 @@ async function run() {
 
 			// Save config
 			const newConfig = { apiKey: keyToUse, host };
-			fs.writeFileSync(CONFIG_PATH, JSON.stringify(newConfig, null, 2), "utf8");
+			// The file holds a live API key: owner-only. `mode` applies only on create, so chmod an existing file too.
+			fs.writeFileSync(CONFIG_PATH, JSON.stringify(newConfig, null, 2), { encoding: "utf8", mode: 0o600 });
+			fs.chmodSync(CONFIG_PATH, 0o600);
 			printSuccess("Successfully logged in and saved credentials.");
 		} catch (err) {
 			printError(`Invalid API Key or host URL. ${err.message}`);

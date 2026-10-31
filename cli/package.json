@@ -14,8 +14,7 @@
   },
   "preferGlobal": true,
   "scripts": {
-    "start": "node ./bin/indexfast.js",
-    "postinstall": "node ./bin/postinstall.js"
+    "start": "node ./bin/indexfast.js"
   },
   "keywords": [
     "seo",
