@@ -4,7 +4,7 @@
  * exact host, which is what makes downstream dedup and IndexNow host checks reliable.
  */
 import { AUTOMATION_LIMITS } from "./constants";
-import { canonicalizeUrl, normalizeHost } from "@/lib/url-utils";
+import { canonicalizeUrl, getErrorMessage, normalizeHost, safeFetchText } from "@/lib/url-utils";
 
 export type ParsedSitemapUrl = {
 	loc: string;
@@ -126,27 +126,32 @@ export function parseSitemapXml(xml: string, host: string): ParsedSitemap {
 	return { sitemaps: Array.from(sitemaps), urls: Array.from(urls.values()) };
 }
 
-import { safeFetchText } from "@/lib/url-utils";
-
 // Sitemaps can legitimately be large (50k URLs is ~10MB). The cap protects Worker memory.
 const MAX_SITEMAP_BYTES = 15 * 1024 * 1024;
 const MAX_SITEMAP_FILES = 100;
 
 async function fetchText(url: string, userAgent: string) {
-	const res = await safeFetchText(url, { userAgent, timeoutMs: 15000, maxBytes: MAX_SITEMAP_BYTES });
+	const res = await safeFetchText(url, { userAgent, timeoutMs: 15000, maxBytes: MAX_SITEMAP_BYTES, decompressGzip: true });
 	if (res.status !== 200) {
 		throw new Error(`${url} returned HTTP ${res.status}`);
 	}
 	return res.text;
 }
 
+/** Probes only need the head of a file, so they read at most 1MB instead of failing on big files. */
+function fetchHead(url: string, timeoutMs: number) {
+	return safeFetchText(url, {
+		userAgent: "IndexFast Sitemap Discoverer/1.0",
+		timeoutMs,
+		maxBytes: AUTOMATION_LIMITS.discoveryProbeMaxBytes,
+		truncate: true,
+		decompressGzip: true,
+	});
+}
+
 async function fetchCandidateSource(url: string, host: string) {
 	try {
-		const res = await safeFetchText(url, {
-			userAgent: "IndexFast Sitemap Discoverer/1.0",
-			timeoutMs: 6000,
-			maxBytes: MAX_SITEMAP_BYTES,
-		});
+		const res = await fetchHead(url, 6000);
 		if (res.status !== 200 || !res.text.trim().startsWith("<")) {
 			return null;
 		}
@@ -162,6 +167,20 @@ async function fetchCandidateSource(url: string, host: string) {
 	}
 }
 
+/** Run at most `limit` tasks at once: discovery must not hold many large bodies in memory together. */
+export async function mapWithConcurrency<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>) {
+	const results = new Array<R>(items.length);
+	let next = 0;
+	const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+		while (next < items.length) {
+			const index = next++;
+			results[index] = await task(items[index]);
+		}
+	});
+	await Promise.all(workers);
+	return results;
+}
+
 /**
  * Check a user-supplied sitemap URL before saving it, so a blog post or HTML page pasted
  * by mistake is rejected with a clear reason instead of failing every hour in the cron.
@@ -169,7 +188,7 @@ async function fetchCandidateSource(url: string, host: string) {
 export async function validateSitemapUrl(url: string, host: string) {
 	let res;
 	try {
-		res = await safeFetchText(url, { userAgent: "IndexFast Sitemap Discoverer/1.0", timeoutMs: 10000, maxBytes: MAX_SITEMAP_BYTES });
+		res = await fetchHead(url, 10000);
 	} catch (error) {
 		return `Could not fetch ${url}: ${error instanceof Error ? error.message : "network error"}`;
 	}
@@ -187,27 +206,47 @@ export async function validateSitemapUrl(url: string, host: string) {
  * Breadth-first walk through sitemap indexes. Returns deduplicated URL entries (keyed by the
  * canonical loc produced in parseSitemapXml), so the same page listed in two child sitemaps
  * is only ingested once.
+ *
+ * Only the root failing throws: one broken or missing child must not hide the URLs of every
+ * other child, so child errors are collected in `failures` and the walk continues. The
+ * optional `deadline` (epoch ms) is checked before each file so the cron stays inside its
+ * wall-time budget; unvisited files are reported through `truncated`.
  */
 export async function fetchSitemapTree(
 	startUrl: string,
 	host: string,
-	maxUrls: number = AUTOMATION_LIMITS.maxUrlsPerSitemap,
+	options: { maxUrls?: number; deadline?: number } = {},
 ) {
+	const maxUrls = options.maxUrls ?? AUTOMATION_LIMITS.maxUrlsPerSitemap;
 	const queue = [startUrl];
 	const seenSitemaps = new Set<string>();
 	const urlEntries = new Map<string, ParsedSitemapUrl>();
+	const failures: string[] = [];
 	// Hosts of <loc> entries dropped by the exact-host filter. Lets sync explain the classic
 	// mistake: adding "x.github.io" when the sitemap lists "customdomain.com".
 	const foreignHosts = new Map<string, number>();
+	let timedOut = false;
 
 	while (queue.length > 0 && urlEntries.size < maxUrls && seenSitemaps.size < MAX_SITEMAP_FILES) {
 		const current = queue.shift();
 		if (!current || seenSitemaps.has(current)) {
 			continue;
 		}
+		if (options.deadline && Date.now() > options.deadline && seenSitemaps.size > 0) {
+			queue.unshift(current);
+			timedOut = true;
+			break;
+		}
 
 		seenSitemaps.add(current);
-		const xml = await fetchText(current, "IndexFast Sitemap Crawler/1.0");
+		let xml: string;
+		try {
+			xml = await fetchText(current, "IndexFast Sitemap Crawler/1.0");
+		} catch (error) {
+			if (current === startUrl) throw error;
+			failures.push(`${current}: ${getErrorMessage(error)}`);
+			continue;
+		}
 		const parsed = parseSitemapXml(xml, host);
 		if (parsed.urls.length === 0 && parsed.sitemaps.length === 0) {
 			for (const match of xml.matchAll(/<(?:[\w-]+:)?loc>\s*(?:<!\[CDATA\[)?\s*https?:\/\/([^/<\s\]:]+)/gi)) {
@@ -237,6 +276,8 @@ export async function fetchSitemapTree(
 	return {
 		sitemapCount: seenSitemaps.size,
 		urls: Array.from(urlEntries.values()),
+		failures,
+		timedOut,
 		truncated: urlEntries.size >= maxUrls || queue.length > 0,
 		foreignHosts: Array.from(foreignHosts.entries()).sort((a, b) => b[1] - a[1]).map(([name]) => name),
 	};
@@ -259,9 +300,11 @@ const FEED_PATHS = ["/rss.xml", "/feed.xml", "/atom.xml", "/feed", "/rss"];
 /**
  * Find a site's sitemap sources with as little user input as possible.
  * 1. robots.txt `Sitemap:` lines win, since that is the site's own declaration.
- * 2. Otherwise probe common paths in parallel.
+ * 2. Otherwise probe common paths, a few at a time.
  * Sources that are already children of another discovered index are dropped, and RSS/Atom
  * feeds are only used when no real sitemap exists, so the source list stays minimal.
+ * Probes read at most 1MB each, 3 at a time, and at most 20 declared sitemaps are probed,
+ * so a robots.txt listing hundreds of sitemaps cannot exhaust Worker memory.
  */
 export async function discoverSitemapUrls(host: string) {
 	const declared = new Set<string>();
@@ -272,15 +315,18 @@ export async function discoverSitemapUrls(host: string) {
 			if (loc) {
 				declared.add(loc);
 			}
+			if (declared.size >= AUTOMATION_LIMITS.maxSitemapSourcesPerSite) break;
 		}
 	} catch {
 		// robots.txt is optional.
 	}
 
 	const probe = async (candidates: string[]) =>
-		(await Promise.all(candidates.map((candidate) => fetchCandidateSource(candidate, host)))).filter(
-			(result): result is NonNullable<typeof result> => result !== null,
-		);
+		(
+			await mapWithConcurrency(candidates, AUTOMATION_LIMITS.discoveryProbeConcurrency, (candidate) =>
+				fetchCandidateSource(candidate, host),
+			)
+		).filter((result): result is NonNullable<typeof result> => result !== null);
 
 	let found = declared.size > 0 ? await probe(Array.from(declared)) : [];
 	if (found.length === 0) {
@@ -293,6 +339,6 @@ export async function discoverSitemapUrls(host: string) {
 	const children = new Set(found.flatMap((source) => source.parsed.sitemaps));
 	const roots = found.filter((source) => !children.has(source.url));
 	// Prefer indexes (they cover everything) and stable ordering for the "primary" pick.
-	roots.sort((a, b) => b.parsed.sitemaps.length - a.parsed.sitemaps.length);
-	return Array.from(new Set(roots.map((source) => source.url)));
+	const ordered = [...roots].sort((a, b) => b.parsed.sitemaps.length - a.parsed.sitemaps.length);
+	return Array.from(new Set(ordered.map((source) => source.url))).slice(0, AUTOMATION_LIMITS.maxSitemapSourcesPerSite);
 }

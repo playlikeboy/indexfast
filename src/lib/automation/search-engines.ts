@@ -114,8 +114,12 @@ export function buildBingBatchPayload(siteUrl: string, urls: string[]) {
 	};
 }
 
-export function isBingThrottled(status: number, message: string): boolean {
-	return status === 429 || /ThrottleIP|ErrorCode["']?\s*:\s*17/i.test(message);
+// IndexNow says TooManyRequests; Bing says ThrottleIP / ErrorCode 17 (often with HTTP 400).
+const RATE_LIMIT_PATTERN = /ThrottleIP|ErrorCode["']?\s*:\s*17\b|TooManyRequests/i;
+
+/** The single rate-limit test for every engine response. Pass status 0 to test a message only. */
+export function isRateLimited(status: number, message: string): boolean {
+	return status === 429 || RATE_LIMIT_PATTERN.test(message);
 }
 
 export async function verifyBingApiKey(apiKey: string): Promise<{
@@ -130,7 +134,7 @@ export async function verifyBingApiKey(apiKey: string): Promise<{
 		signal: timeoutSignal(),
 	});
 	const message = await response.text().catch(() => "");
-	if (isBingThrottled(response.status, message)) {
+	if (isRateLimited(response.status, message)) {
 		return {
 			ok: true,
 			status: 429,
@@ -160,8 +164,9 @@ export async function getBingSubmissionQuota(apiKey: string, siteUrl: string): P
 		signal: timeoutSignal(),
 	});
 	const rawMessage = await response.text().catch(() => "");
-	const throttled = isBingThrottled(response.status, rawMessage);
-	const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("retry-after")) || (throttled ? 900 : undefined);
+	const throttled = isRateLimited(response.status, rawMessage);
+	// No invented fallback: without Retry-After the queue's exponential throttle backoff applies.
+	const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("retry-after"));
 
 	return {
 		ok: response.ok && !throttled,
@@ -182,8 +187,9 @@ export async function submitBingBatch(apiKey: string, siteUrl: string, urls: str
 		signal: timeoutSignal(),
 	});
 	const rawMessage = await response.text().catch(() => "");
-	const throttled = isBingThrottled(response.status, rawMessage);
-	const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("retry-after")) || (throttled ? 900 : undefined);
+	const throttled = isRateLimited(response.status, rawMessage);
+	// No invented fallback: without Retry-After the queue's exponential throttle backoff applies.
+	const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("retry-after"));
 
 	return {
 		ok: response.ok && !throttled,

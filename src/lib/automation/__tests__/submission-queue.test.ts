@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { calculateBackoffMs, groupSubmissionJobs, isRetryable, isThrottled } from "../service";
+import {
+	calculateBackoffMs,
+	classifyClaimedJob,
+	groupSubmissionJobs,
+	isRetryable,
+	isThrottled,
+	resolveEligibleEngines,
+	type SiteQueueState,
+} from "../service";
 import { parseRetryAfterHeader } from "../search-engines";
 import { AUTOMATION_LIMITS } from "../constants";
 
@@ -129,5 +137,73 @@ describe("calculateBackoffMs and Retry-After header parsing", () => {
 		// Past date should return undefined
 		const pastDate = new Date(Date.now() - 60_000).toUTCString();
 		expect(parseRetryAfterHeader(pastDate)).toBeUndefined();
+	});
+});
+
+describe("rate-limit backoff uses Retry-After as a floor", () => {
+	it("never waits less than the exponential throttle backoff, even with a short Retry-After", () => {
+		const ms = calculateBackoffMs(1, { status: 429, retryAfterSeconds: 60 });
+		expect(ms).toBeGreaterThanOrEqual(2_880_000);
+	});
+
+	it("waits as long as the engine asks when that is longer than the backoff", () => {
+		const ms = calculateBackoffMs(1, { status: 429, retryAfterSeconds: 30 * 3600 });
+		expect(ms).toBeGreaterThanOrEqual(30 * 3_600_000);
+		expect(ms).toBeLessThanOrEqual(30 * 3_600_000 + 5_000);
+	});
+
+	it("detects a Bing ThrottleIP answered with HTTP 400 as a throttle", () => {
+		expect(isThrottled({ status: 400, message: '{"ErrorCode":17,"Message":"ThrottleIP"}' })).toBe(true);
+	});
+});
+
+const verifiedSite = { verified: true, automationEnabled: true };
+const paid = { limits: { bing: true } } as Parameters<typeof resolveEligibleEngines>[2];
+const free = { limits: { bing: false } } as Parameters<typeof resolveEligibleEngines>[2];
+const allVerified = {
+	indexNow: { status: "verified", automationEnabled: true },
+	bingSite: { automationEnabled: true },
+	bingUser: { status: "verified" },
+};
+
+describe("resolveEligibleEngines", () => {
+	it("allows Bing only on plans that include it", () => {
+		expect(resolveEligibleEngines(allVerified, verifiedSite, paid)).toEqual(["indexnow", "bing"]);
+		expect(resolveEligibleEngines(allVerified, verifiedSite, free)).toEqual(["indexnow"]);
+		expect(resolveEligibleEngines(allVerified, verifiedSite, free, true)).toEqual(["indexnow"]);
+	});
+
+	it("sends nothing automatically while site automation is off, but manual submits still work", () => {
+		const off = { verified: true, automationEnabled: false };
+		expect(resolveEligibleEngines(allVerified, off, paid)).toEqual([]);
+		expect(resolveEligibleEngines(allVerified, off, paid, true)).toEqual(["indexnow", "bing"]);
+	});
+
+	it("respects per-site engine toggles and unverified keys", () => {
+		const bingOff = { ...allVerified, bingSite: { automationEnabled: false } };
+		expect(resolveEligibleEngines(bingOff, verifiedSite, paid)).toEqual(["indexnow"]);
+		const pendingKey = { ...allVerified, indexNow: { status: "pending", automationEnabled: true } };
+		expect(resolveEligibleEngines(pendingKey, verifiedSite, paid, true)).toEqual(["bing"]);
+	});
+});
+
+describe("classifyClaimedJob", () => {
+	const active: SiteQueueState = { paused: false, automatedEngines: ["indexnow"], manualEngines: ["indexnow", "bing"], indexNowAwaitingCheck: false };
+
+	it("sends jobs for eligible engines, using manual eligibility for manual jobs", () => {
+		expect(classifyClaimedJob({ engine: "indexnow", reason: "new" }, active)).toBe("send");
+		expect(classifyClaimedJob({ engine: "bing", reason: "manual" }, active)).toBe("send");
+		expect(classifyClaimedJob({ engine: "bing", reason: "changed" }, active)).toBe("skip");
+	});
+
+	it("keeps jobs queued for paused sites and for a key awaiting re-verification", () => {
+		expect(classifyClaimedJob({ engine: "indexnow", reason: "manual" }, { ...active, paused: true })).toBe("paused");
+		const pending: SiteQueueState = { ...active, automatedEngines: [], manualEngines: [], indexNowAwaitingCheck: true };
+		expect(classifyClaimedJob({ engine: "indexnow", reason: "new" }, pending)).toBe("wait");
+		expect(classifyClaimedJob({ engine: "bing", reason: "new" }, pending)).toBe("skip");
+	});
+
+	it("skips jobs whose site no longer exists", () => {
+		expect(classifyClaimedJob({ engine: "indexnow", reason: "new" }, undefined)).toBe("skip");
 	});
 });

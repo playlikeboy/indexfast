@@ -126,6 +126,7 @@ export const apiUsageEvents = pgTable(
 	(table) => [
 		index("api_usage_events_user_created_idx").on(table.userId, table.createdAt),
 		index("api_usage_events_key_created_idx").on(table.apiKeyId, table.createdAt),
+		index("api_usage_events_created_idx").on(table.createdAt), // 90-day retention prune in the cron
 	],
 );
 
@@ -248,7 +249,7 @@ export const siteIntegrations = pgTable(
 		siteId: uuid("site_id")
 			.references(() => sites.id, { onDelete: "cascade" })
 			.notNull(),
-		provider: text("provider").notNull(), // 'indexnow'
+		provider: text("provider").notNull(), // 'indexnow', 'bing', 'gsc' (matched property), 'google_indexing_api', 'yandex' (host id), 'baidu' (encrypted token)
 		status: text("status").default("pending").notNull(), // 'pending', 'verified', 'failed', 'disabled'
 		encryptedSecret: text("encrypted_secret"),
 		publicConfig: jsonb("public_config"),
@@ -275,7 +276,7 @@ export const userIntegrations = pgTable(
 		userId: text("user_id")
 			.references(() => users.id, { onDelete: "cascade" })
 			.notNull(),
-		provider: text("provider").notNull(), // 'bing'
+		provider: text("provider").notNull(), // 'bing', 'google' (OAuth refresh token), 'yandex' (OAuth token)
 		status: text("status").default("pending").notNull(), // 'pending', 'verified', 'failed', 'disabled'
 		encryptedSecret: text("encrypted_secret").notNull(),
 		publicConfig: jsonb("public_config"),
@@ -369,6 +370,7 @@ export const urls = pgTable(
 		index("urls_site_status_idx").on(table.siteId, table.indexingStatus),
 		index("urls_site_checked_idx").on(table.siteId, table.lastCheckedAt),
 		uniqueIndex("urls_site_loc_unique_idx").on(table.siteId, table.loc),
+		index("urls_site_created_idx").on(table.siteId, table.createdAt), // Dashboard "New (7d)" tab
 	],
 );
 
@@ -380,7 +382,7 @@ export const checks = pgTable(
 		urlId: uuid("url_id")
 			.references(() => urls.id, { onDelete: "cascade" })
 			.notNull(),
-		checkType: text("check_type").notNull(), // 'robots', 'noindex', 'canonical', 'http_status', 'load_time'
+		checkType: text("check_type").notNull(), // 'diagnostics' (live fetch), 'gsc_inspection' (Search Console URL Inspection)
 		status: text("status").notNull(), // 'pass', 'warn', 'fail'
 		details: jsonb("details").notNull(), // Detailed JSON output payload of checker
 		checkedAt: timestamp("checked_at").defaultNow().notNull(),
@@ -401,11 +403,14 @@ export const submissionJobs = pgTable(
 			.notNull(),
 		urlId: uuid("url_id").references(() => urls.id, { onDelete: "set null" }),
 		loc: text("loc").notNull(),
-		engine: text("engine").notNull(), // 'indexnow', 'bing'
+		engine: text("engine").notNull(), // 'indexnow', 'bing', 'google_indexing_api', 'yandex', 'baidu'
 		reason: text("reason").default("new").notNull(), // 'new', 'changed', 'manual'
-		status: text("status").default("queued").notNull(), // 'queued', 'processing', 'success', 'failed'
+		status: text("status").default("queued").notNull(), // 'queued', 'processing', 'success', 'failed', 'skipped' (engine disabled; never sent)
 		priority: integer("priority").default(5).notNull(), // 1 = manual/immediate, 5 = new sitemap url, 10 = refresh
-		attempts: integer("attempts").default(0).notNull(),
+		attempts: integer("attempts").default(0).notNull(), // Network/5xx attempts only; capped by maxSubmitAttempts
+		// Consecutive rate limits (429 / ThrottleIP). Kept apart from attempts so a rate limit
+		// never uses up the retry budget; it is the exponent of the 1h..24h throttle backoff.
+		throttleCount: integer("throttle_count").default(0).notNull(),
 		httpStatus: integer("http_status"), // last HTTP status returned by search engine (e.g. 200, 429, 500)
 		retryAfterAt: timestamp("retry_after_at"), // exact timestamp search engine requested via Retry-After
 		nextRunAt: timestamp("next_run_at").defaultNow().notNull(),
@@ -424,6 +429,10 @@ export const submissionJobs = pgTable(
 		uniqueIndex("submission_jobs_open_unique_idx")
 			.on(table.siteId, table.loc, table.engine)
 			.where(sql`${table.status} in ('queued', 'processing')`),
+		// Matches the claim query's ORDER BY so claiming due jobs does not sort the whole queue.
+		index("submission_jobs_queued_claim_idx")
+			.on(table.priority, table.nextRunAt, table.createdAt)
+			.where(sql`${table.status} = 'queued'`),
 	],
 );
 
@@ -436,7 +445,7 @@ export const submissions = pgTable(
 			.references(() => sites.id, { onDelete: "cascade" })
 			.notNull(),
 		loc: text("loc").notNull(),
-		engine: text("engine").notNull(), // 'indexnow', 'google_indexing_api', 'bing'
+		engine: text("engine").notNull(), // 'indexnow', 'google_indexing_api', 'bing', 'yandex', 'baidu'
 		status: text("status").notNull(), // 'submitted', 'success', 'failed'
 		responseMessage: text("response_message"),
 		attempt: integer("attempt").default(1).notNull(),
@@ -445,6 +454,7 @@ export const submissions = pgTable(
 	(table) => [
 		index("submissions_site_id_idx").on(table.siteId),
 		index("submissions_site_created_idx").on(table.siteId, table.createdAt),
+		index("submissions_created_idx").on(table.createdAt), // Platform-wide activity charts in /admin
 	],
 );
 
@@ -465,5 +475,24 @@ export const alerts = pgTable(
 	(table) => [
 		index("alerts_site_id_idx").on(table.siteId),
 		index("alerts_site_resolved_created_idx").on(table.siteId, table.resolved, table.createdAt),
+	],
+);
+
+// Counters for engine quotas that the engine does not let us read back (Google URL
+// Inspection per property, the project-wide Google Indexing API quota). Reserving is one
+// atomic upsert that only succeeds while used + n <= limit, so concurrent runs cannot
+// overshoot. window is a day ("2026-11-01", in the engine's time zone) or a UTC minute.
+export const engineQuotaUsage = pgTable(
+	"engine_quota_usage",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		quotaKey: text("quota_key").notNull(), // e.g. 'gsc_inspection:sc-domain:example.com', 'google_indexing_api:project'
+		window: text("window").notNull(),
+		used: integer("used").default(0).notNull(),
+		updatedAt: timestamp("updated_at").defaultNow().notNull(),
+	},
+	(table) => [
+		uniqueIndex("engine_quota_usage_key_window_unique_idx").on(table.quotaKey, table.window),
+		index("engine_quota_usage_updated_idx").on(table.updatedAt), // Retention prune in the cron
 	],
 );

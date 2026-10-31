@@ -8,7 +8,9 @@ export function getErrorMessage(error: unknown) {
 }
 
 export function isPrivateOrDisallowedHost(hostname: string): boolean {
-	const host = hostname.toLowerCase().trim().replace(/^\[|\]$/g, "");
+	// Trailing dots are the DNS root ("localhost." resolves like "localhost"), so strip them
+	// before any name check.
+	const host = hostname.toLowerCase().trim().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
 
 	if (
 		host === "localhost" ||
@@ -38,6 +40,7 @@ export function isPrivateOrDisallowedHost(hostname: string): boolean {
 		if (b0 === 192 && b1 === 168) return true; // 192.168.0.0/16
 		if (b0 === 100 && b1 >= 64 && b1 <= 127) return true; // 100.64.0.0/10 CGNAT
 		if (b0 === 198 && (b1 === 18 || b1 === 19)) return true; // 198.18.0.0/15 benchmarking
+		if (b0 === 192 && b1 === 0 && b2 === 0) return true; // 192.0.0.0/24 IETF protocol assignments
 		if (b0 === 192 && b1 === 0 && b2 === 2) return true; // 192.0.2.0/24 TEST-NET-1
 		if (b0 === 198 && b1 === 51 && b2 === 100) return true; // 198.51.100.0/24 TEST-NET-2
 		if (b0 === 203 && b1 === 0 && b2 === 113) return true; // 203.0.113.0/24 TEST-NET-3
@@ -49,6 +52,9 @@ export function isPrivateOrDisallowedHost(hostname: string): boolean {
 		if (
 			host === "::" ||
 			host === "::1" ||
+			// ::/96 IPv4-compatible and every other address in ::/8 (the URL parser turns
+			// [::127.0.0.1] into [::7f00:1]); nothing public lives there.
+			host.startsWith("::") ||
 			host.includes(":ffff:") ||
 			host.startsWith("::ffff:") ||
 			host.startsWith("2002:") || // 6to4
@@ -100,26 +106,29 @@ export function assertSafeExternalUrl(input: string): URL {
 	return url;
 }
 
-async function readResponseTextLimited(response: Response, maxBytes: number) {
-	if (!response.body) {
-		const text = await response.text();
-		if (new TextEncoder().encode(text).byteLength > maxBytes) {
-			throw new Error("Response size exceeds maximum limit of " + maxBytes + " bytes");
-		}
-		return text;
-	}
-	const reader = response.body.getReader();
+type ReadLimitOptions = { maxBytes: number; truncate?: boolean };
+
+/**
+ * Read a byte stream up to maxBytes. Over the limit it either throws (default: protects
+ * Worker memory from huge bodies) or, with `truncate`, keeps only the first maxBytes, which
+ * is enough when the caller only needs the head of a document.
+ */
+async function readStreamLimited(stream: ReadableStream<Uint8Array>, { maxBytes, truncate }: ReadLimitOptions) {
+	const reader = stream.getReader();
 	const chunks: Uint8Array[] = [];
 	let totalBytes = 0;
 	try {
 		while (true) {
 			const { done, value } = await reader.read();
 			if (done) break;
-			totalBytes += value.byteLength;
-			if (totalBytes > maxBytes) {
+			if (totalBytes + value.byteLength > maxBytes) {
 				await reader.cancel().catch(() => undefined);
-				throw new Error("Response size exceeds maximum limit of " + maxBytes + " bytes");
+				if (!truncate) throw new Error("Response size exceeds maximum limit of " + maxBytes + " bytes");
+				chunks.push(value.subarray(0, maxBytes - totalBytes));
+				totalBytes = maxBytes;
+				break;
 			}
+			totalBytes += value.byteLength;
 			chunks.push(value);
 		}
 	} finally {
@@ -131,6 +140,29 @@ async function readResponseTextLimited(response: Response, maxBytes: number) {
 		bytes.set(chunk, offset);
 		offset += chunk.byteLength;
 	}
+	return bytes;
+}
+
+export function isGzipBytes(bytes: Uint8Array) {
+	return bytes.byteLength >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+}
+
+/** Inflate gzip bytes with the same output limit, so a small .gz cannot expand into a memory bomb. */
+export async function gunzipLimited(bytes: Uint8Array, options: ReadLimitOptions) {
+	const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"));
+	return readStreamLimited(stream as ReadableStream<Uint8Array>, options);
+}
+
+async function readResponseTextLimited(response: Response, options: ReadLimitOptions & { decompressGzip?: boolean }) {
+	const raw = response.body
+		? await readStreamLimited(response.body, options)
+		: new TextEncoder().encode(await response.text());
+	if (!response.body && raw.byteLength > options.maxBytes && !options.truncate) {
+		throw new Error("Response size exceeds maximum limit of " + options.maxBytes + " bytes");
+	}
+	// fetch already inflates Content-Encoding: gzip; a .xml.gz file served as application/gzip
+	// arrives still compressed, which the magic bytes reveal.
+	const bytes = options.decompressGzip && isGzipBytes(raw) ? await gunzipLimited(raw, options) : raw.subarray(0, options.maxBytes);
 	return new TextDecoder().decode(bytes);
 }
 
@@ -141,6 +173,8 @@ export async function safeFetchText(
 		userAgent?: string;
 		maxBytes?: number;
 		redirectLimit?: number;
+		truncate?: boolean; // Return the first maxBytes instead of throwing on a larger body
+		decompressGzip?: boolean; // Inflate gzip bodies the server did not mark as Content-Encoding
 	} = {},
 ): Promise<{ text: string; status: number; finalUrl: string; headers: Headers }> {
 	const maxBytes = options.maxBytes ?? 5 * 1024 * 1024;
@@ -174,7 +208,7 @@ export async function safeFetchText(
 				continue;
 			}
 			// The timer remains active during streaming so slow bodies are aborted too.
-			const text = await readResponseTextLimited(response, maxBytes);
+			const text = await readResponseTextLimited(response, { maxBytes, truncate: options.truncate, decompressGzip: options.decompressGzip });
 			clearTimeout(timeoutId);
 			return { text, status: response.status, finalUrl: currentUrl, headers: response.headers };
 		} catch (err: unknown) {
@@ -253,6 +287,11 @@ export function canonicalizeUrl(input: string | URL) {
 			url.searchParams.delete(key);
 		}
 	}
+	// "?q=a%20b" and "?q=a+b" both mean a space in a query string, and a bare trailing "?"
+	// is no query at all: collapse both so one page is one row. "+" matches how URL itself
+	// re-serializes a query after searchParams changes.
+	// (url.search is "" for a bare "?", and assigning "" drops the "?".)
+	url.search = url.search.replace(/%20/g, "+");
 	return url.toString();
 }
 

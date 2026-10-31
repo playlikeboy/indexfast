@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBingBatchPayload, isBingThrottled } from "../search-engines";
+import { buildBingBatchPayload, isRateLimited } from "../search-engines";
 import { isRetryable } from "../service";
 
 describe("Bing automation utilities", () => {
@@ -50,9 +50,11 @@ describe("Bing automation utilities", () => {
 			Message: "ERROR!!! ThrottleIP",
 		});
 
-		expect(isBingThrottled(400, throttleResponse)).toBe(true);
-		expect(isBingThrottled(429, "")).toBe(true);
-		expect(isBingThrottled(200, "OK")).toBe(false);
+		expect(isRateLimited(400, throttleResponse)).toBe(true);
+		expect(isRateLimited(429, "")).toBe(true);
+		expect(isRateLimited(200, "OK")).toBe(false);
+		expect(isRateLimited(0, '{"errorCode":"TooManyRequests"}')).toBe(true);
+		expect(isRateLimited(400, '{"ErrorCode":170}')).toBe(false);
 
 		// isRetryable must recognize ThrottleIP
 		expect(isRetryable({ ok: false, status: 400, message: throttleResponse })).toBe(true);

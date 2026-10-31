@@ -14,9 +14,11 @@
  * Every *ForUser function re-checks ownership with the userId it is given.
  */
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import {
 	alerts,
+	apiUsageEvents,
 	cronRuns,
 	siteIntegrations,
 	siteSitemaps,
@@ -29,28 +31,42 @@ import {
 	users,
 } from "@/db/schema";
 import { getErrorMessage, getSiteHost, normalizeHost, normalizeSitemapUrl, normalizeUrlForHost, safeFetchText } from "@/lib/url-utils";
-import { getPausedSiteIdsForUsers, getUserAccess, getUserEntitlement } from "@/lib/platform/entitlements";
-import { formatLimit, resolveEntitlement, type Entitlement } from "@/lib/platform/plans";
-import { AUTOMATION_LIMITS, ENGINE_BATCH_SIZE, type SubmissionEngine } from "./constants";
-import { encryptSecret, hasCredentialEncryptionKey, isEncryptedSecret, maskCredential, readStoredSecret } from "./credentials";
+import { getPausedSiteIdsForUsers, getUserAccess } from "@/lib/platform/entitlements";
+import { formatLimit, PLAN_GRACE_DAYS, PLANS, resolveEntitlement, VISIBLE_PLANS, type Entitlement } from "@/lib/platform/plans";
+import { AUTOMATION_LIMITS, ENGINE_BATCH_SIZE, ENGINE_LABELS, GOOGLE_LIMITS, type SubmissionEngine } from "./constants";
+import {
+	getEngineRunBudget,
+	isExtraEngine,
+	loadExtraEngineState,
+	quotaResetAt,
+	resolveExtraEngines,
+	submitExtraEngineBatch,
+	type ExtraEngineState,
+} from "@/lib/engines/extra-engines";
+import { notifyGscAfterSync, runScheduledGscInspections } from "@/lib/engines/google-service";
+import { pruneQuotaUsage } from "@/lib/engines/shared";
+import { decryptSecret, encryptSecret, hasCredentialEncryptionKey, maskCredential, readSecret } from "./credentials";
 import {
 	generateIndexNowKey,
 	getBingSubmissionQuota,
 	getIndexNowKeyLocation,
+	isRateLimited,
 	submitBingBatch,
 	submitIndexNowBatch,
 	verifyBingApiKey,
 	verifyIndexNowKey,
 	type EngineSubmissionResult,
 } from "./search-engines";
-import { discoverSitemapUrls, fetchSitemapTree, validateSitemapUrl, type ParsedSitemapUrl } from "./sitemaps";
+import { discoverSitemapUrls, fetchSitemapTree, mapWithConcurrency, validateSitemapUrl, type ParsedSitemapUrl } from "./sitemaps";
 
 type SiteRow = typeof sites.$inferSelect;
 type SiteSitemapRow = typeof siteSitemaps.$inferSelect;
-type UrlQueueRow = { id: string; loc: string };
+// nextRunAt delays a job (e.g. an edit made inside the resubmit cooldown); omitted = due now.
+type UrlQueueRow = { id: string; loc: string; nextRunAt?: Date };
 type SubmissionReason = "new" | "changed" | "manual";
 
 const MINUTE_MS = 60 * 1000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
 
 function truncateMessage(message: string) {
 	return message.length > 1000 ? `${message.slice(0, 997)}...` : message;
@@ -161,12 +177,14 @@ async function resolveAlerts(siteId: string, title: string) {
 }
 
 /**
- * Secrets are stored AES-GCM encrypted (credentials.ts). Rows written by older releases are
- * plaintext; they are re-encrypted the next time they are read so no bulk migration is needed.
+ * Secrets are stored AES-GCM encrypted (credentials.ts). Rows that are legacy plaintext, or
+ * that only decrypt with the fallback secret, are re-encrypted with the primary secret the
+ * next time they are read, so no bulk migration is needed.
  */
 async function upgradeLegacySecret(value: string) {
-	if (isEncryptedSecret(value) || !hasCredentialEncryptionKey()) return value;
-	return encryptSecret(await readStoredSecret(value));
+	if (!hasCredentialEncryptionKey()) return value;
+	const { plaintext, stale } = await readSecret(value);
+	return stale ? encryptSecret(plaintext) : value;
 }
 
 // ---------------------------------------------------------------------------
@@ -225,7 +243,7 @@ export async function ensureIndexNowIntegration(site: SiteRow) {
 		.limit(1);
 
 	if (existing?.encryptedSecret) {
-		const key = await readStoredSecret(existing.encryptedSecret);
+		const key = await decryptSecret(existing.encryptedSecret);
 		const { storage: _legacyStorage, ...config } = readPublicConfig(existing.publicConfig);
 		void _legacyStorage;
 		const encryptedSecret = await upgradeLegacySecret(existing.encryptedSecret);
@@ -311,6 +329,7 @@ export async function saveIndexNowKeyForUser(userId: string, siteId: string, key
  */
 export async function adoptExistingIndexNowKeyForUser(userId: string, siteId: string, input: string) {
 	const site = await requireSite(userId, siteId);
+	await assertSiteActive(userId, siteId);
 	const host = getSiteHost(site);
 	const value = input.trim();
 	if (!value) {
@@ -354,6 +373,7 @@ export async function adoptExistingIndexNowKeyForUser(userId: string, siteId: st
  */
 export async function verifySiteForUser(userId: string, siteId: string) {
 	const site = await requireSite(userId, siteId);
+	const entitlement = await assertSiteActive(userId, siteId);
 	const integration = await ensureIndexNowIntegration(site);
 	const keyUrl = new URL(integration.keyLocation);
 	const result =
@@ -376,6 +396,11 @@ export async function verifySiteForUser(userId: string, siteId: string) {
 		.where(eq(siteIntegrations.id, integration.id));
 
 	if (!result.ok) {
+		// A failed re-check withdraws the ownership proof: nothing is submitted for this host
+		// until the file passes again. Queued jobs wait (only verified sites are claimed).
+		if (site.verified) {
+			await db.update(sites).set({ verified: false, updatedAt: now }).where(eq(sites.id, site.id));
+		}
 		return { ok: false, message: result.message, queued: 0, submitted: 0 };
 	}
 
@@ -383,7 +408,6 @@ export async function verifySiteForUser(userId: string, siteId: string) {
 	const verifiedSite = { ...site, verified: true, automationEnabled: true };
 
 	// First verification: push the backlog of URLs found before the key was live.
-	const entitlement = await getUserEntitlement(userId);
 	const backlog = await db
 		.select({ id: urls.id, loc: urls.loc })
 		.from(urls)
@@ -394,9 +418,6 @@ export async function verifySiteForUser(userId: string, siteId: string) {
 
 	return { ok: true, message: "Verified. Automation is on.", queued, submitted: processed?.successCount ?? 0 };
 }
-
-/** @deprecated name kept for older callers; verification is now the IndexNow key check. */
-export const verifyIndexNowForUser = verifySiteForUser;
 
 export async function setAutomationForUser(userId: string, siteId: string, enabled: boolean) {
 	const site = await requireSite(userId, siteId);
@@ -437,14 +458,23 @@ function describeBingValidationMessage(siteUrl: string, message: string) {
 	if (/InvalidParameter/i.test(message)) {
 		return `Bing returned InvalidParameter for ${siteUrl}. Add and verify this exact site URL in Bing Webmaster Tools first.`;
 	}
-	if (/ThrottleIP|ErrorCode["']?\s*:\s*17/i.test(message)) {
+	if (isRateLimited(0, message)) {
 		return `Bing API is temporarily rate-limiting requests from this IP (ThrottleIP / ErrorCode 17). Key is saved and automated retries will run once cooled down.`;
 	}
 	return message;
 }
 
+/** Bing is a paid feature (plans.ts `limits.bing`); an expired plan past grace loses it too. */
+function assertBingIncluded(entitlement: Entitlement) {
+	if (!entitlement.limits.bing) {
+		const plans = VISIBLE_PLANS.filter((plan) => plan.limits.bing).map((plan) => plan.name);
+		throw new Error(`Bing Webmaster API submissions are not included in the ${entitlement.plan.name} plan. Upgrade to ${plans.join(" or ")} to use Bing.`);
+	}
+}
+
 export async function saveBingApiKeyForUser(userId: string, siteId: string, apiKey: string, autoSubmit = true) {
 	const site = await requireSite(userId, siteId);
+	assertBingIncluded(await assertSiteActive(userId, siteId));
 
 	const cleanApiKey = apiKey.trim();
 	if (!cleanApiKey) {
@@ -531,6 +561,10 @@ export async function saveBingApiKeyForUser(userId: string, siteId: string, apiK
 
 export async function setBingAutomationForSite(userId: string, siteId: string, enabled: boolean) {
 	const site = await requireSite(userId, siteId);
+	// Turning Bing off is always allowed; turning it on needs a plan that includes it.
+	if (enabled) {
+		assertBingIncluded(await assertSiteActive(userId, siteId));
+	}
 	const [userBing] = await db
 		.select({ status: userIntegrations.status })
 		.from(userIntegrations)
@@ -563,11 +597,17 @@ export async function setBingAutomationForSite(userId: string, siteId: string, e
 	return { ok: true, autoSubmit: enabled };
 }
 
+/**
+ * With a siteId: remove Bing from that one site (ownership checked first; the user's key is
+ * kept for their other sites). Without: delete the user's Bing key itself.
+ */
 export async function removeBingApiKeyForUser(userId: string, siteId?: string) {
 	if (siteId) {
+		const site = await requireSite(userId, siteId);
 		await db
 			.delete(siteIntegrations)
-			.where(and(eq(siteIntegrations.siteId, siteId), eq(siteIntegrations.provider, "bing")));
+			.where(and(eq(siteIntegrations.siteId, site.id), eq(siteIntegrations.provider, "bing")));
+		return;
 	}
 	await db.delete(userIntegrations).where(and(eq(userIntegrations.userId, userId), eq(userIntegrations.provider, "bing")));
 }
@@ -727,16 +767,18 @@ export async function deleteSiteForUser(userId: string, siteId: string) {
 // Sync: sitemap -> urls (dedup + new/changed detection)
 // ---------------------------------------------------------------------------
 
-async function syncSitemapSource(site: SiteRow, source: SiteSitemapRow, entitlement: Entitlement) {
+async function syncSitemapSource(site: SiteRow, source: SiteSitemapRow, entitlement: Entitlement, deadline?: number) {
 	const now = new Date();
 	const [syncRow] = await db.insert(sitemaps).values({ siteId: site.id, url: source.url, status: "syncing" }).returning();
 
 	try {
 		const maxUrls = Math.min(entitlement.limits.urlsPerSite, AUTOMATION_LIMITS.maxUrlsPerSitemap);
-		const result = await fetchSitemapTree(source.url, getSiteHost(site), maxUrls);
+		const result = await fetchSitemapTree(source.url, getSiteHost(site), { maxUrls, deadline });
 		if (result.urls.length === 0) {
 			throw new Error(
-				result.foreignHosts[0]
+				result.failures[0]
+					? `Every child sitemap failed. ${result.failures[0]}`
+					: result.foreignHosts[0]
 					? `This sitemap lists URLs on ${result.foreignHosts[0]}, not ${getSiteHost(site)}. Add ${result.foreignHosts[0]} as the website instead.`
 					: "The sitemap has no URLs yet.",
 			);
@@ -805,12 +847,22 @@ async function syncSitemapSource(site: SiteRow, source: SiteSitemapRow, entitlem
 		}
 
 		const newLocs = new Set(newEntries.map((entry) => entry.loc));
-		const cooldownCutoff = now.getTime() - AUTOMATION_LIMITS.resubmitCooldownHours * 60 * MINUTE_MS;
+		const cooldownMs = AUTOMATION_LIMITS.resubmitCooldownHours * 60 * MINUTE_MS;
 		const newRows = upserted.filter((row) => newLocs.has(row.loc));
-		const changedRows = upserted.filter((row) => {
-			const existing = existingByLoc.get(row.loc);
-			return existing && !newLocs.has(row.loc) && (!existing.lastSubmittedAt || existing.lastSubmittedAt.getTime() < cooldownCutoff);
-		});
+		// lastmod is already overwritten above, so an edit made inside the resubmit cooldown
+		// would never be detected again: queue it for when the cooldown ends instead of dropping it.
+		const changedRows: UrlQueueRow[] = upserted
+			.filter((row) => existingByLoc.has(row.loc) && !newLocs.has(row.loc))
+			.map((row) => {
+				const lastSubmittedAt = existingByLoc.get(row.loc)?.lastSubmittedAt;
+				return lastSubmittedAt && now.getTime() - lastSubmittedAt.getTime() < cooldownMs
+					? { ...row, nextRunAt: new Date(lastSubmittedAt.getTime() + cooldownMs) }
+					: row;
+			});
+		// Child sitemaps that failed do not fail the source; they are surfaced on it instead.
+		const childFailure = result.failures.length > 0
+			? truncateMessage(`${result.failures.length} child sitemap(s) failed. ${result.failures[0]}`)
+			: null;
 
 		const [indexNowInt] = await db
 			.select({ publicConfig: siteIntegrations.publicConfig })
@@ -825,12 +877,19 @@ async function syncSitemapSource(site: SiteRow, source: SiteSitemapRow, entitlem
 		await Promise.all([
 			db
 				.update(siteSitemaps)
-				.set({ status: "active", lastSyncAt: now, lastErrorAt: null, lastErrorMessage: null, updatedAt: now })
+				.set({
+					status: "active",
+					lastSyncAt: now,
+					lastErrorAt: childFailure ? now : null,
+					lastErrorMessage: childFailure,
+					updatedAt: now,
+				})
 				.where(eq(siteSitemaps.id, source.id)),
 			db
 				.update(sitemaps)
 				.set({
 					status: "success",
+					errorMessage: childFailure,
 					lastSyncTime: now,
 					urlCount: result.urls.length,
 					newCount: newRows.length,
@@ -839,6 +898,10 @@ async function syncSitemapSource(site: SiteRow, source: SiteSitemapRow, entitlem
 				.where(eq(sitemaps.id, syncRow.id)),
 			resolveAlerts(site.id, "Sitemap sync failed"),
 		]);
+		// New URLs: ask Search Console to re-read this sitemap (no-op unless Google is connected).
+		if (newRows.length > 0) {
+			await notifyGscAfterSync(site, source.url).catch(() => undefined);
+		}
 
 		return {
 			sourceId: source.id,
@@ -847,6 +910,7 @@ async function syncSitemapSource(site: SiteRow, source: SiteSitemapRow, entitlem
 			newCount: newRows.length,
 			changedCount: changedRows.length,
 			queuedCount: queued,
+			childFailures: result.failures.length,
 			truncated: result.truncated || newEntries.length < result.urls.length - existingByLoc.size,
 		};
 	} catch (error) {
@@ -863,17 +927,22 @@ async function syncSitemapSource(site: SiteRow, source: SiteSitemapRow, entitlem
 	}
 }
 
-async function syncActiveSitemaps(site: SiteRow, entitlement: Entitlement, sourceId?: string) {
+/**
+ * Sync a site's sources (primary first, at most maxSitemapSourcesPerSite). `deadline` (epoch
+ * ms) is the cron's sync budget: no new source starts after it, and each crawl checks it per file.
+ */
+async function syncActiveSitemaps(site: SiteRow, entitlement: Entitlement, options: { sourceId?: string; deadline?: number } = {}) {
 	const filters = [eq(siteSitemaps.siteId, site.id), ne(siteSitemaps.status, "disabled")];
-	if (sourceId) {
-		filters.push(eq(siteSitemaps.id, sourceId));
+	if (options.sourceId) {
+		filters.push(eq(siteSitemaps.id, options.sourceId));
 	}
 
 	const sources = await db
 		.select()
 		.from(siteSitemaps)
 		.where(and(...filters))
-		.orderBy(desc(siteSitemaps.isPrimary), asc(siteSitemaps.createdAt));
+		.orderBy(desc(siteSitemaps.isPrimary), asc(siteSitemaps.createdAt))
+		.limit(AUTOMATION_LIMITS.maxSitemapSourcesPerSite);
 
 	if (sources.length === 0) {
 		throw new Error("No sitemap added yet. Add your sitemap URL or run discovery.");
@@ -882,8 +951,11 @@ async function syncActiveSitemaps(site: SiteRow, entitlement: Entitlement, sourc
 	const results = [];
 	const failures: string[] = [];
 	for (const source of sources) {
+		if (options.deadline && Date.now() > options.deadline) {
+			break;
+		}
 		try {
-			results.push(await syncSitemapSource(site, source, entitlement));
+			results.push(await syncSitemapSource(site, source, entitlement, options.deadline));
 		} catch (error) {
 			failures.push(`${source.url}: ${getErrorMessage(error)}`);
 		}
@@ -904,7 +976,7 @@ async function syncActiveSitemaps(site: SiteRow, entitlement: Entitlement, sourc
 export async function syncSitemapsForUser(userId: string, siteId: string, sourceId?: string) {
 	const site = await requireSite(userId, siteId);
 	const entitlement = await assertSiteActive(userId, siteId);
-	const result = await syncActiveSitemaps(site, entitlement, sourceId);
+	const result = await syncActiveSitemaps(site, entitlement, { sourceId });
 	const processed =
 		result.queuedCount > 0 ? await processSubmissionQueue({ siteId, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline }) : null;
 	return { ...result, submitted: processed?.successCount ?? 0 };
@@ -918,12 +990,15 @@ export async function syncSitemapsForUser(userId: string, siteId: string, source
 // verification (file removed or changed) and no Bing key is connected.
 const NO_ENGINE_MESSAGE = "Your IndexNow key file is no longer passing the check. Open Settings and click \"Re-check key file\", or connect a Bing API key.";
 
-async function getEligibleEngines(site: SiteRow, entitlement: Entitlement, manual = false): Promise<SubmissionEngine[]> {
-	if (!manual && !(site.verified && site.automationEnabled)) {
-		return [];
-	}
+type EngineState = {
+	indexNow?: { status: string; automationEnabled: boolean };
+	bingSite?: { automationEnabled: boolean };
+	bingUser?: { status: string };
+	extra?: ExtraEngineState; // Google Indexing API, Yandex, Baidu (src/lib/engines)
+};
 
-	const [[indexNow], [bingSite], [bingUser]] = await Promise.all([
+async function loadEngineState(site: SiteRow): Promise<EngineState> {
+	const [[indexNow], [bingSite], [bingUser], extra] = await Promise.all([
 		db
 			.select({ status: siteIntegrations.status, automationEnabled: siteIntegrations.automationEnabled })
 			.from(siteIntegrations)
@@ -939,16 +1014,39 @@ async function getEligibleEngines(site: SiteRow, entitlement: Entitlement, manua
 			.from(userIntegrations)
 			.where(and(eq(userIntegrations.userId, site.userId), eq(userIntegrations.provider, "bing")))
 			.limit(1),
+		loadExtraEngineState(site),
 	]);
+	return { indexNow, bingSite, bingUser, extra };
+}
 
+/**
+ * Which engines a site may submit to right now. Manual submits ignore the automation
+ * toggles, never the key checks or the plan: Bing needs a plan with `limits.bing`, so an
+ * expired plan past grace stops Bing too.
+ */
+export function resolveEligibleEngines(
+	state: EngineState,
+	site: Pick<SiteRow, "verified" | "automationEnabled">,
+	entitlement: Pick<Entitlement, "limits">,
+	manual = false,
+): SubmissionEngine[] {
+	if (!manual && !(site.verified && site.automationEnabled)) {
+		return [];
+	}
 	const engines: SubmissionEngine[] = [];
-	if (indexNow?.status === "verified" && (manual || indexNow.automationEnabled)) {
+	if (state.indexNow?.status === "verified" && (manual || state.indexNow.automationEnabled)) {
 		engines.push("indexnow");
 	}
-	if (bingUser?.status === "verified" && (manual || (bingSite?.automationEnabled ?? true))) {
+	if (entitlement.limits.bing && state.bingUser?.status === "verified" && (manual || (state.bingSite?.automationEnabled ?? true))) {
 		engines.push("bing");
 	}
+	// Optional engines are paid-only and opt-in per site; see resolveExtraEngines.
+	engines.push(...resolveExtraEngines(state.extra, entitlement.limits, manual));
 	return engines;
+}
+
+async function getEligibleEngines(site: SiteRow, entitlement: Entitlement, manual = false): Promise<SubmissionEngine[]> {
+	return resolveEligibleEngines(await loadEngineState(site), site, entitlement, manual);
 }
 
 /**
@@ -973,7 +1071,9 @@ async function enqueueUrlRows(site: SiteRow, rows: UrlQueueRow[], reason: Submis
 		for (const batch of chunk(rows, AUTOMATION_LIMITS.upsertChunkSize)) {
 			const inserted = await db
 				.insert(submissionJobs)
-				.values(batch.map((row) => ({ siteId: site.id, urlId: row.id, loc: row.loc, engine, reason, status: "queued", priority })))
+				.values(
+					batch.map((row) => ({ siteId: site.id, urlId: row.id, loc: row.loc, engine, reason, status: "queued", priority, nextRunAt: row.nextRunAt })),
+				)
 				.onConflictDoNothing()
 				.returning({ id: submissionJobs.id });
 			queued += inserted.length;
@@ -1054,11 +1154,6 @@ export async function retryFailedForUser(userId: string, siteId: string) {
 	return { queued, submitted: processed.successCount, throttledUntil: processed.throttledUntil };
 }
 
-/** Back-compat wrapper for single URL callers. */
-export async function enqueueManualSubmissionForUser(userId: string, siteId: string, urlLoc: string) {
-	return submitUrlsForUser(userId, siteId, [urlLoc]);
-}
-
 /** Queue every tracked URL that has never been submitted (e.g. after re-enabling automation). */
 export async function submitPendingForUser(userId: string, siteId: string) {
 	const site = await requireSite(userId, siteId);
@@ -1076,23 +1171,28 @@ export async function submitPendingForUser(userId: string, siteId: string) {
 	return { queued, submitted: processed?.successCount ?? 0, throttledUntil: processed?.throttledUntil ?? null };
 }
 
+/**
+ * Backoff for a retry. `attempt` is the exponent: the network/5xx attempt number, or for a
+ * rate limit (status 429) the consecutive-throttle count. A rate limit waits at least as long
+ * as the engine asked (Retry-After) and never less than the 1h..24h exponential backoff,
+ * because a short wait just re-trips the ban.
+ */
 export function calculateBackoffMs(attempt: number, options: { status?: number; retryAfterSeconds?: number } = {}): number {
-	if (options.retryAfterSeconds && options.retryAfterSeconds > 0) {
-		// Server provided exact Retry-After in seconds: add 0-5s random jitter to avoid lockstep retries
-		return (options.retryAfterSeconds + Math.floor(Math.random() * 5)) * 1000;
+	const is429 = options.status === 429;
+	// 0-5s of jitter on top of an exact Retry-After avoids lockstep retries.
+	const retryAfterMs =
+		options.retryAfterSeconds && options.retryAfterSeconds > 0 ? (options.retryAfterSeconds + Math.floor(Math.random() * 5)) * 1000 : 0;
+	if (retryAfterMs && !is429) {
+		return retryAfterMs;
 	}
 
-	const is429 = options.status === 429;
-	// 429 is a quota that lasts hours, so it backs off from 1h up to 24h; 5xx/network from 5 min.
 	const baseMs = is429 ? AUTOMATION_LIMITS.throttleCooldownMinutes * MINUTE_MS : 5 * MINUTE_MS;
 	const maxMs = is429 ? AUTOMATION_LIMITS.maxThrottleBackoffHours * 60 * MINUTE_MS : 2 * 60 * MINUTE_MS;
-
-	// Full exponential backoff: base * 2^(attempt - 1)
 	const expMs = Math.min(maxMs, baseMs * 2 ** Math.max(0, attempt - 1));
 	// Jitter between (1 - jitter) and (1 + jitter) to prevent thundering herds across thousands of URLs
-	const jitter = AUTOMATION_LIMITS.retryJitterPercent ?? 0.2;
+	const jitter = AUTOMATION_LIMITS.retryJitterPercent;
 	const factor = 1 - jitter + Math.random() * (2 * jitter);
-	return Math.round(expMs * factor);
+	return Math.max(retryAfterMs, Math.round(expMs * factor));
 }
 
 export function isRetryable(result: EngineSubmissionResult) {
@@ -1101,17 +1201,24 @@ export function isRetryable(result: EngineSubmissionResult) {
 
 /** Engine rate limit: IndexNow 429 TooManyRequests, Bing ThrottleIP (ErrorCode 17). */
 export function isThrottled(result: Pick<EngineSubmissionResult, "status" | "message">) {
-	return result.status === 429 || /ThrottleIP|ErrorCode["']?\s*:\s*17|TooManyRequests/i.test(result.message);
+	return isRateLimited(result.status, result.message);
 }
+
+type Throttle = { resumeAt: Date; error: string; status: number; throttleCount: number };
 
 /**
  * An engine that answered 429 for a site stays throttled until its queued 429 jobs come due.
  * Checking this before every send stops "Process now", manual submits and the cron from
- * re-hitting an engine mid-cooldown, which is what extends the ban.
+ * re-hitting an engine mid-cooldown, which is what extends the ban. Throttles detected from
+ * the message (Bing ThrottleIP with HTTP 400) are stored as 429 too, so they count here.
  */
-export async function getActiveThrottle(siteId: string, engine: string, now = new Date()) {
+export async function getActiveThrottle(siteId: string, engine: string, now = new Date()): Promise<Throttle | null> {
 	const [row] = await db
-		.select({ resumeAt: sql<Date | null>`max(${submissionJobs.nextRunAt})`, error: sql<string | null>`max(${submissionJobs.lastErrorMessage})` })
+		.select({
+			resumeAt: sql<Date | null>`max(${submissionJobs.nextRunAt})`,
+			error: sql<string | null>`max(${submissionJobs.lastErrorMessage})`,
+			throttleCount: sql<number>`cast(coalesce(max(${submissionJobs.throttleCount}), 0) as int)`,
+		})
 		.from(submissionJobs)
 		.where(
 			and(
@@ -1122,10 +1229,12 @@ export async function getActiveThrottle(siteId: string, engine: string, now = ne
 				gt(submissionJobs.nextRunAt, now),
 			),
 		);
-	return row?.resumeAt ? { resumeAt: new Date(row.resumeAt), error: row.error ?? "Rate limited (HTTP 429).", status: 429 } : null;
+	return row?.resumeAt
+		? { resumeAt: new Date(row.resumeAt), error: row.error ?? "Rate limited (HTTP 429).", status: 429, throttleCount: Number(row.throttleCount) || 0 }
+		: null;
 }
 
-async function submitEngineBatch(site: SiteRow, engine: string, urlList: string[]): Promise<EngineSubmissionResult> {
+async function submitEngineBatch(site: SiteRow, engine: string, urlList: string[]): Promise<EngineSubmissionResult & { skipped?: boolean }> {
 	if (engine === "indexnow") {
 		const [integration] = await db
 			.select()
@@ -1135,7 +1244,7 @@ async function submitEngineBatch(site: SiteRow, engine: string, urlList: string[
 		if (!integration?.encryptedSecret || integration.status !== "verified") {
 			return { ok: false, status: 403, message: "IndexNow key is not verified." };
 		}
-		const key = await readStoredSecret(integration.encryptedSecret);
+		const key = await decryptSecret(integration.encryptedSecret);
 		const upgraded = await upgradeLegacySecret(integration.encryptedSecret);
 		if (upgraded !== integration.encryptedSecret) {
 			await db.update(siteIntegrations).set({ encryptedSecret: upgraded, updatedAt: new Date() }).where(eq(siteIntegrations.id, integration.id));
@@ -1153,7 +1262,7 @@ async function submitEngineBatch(site: SiteRow, engine: string, urlList: string[
 		if (!integration?.encryptedSecret || integration.status !== "verified") {
 			return { ok: false, status: 403, message: "Bing API key is not verified." };
 		}
-		const apiKey = await readStoredSecret(integration.encryptedSecret);
+		const apiKey = await decryptSecret(integration.encryptedSecret);
 		const upgraded = await upgradeLegacySecret(integration.encryptedSecret);
 		if (upgraded !== integration.encryptedSecret) {
 			await db.update(userIntegrations).set({ encryptedSecret: upgraded, updatedAt: new Date() }).where(eq(userIntegrations.id, integration.id));
@@ -1161,7 +1270,8 @@ async function submitEngineBatch(site: SiteRow, engine: string, urlList: string[
 		return submitBingBatch(apiKey, `https://${getSiteHost(site)}`, urlList);
 	}
 
-	return { ok: false, status: 400, message: `Unsupported engine: ${engine}` };
+	const extra = await submitExtraEngineBatch(site, engine, urlList);
+	return extra ?? { ok: false, status: 400, message: `Unsupported engine: ${engine}` };
 }
 
 /**
@@ -1182,14 +1292,206 @@ export function groupSubmissionJobs<T extends { siteId: string; engine: string; 
 	return groups;
 }
 
+type ClaimedJob = typeof submissionJobs.$inferSelect;
+
+export type SiteQueueState = {
+	paused: boolean;
+	automatedEngines: SubmissionEngine[];
+	manualEngines: SubmissionEngine[];
+	indexNowAwaitingCheck: boolean; // IndexNow key saved or re-checked but not passing yet
+};
+
+export type JobDisposition = "send" | "paused" | "wait" | "skip";
+
 /**
- * Drain the queue: recover orphaned locks, atomically claim due jobs (manual first), submit
- * per site+engine in engine-sized batches, then record results. Transient failures
- * (network/429/5xx) retry with exponential backoff; others fail fast and raise one alert.
+ * What to do with one claimed job. Paused sites (plan downgrade) and an IndexNow key waiting
+ * for re-verification keep the job queued (retryable); an engine that is disabled for the
+ * site, or not in the owner's plan, is skipped and never sent.
  */
-export async function processSubmissionQueue(options: { siteId?: string; maxJobs?: number } = {}) {
+export function classifyClaimedJob(job: Pick<ClaimedJob, "engine" | "reason">, state: SiteQueueState | undefined): JobDisposition {
+	if (!state) return "skip";
+	if (state.paused) return "paused";
+	const engines = job.reason === "manual" ? state.manualEngines : state.automatedEngines;
+	if (engines.includes(job.engine as SubmissionEngine)) return "send";
+	if (job.engine === "indexnow" && state.indexNowAwaitingCheck) return "wait";
+	return "skip";
+}
+
+async function loadSiteQueueStates(siteRows: SiteRow[], now: Date) {
+	const userIds = Array.from(new Set(siteRows.map((site) => site.userId)));
+	const owners = await db
+		.select({ id: users.id, billingTier: users.billingTier, planExpiresAt: users.planExpiresAt })
+		.from(users)
+		.where(inArray(users.id, userIds));
+	const entitlements = new Map(owners.map((owner) => [owner.id, resolveEntitlement(owner, now)]));
+	const paused = await getPausedSiteIdsForUsers(entitlements);
+	const states = await mapWithConcurrency(siteRows, 10, async (site) => {
+		const entitlement = entitlements.get(site.userId) ?? resolveEntitlement(null, now);
+		const engines = await loadEngineState(site);
+		const state: SiteQueueState = {
+			paused: paused.has(site.id),
+			automatedEngines: resolveEligibleEngines(engines, site, entitlement, false),
+			manualEngines: resolveEligibleEngines(engines, site, entitlement, true),
+			indexNowAwaitingCheck: engines.indexNow?.status === "pending" || engines.indexNow?.status === "failed",
+		};
+		return [site.id, state] as const;
+	});
+	return new Map(states);
+}
+
+/**
+ * Writes to a claimed job only land while this run still owns it: status 'processing' with
+ * the exact lockedAt it was claimed with. If the run was slow enough for stale-lock recovery
+ * to hand the job to another run, the later run's result wins and this one is dropped.
+ */
+function ownedBy(ids: string[], claimedAt: Date) {
+	return and(inArray(submissionJobs.id, ids), eq(submissionJobs.status, "processing"), eq(submissionJobs.lockedAt, claimedAt));
+}
+
+function requeueClaimed(ids: string[], claimedAt: Date, values: PgUpdateSetSource<typeof submissionJobs> = {}) {
+	return db
+		.update(submissionJobs)
+		.set({ ...values, status: "queued", lockedAt: null, updatedAt: new Date() })
+		.where(ownedBy(ids, claimedAt));
+}
+
+type BatchOutcome = { kind: "success" | "failed" | "retry" | "throttled" | "skipped"; count: number; throttle?: Throttle };
+
+/** Send one batch and record the result. A rate limit never uses up attempts or fails a job. */
+async function sendClaimedBatch(site: SiteRow, engine: string, batch: ClaimedJob[], claimedAt: Date): Promise<BatchOutcome> {
+	const urlList = batch.map((job) => job.loc);
+	const result: EngineSubmissionResult & { skipped?: boolean } = await submitEngineBatch(site, engine, urlList).catch((error) => ({
+		ok: false,
+		status: 0,
+		message: getErrorMessage(error),
+	}));
+	const completedAt = new Date();
+	const responseMessage = truncateMessage(result.message || `HTTP ${result.status}`);
+	const ids = batch.map((job) => job.id);
+	const engineName = ENGINE_LABELS[engine as SubmissionEngine] ?? engine;
+	const retryAfterAt = result.retryAfterSeconds ? new Date(completedAt.getTime() + result.retryAfterSeconds * 1000) : null;
+
+	// The engine refused to take this URL on policy grounds before sending (Google Indexing API
+	// guardrail): close the job as skipped, without a submission log row or an alert.
+	if (result.skipped) {
+		await db
+			.update(submissionJobs)
+			.set({ status: "skipped", lockedAt: null, httpStatus: result.status, lastErrorMessage: responseMessage, updatedAt: completedAt })
+			.where(ownedBy(ids, claimedAt));
+		return { kind: "skipped", count: batch.length };
+	}
+
+	if (!result.ok && isThrottled(result)) {
+		const throttleCount = Math.max(...batch.map((job) => job.throttleCount)) + 1;
+		const resumeAt = new Date(completedAt.getTime() + calculateBackoffMs(throttleCount, { status: 429, retryAfterSeconds: result.retryAfterSeconds }));
+		const throttle = { resumeAt, error: responseMessage, status: 429, throttleCount };
+		await Promise.all([
+			// Stored as 429 even when detected from the message, so getActiveThrottle sees it.
+			requeueClaimed(ids, claimedAt, { nextRunAt: resumeAt, httpStatus: 429, throttleCount, retryAfterAt, lastErrorMessage: responseMessage }),
+			// The ban is per sending host: park every other queued job of this site+engine too,
+			// sharing the exponent so the next 429 backs off further whichever jobs go first.
+			db
+				.update(submissionJobs)
+				.set({
+					nextRunAt: resumeAt,
+					httpStatus: 429,
+					throttleCount: sql`greatest(${submissionJobs.throttleCount}, ${throttleCount})`,
+					lastErrorMessage: responseMessage,
+					updatedAt: completedAt,
+				})
+				.where(
+					and(
+						eq(submissionJobs.siteId, site.id),
+						eq(submissionJobs.engine, engine),
+						eq(submissionJobs.status, "queued"),
+						lt(submissionJobs.nextRunAt, resumeAt),
+					),
+				),
+		]);
+		// Throttled attempts are not logged per URL: one 429 for a 1000-URL batch every hour
+		// would bury the real activity (it produced 57k rows before this rule).
+		await raiseAlert(
+			site.id,
+			`${engineName} is rate limiting this site`,
+			`${engineName} answered "too many requests". Your URLs stay queued and are retried automatically after ${resumeAt.toISOString()}. Nothing is lost.`,
+			"error_detected",
+		);
+		return { kind: "throttled", count: batch.length, throttle };
+	}
+
+	const attempt = batch[0].attempts + 1;
+	const retry = !result.ok && isRetryable(result) && attempt < AUTOMATION_LIMITS.maxSubmitAttempts;
+	const status = result.ok ? "success" : "failed";
+	const owned = retry
+		? await requeueClaimed(ids, claimedAt, {
+				attempts: attempt,
+				nextRunAt: new Date(completedAt.getTime() + calculateBackoffMs(attempt, { status: result.status, retryAfterSeconds: result.retryAfterSeconds })),
+				httpStatus: result.status,
+				retryAfterAt,
+				lastErrorMessage: responseMessage,
+			}).returning({ loc: submissionJobs.loc })
+		: await db
+				.update(submissionJobs)
+				.set({
+					status,
+					attempts: attempt,
+					throttleCount: 0,
+					lockedAt: null,
+					httpStatus: result.status,
+					lastErrorMessage: result.ok ? null : responseMessage,
+					updatedAt: completedAt,
+				})
+				.where(ownedBy(ids, claimedAt))
+				.returning({ loc: submissionJobs.loc });
+	const ownedLocs = owned.map((row) => row.loc);
+
+	await Promise.all([
+		...chunk(ownedLocs, AUTOMATION_LIMITS.upsertChunkSize).map((locs) =>
+			db.insert(submissions).values(
+				locs.map((loc) => ({ siteId: site.id, loc, engine, status: retry ? "failed" : status, responseMessage, attempt })),
+			),
+		),
+		...(retry
+			? []
+			: chunk(ownedLocs, 1000).map((locs) =>
+					db
+						.update(urls)
+						.set({ lastSubmittedAt: completedAt, lastSubmissionStatus: status, lastSubmittedEngine: engine })
+						.where(and(eq(urls.siteId, site.id), inArray(urls.loc, locs))),
+				)),
+		// The engine accepts again: the next 429 starts back at the 1h base.
+		...(result.ok && batch.some((job) => job.throttleCount > 0)
+			? [
+					db
+						.update(submissionJobs)
+						.set({ throttleCount: 0 })
+						.where(and(eq(submissionJobs.siteId, site.id), eq(submissionJobs.engine, engine), eq(submissionJobs.status, "queued"))),
+				]
+			: []),
+	]);
+
+	if (result.ok) {
+		await Promise.all([resolveAlerts(site.id, `${engineName} submission failed`), resolveAlerts(site.id, `${engineName} is rate limiting this site`)]);
+		return { kind: "success", count: batch.length };
+	}
+	if (!retry) {
+		await raiseAlert(site.id, `${engineName} submission failed`, `${batch.length} URL(s): ${responseMessage}`, "error_detected");
+		return { kind: "failed", count: batch.length };
+	}
+	return { kind: "retry", count: batch.length };
+}
+
+/**
+ * Drain the queue: recover orphaned locks, atomically claim due jobs (manual first), drop
+ * what must not be sent (paused site, disabled engine, key awaiting re-check), then submit
+ * per site+engine in engine-sized batches. Transient failures (network/5xx) retry with
+ * exponential backoff; rate limits park the site+engine; others fail fast with one alert.
+ * `deadline` (epoch ms): no batch starts after it and unsent claimed jobs go back to queued.
+ */
+export async function processSubmissionQueue(options: { siteId?: string; maxJobs?: number; deadline?: number } = {}) {
 	const now = new Date();
 	const maxJobs = options.maxJobs ?? AUTOMATION_LIMITS.maxSubmissionJobsPerRun;
+	const counts = { successCount: 0, failedCount: 0, retryCount: 0, throttledCount: 0, skippedCount: 0, deferredCount: 0 };
 
 	await db
 		.update(submissionJobs)
@@ -1207,222 +1509,146 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 		options.siteId ? eq(submissionJobs.siteId, options.siteId) : undefined,
 	);
 	const verifiedSiteIds = db.select({ id: sites.id }).from(sites).where(eq(sites.verified, true));
+	// New/changed jobs only run while the site's automation is on; manual ones need only proof.
+	const automatedSiteIds = db
+		.select({ id: sites.id })
+		.from(sites)
+		.where(and(eq(sites.verified, true), eq(sites.automationEnabled, true)));
 	// Priority order: manual submissions first (priority 1), then new URLs (priority 5), then refreshes (priority 10).
 	const candidateIds = db
 		.select({ id: submissionJobs.id })
 		.from(submissionJobs)
-		.where(and(dueFilter, inArray(submissionJobs.siteId, verifiedSiteIds)))
+		.where(
+			and(
+				dueFilter,
+				inArray(submissionJobs.siteId, verifiedSiteIds),
+				or(eq(submissionJobs.reason, "manual"), inArray(submissionJobs.siteId, automatedSiteIds)),
+			),
+		)
 		.orderBy(asc(submissionJobs.priority), asc(submissionJobs.nextRunAt), asc(submissionJobs.createdAt))
 		.limit(maxJobs)
 		.for("update", { skipLocked: true });
 	// The outer status check makes the claim safe if two runs race for the same rows.
-	const jobs = await db
+	const claimed = await db
 		.update(submissionJobs)
 		.set({ status: "processing", lockedAt: now, updatedAt: now })
 		.where(and(inArray(submissionJobs.id, candidateIds), eq(submissionJobs.status, "queued")))
 		.returning();
 
-	if (jobs.length === 0) {
-		return { processedCount: 0, successCount: 0, failedCount: 0, retryCount: 0, throttledCount: 0, throttledUntil: null as Date | null };
+	if (claimed.length === 0) {
+		return { processedCount: 0, ...counts, throttledUntil: null as Date | null };
 	}
 
-	const groups = groupSubmissionJobs(jobs);
-
+	// RETURNING has no order; restore the claim order so manual jobs are sent first.
+	const jobs = [...claimed].sort(
+		(a, b) => a.priority - b.priority || a.nextRunAt.getTime() - b.nextRunAt.getTime() || a.createdAt.getTime() - b.createdAt.getTime(),
+	);
 	const siteRows = await db
 		.select()
 		.from(sites)
 		.where(inArray(sites.id, Array.from(new Set(jobs.map((job) => job.siteId)))));
 	const siteById = new Map(siteRows.map((site) => [site.id, site]));
+	const states = await loadSiteQueueStates(siteRows, now);
 
-	let successCount = 0;
-	let failedCount = 0;
-	let retryCount = 0;
-	let throttledCount = 0;
+	const byDisposition = { send: [] as ClaimedJob[], paused: [] as string[], wait: [] as string[], skip: [] as ClaimedJob[] };
+	for (const job of jobs) {
+		const disposition = classifyClaimedJob(job, states.get(job.siteId));
+		if (disposition === "send" || disposition === "skip") byDisposition[disposition].push(job);
+		else byDisposition[disposition].push(job.id);
+	}
+	const pausedUntil = new Date(now.getTime() + AUTOMATION_LIMITS.pausedSiteRetryHours * 60 * MINUTE_MS);
+	const waitUntil = new Date(now.getTime() + AUTOMATION_LIMITS.engineUnavailableRetryMinutes * MINUTE_MS);
+	await Promise.all([
+		...chunk(byDisposition.paused, 1000).map((ids) =>
+			requeueClaimed(ids, now, { nextRunAt: pausedUntil, lastErrorMessage: "Site is paused by the plan's site limit. Upgrade or delete another site to resume." }),
+		),
+		...chunk(byDisposition.wait, 1000).map((ids) =>
+			requeueClaimed(ids, now, { nextRunAt: waitUntil, lastErrorMessage: "Waiting for the IndexNow key file to pass its check again." }),
+		),
+		...chunk(byDisposition.skip, 1000).map((rows) =>
+			db
+				.update(submissionJobs)
+				.set({ status: "skipped", lockedAt: null, lastErrorMessage: `${rows[0].engine} is not enabled for this site, so this URL was not sent.`, updatedAt: now })
+				.where(ownedBy(rows.map((job) => job.id), now)),
+		),
+	]);
+	counts.deferredCount += byDisposition.paused.length + byDisposition.wait.length;
+	counts.skippedCount += byDisposition.skip.length;
 
-	// Circuit breaker per (site, engine): if a batch returns 429 or server rate limit,
-	// trip the breaker immediately so subsequent batches in this run are safely postponed
-	// instead of being hammered against the throttled engine.
-	const throttledEngines = new Map<string, { resumeAt: Date; error: string; status: number }>();
+	// Circuit breaker per (site, engine): once a batch is rate limited (in this run or a
+	// persisted earlier one), nothing else is sent to that engine for that site this run.
+	const throttledEngines = new Map<string, Throttle>();
+	const requestsSent = new Map<string, number>();
+	const releaseIds: string[] = [];
 
-	for (const group of groups.values()) {
+	for (const group of groupSubmissionJobs(byDisposition.send).values()) {
 		const { siteId, engine } = group[0];
 		const engineKey = `${siteId}:${engine}`;
-
-		// A cooldown persisted by an earlier run counts too, not only one tripped in this run.
+		const site = siteById.get(siteId)!;
 		if (!throttledEngines.has(engineKey)) {
 			const persisted = await getActiveThrottle(siteId, engine, now);
 			if (persisted) throttledEngines.set(engineKey, persisted);
 		}
-		const currentThrottle = throttledEngines.get(engineKey);
-		if (currentThrottle) {
-			const jobIds = group.map((job) => job.id);
-			await db
-				.update(submissionJobs)
-				.set({
-					status: "queued",
-					lockedAt: null,
-					nextRunAt: currentThrottle.resumeAt,
-					httpStatus: currentThrottle.status,
-					lastErrorMessage: currentThrottle.error,
-					updatedAt: now,
-				})
-				.where(inArray(submissionJobs.id, jobIds));
-			throttledCount += group.length;
-			continue;
+
+		// Yandex/Baidu: never send more than the engine's remaining daily quota; the rest waits
+		// for the engine's midnight with its throttle state untouched.
+		let sendable = group;
+		if (isExtraEngine(engine) && !throttledEngines.has(engineKey)) {
+			const budget = await getEngineRunBudget(site, engine).catch(() => null);
+			if (budget !== null && budget < group.length) {
+				sendable = group.slice(0, Math.max(0, budget));
+				const resumeAt = quotaResetAt(engine);
+				const overIds = group.slice(sendable.length).map((job) => job.id);
+				await Promise.all(
+					chunk(overIds, 1000).map((ids) =>
+						requeueClaimed(ids, now, { nextRunAt: resumeAt, lastErrorMessage: `${ENGINE_LABELS[engine]} daily quota is used up; resumes after ${resumeAt.toISOString()}.` }),
+					),
+				);
+				counts.deferredCount += overIds.length;
+			}
 		}
 
-		const site = siteById.get(siteId);
-		const batchSize = ENGINE_BATCH_SIZE[engine as SubmissionEngine] ?? 100;
-
-		for (const batch of chunk(group, batchSize)) {
-			// Check if this engine became throttled by a preceding batch in this same group
-			const throttleNow = throttledEngines.get(engineKey);
-			if (throttleNow) {
-				const batchJobIds = batch.map((job) => job.id);
-				await db
-					.update(submissionJobs)
-					.set({
-						status: "queued",
-						lockedAt: null,
-						nextRunAt: throttleNow.resumeAt,
-						httpStatus: throttleNow.status,
-						lastErrorMessage: throttleNow.error,
-						updatedAt: new Date(),
-					})
-					.where(inArray(submissionJobs.id, batchJobIds));
-				throttledCount += batch.length;
+		for (const batch of chunk(sendable, ENGINE_BATCH_SIZE[engine as SubmissionEngine] ?? 100)) {
+			const ids = batch.map((job) => job.id);
+			const throttle = throttledEngines.get(engineKey);
+			if (throttle) {
+				await requeueClaimed(ids, now, {
+					nextRunAt: throttle.resumeAt,
+					httpStatus: 429,
+					throttleCount: sql`greatest(${submissionJobs.throttleCount}, ${throttle.throttleCount})`,
+					lastErrorMessage: throttle.error,
+				});
+				counts.throttledCount += batch.length;
 				continue;
 			}
-
-			const urlList = batch.map((job) => job.loc);
-			const result: EngineSubmissionResult = site
-				? await submitEngineBatch(site, engine, urlList).catch((error) => ({ ok: false, status: 0, message: getErrorMessage(error) }))
-				: { ok: false, status: 404, message: "Site no longer exists." };
-			const completedAt = new Date();
-			const responseMessage = truncateMessage(result.message || `HTTP ${result.status}`);
-			const attempt = batch[0].attempts + 1;
-			const throttled = !result.ok && isThrottled(result);
-			// A rate limit says nothing about the URLs, so it never uses up their retries: throttled
-			// jobs wait out the cooldown (up to 24h) and are retried until the engine accepts them.
-			const retry = !result.ok && isRetryable(result) && (throttled || attempt < AUTOMATION_LIMITS.maxSubmitAttempts);
-			const jobIds = batch.map((job) => job.id);
-
-			const backoffMs = calculateBackoffMs(attempt, {
-				status: throttled ? 429 : result.status,
-				retryAfterSeconds: result.retryAfterSeconds,
-			});
-			const resumeAt = new Date(completedAt.getTime() + backoffMs);
-
-			const writes: Promise<unknown>[] = [];
-			if (throttled) {
-				throttledEngines.set(engineKey, { resumeAt, error: responseMessage, status: 429 });
-				throttledCount += batch.length;
-				// Park every other open job of this site+engine too, so nothing re-hits the engine
-				// before the cooldown ends.
-				writes.push(
-					db
-						.update(submissionJobs)
-						.set({ nextRunAt: resumeAt, httpStatus: 429, lastErrorMessage: responseMessage, updatedAt: completedAt })
-						.where(
-							and(
-								eq(submissionJobs.siteId, siteId),
-								eq(submissionJobs.engine, engine),
-								eq(submissionJobs.status, "queued"),
-								lt(submissionJobs.nextRunAt, resumeAt),
-							),
-						),
-				);
-			} else {
-				// Throttled attempts are not logged per URL: one 429 for a 1000-URL batch every hour
-				// would bury the real activity (it produced 57k rows before this rule).
-				writes.push(
-					...chunk(batch, AUTOMATION_LIMITS.upsertChunkSize).map((rows) =>
-						db.insert(submissions).values(
-							rows.map((job) => ({
-								siteId: job.siteId,
-								loc: job.loc,
-								engine: job.engine,
-								status: result.ok ? "success" : "failed",
-								responseMessage,
-								attempt,
-							})),
-						),
-					),
-				);
+			const sent = requestsSent.get(engineKey) ?? 0;
+			const overDeadline = options.deadline !== undefined && Date.now() > options.deadline;
+			const overPacing = engine === "indexnow" && sent >= AUTOMATION_LIMITS.indexNowRequestsPerSitePerRun;
+			if (overDeadline || overPacing) {
+				releaseIds.push(...ids);
+				continue;
 			}
+			requestsSent.set(engineKey, sent + 1);
 
-			if (retry) {
-				writes.push(
-					db
-						.update(submissionJobs)
-						.set({
-							status: "queued",
-							attempts: attempt,
-							lockedAt: null,
-							nextRunAt: resumeAt,
-							httpStatus: result.status,
-							retryAfterAt: result.retryAfterSeconds ? new Date(completedAt.getTime() + result.retryAfterSeconds * 1000) : null,
-							lastErrorMessage: responseMessage,
-							updatedAt: completedAt,
-						})
-						.where(inArray(submissionJobs.id, jobIds)),
-				);
-				if (!throttled) retryCount += batch.length;
-			} else {
-				const status = result.ok ? "success" : "failed";
-				writes.push(
-					db
-						.update(submissionJobs)
-						.set({
-							status,
-							attempts: attempt,
-							lockedAt: null,
-							httpStatus: result.status,
-							lastErrorMessage: result.ok ? null : responseMessage,
-							updatedAt: completedAt,
-						})
-						.where(inArray(submissionJobs.id, jobIds)),
-					...chunk(urlList, 1000).map((locs) =>
-						db
-							.update(urls)
-							.set({
-								lastSubmittedAt: completedAt,
-								lastSubmissionStatus: status,
-								lastSubmittedEngine: engine,
-							})
-							.where(and(eq(urls.siteId, siteId), inArray(urls.loc, locs))),
-					),
-				);
-				if (result.ok) {
-					successCount += batch.length;
-				} else {
-					failedCount += batch.length;
-				}
-			}
-
-			await Promise.all(writes);
-
-			const engineName = engine === "bing" ? "Bing" : "IndexNow";
-			if (throttled && site) {
-				await raiseAlert(
-					siteId,
-					`${engineName} is rate limiting this site`,
-					`${engineName} answered "too many requests". Your URLs stay queued and are retried automatically after ${resumeAt.toISOString()}. Nothing is lost.`,
-					"error_detected",
-				);
-			} else if (!result.ok && !retry && site) {
-				await raiseAlert(siteId, `${engineName} submission failed`, `${batch.length} URL(s): ${responseMessage}`, "error_detected");
-			} else if (result.ok && site) {
-				await Promise.all([resolveAlerts(siteId, `${engineName} submission failed`), resolveAlerts(siteId, `${engineName} is rate limiting this site`)]);
-			}
+			const outcome = await sendClaimedBatch(site, engine, batch, now);
+			if (outcome.throttle) throttledEngines.set(engineKey, outcome.throttle);
+			if (outcome.kind === "success") counts.successCount += outcome.count;
+			else if (outcome.kind === "failed") counts.failedCount += outcome.count;
+			else if (outcome.kind === "retry") counts.retryCount += outcome.count;
+			else if (outcome.kind === "skipped") counts.skippedCount += outcome.count;
+			else counts.throttledCount += outcome.count;
 		}
 	}
+
+	// Unsent claimed jobs go straight back with their nextRunAt untouched, so they lead the next run.
+	await Promise.all(chunk(releaseIds, 1000).map((ids) => requeueClaimed(ids, now)));
+	counts.deferredCount += releaseIds.length;
 
 	const throttledUntil = Array.from(throttledEngines.values()).reduce<Date | null>(
 		(latest, item) => (!latest || item.resumeAt > latest ? item.resumeAt : latest),
 		null,
 	);
-	return { processedCount: jobs.length, successCount, failedCount, retryCount, throttledCount, throttledUntil };
+	return { processedCount: jobs.length, ...counts, throttledUntil };
 }
 
 // ---------------------------------------------------------------------------
@@ -1430,25 +1656,44 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 // ---------------------------------------------------------------------------
 
 /**
- * Pick sitemap sources whose site is due for a re-crawl under its owner's plan interval
- * (Free daily, paid hourly). Paused sites (over the plan's site limit) are skipped.
+ * Effective sync interval (minutes) per user, in SQL so due-site selection matches
+ * resolveEntitlement: a paid tier counts while its period plus PLAN_GRACE_DAYS has not ended
+ * (or it has no expiry: legacy Dodo); everything else gets the Free interval.
+ */
+function syncIntervalMinutesSql(now: Date) {
+	const graceCutoff = new Date(now.getTime() - PLAN_GRACE_DAYS * DAY_MS).toISOString();
+	const freeMinutes = PLANS.free.limits.syncIntervalMinutes;
+	const paidCases = Object.values(PLANS)
+		.filter((plan) => plan.id !== "free")
+		.map((plan) => sql`when ${plan.id} then cast(${plan.limits.syncIntervalMinutes} as int)`);
+	return sql`case when ${users.planExpiresAt} is null or ${users.planExpiresAt} > cast(${graceCutoff} as timestamp)
+		then (case ${users.billingTier} ${sql.join(paidCases, sql` `)} else cast(${freeMinutes} as int) end)
+		else cast(${freeMinutes} as int) end`;
+}
+
+/**
+ * Sites with a sitemap source due under the owner's plan interval (Free daily, paid hourly),
+ * oldest first. The interval is applied in SQL so a backlog of not-yet-due Free sources can
+ * no longer crowd paid sites out of the scan; how many actually sync is decided by the
+ * cron's time budget. Paused sites (over the plan's site limit) are skipped.
  */
 async function findDueSites(now: Date) {
-	const hourAgo = new Date(now.getTime() - 55 * MINUTE_MS);
+	// 5 minutes of slack so an hourly cron does not skip a source synced 59 minutes ago.
+	const dueBefore = sql`cast(${now.toISOString()} as timestamp) - (${syncIntervalMinutesSql(now)} - 5) * interval '1 minute'`;
 	const rows = await db
 		.select({
 			siteId: sites.id,
 			userId: sites.userId,
-			lastSyncAt: siteSitemaps.lastSyncAt,
 			billingTier: users.billingTier,
 			planExpiresAt: users.planExpiresAt,
 		})
 		.from(siteSitemaps)
 		.innerJoin(sites, eq(siteSitemaps.siteId, sites.id))
 		.innerJoin(users, eq(sites.userId, users.id))
-		.where(and(ne(siteSitemaps.status, "disabled"), or(isNull(siteSitemaps.lastSyncAt), lte(siteSitemaps.lastSyncAt, hourAgo))))
-		.orderBy(sql`${siteSitemaps.lastSyncAt} asc nulls first`)
-		.limit(1000);
+		.where(and(ne(siteSitemaps.status, "disabled"), or(isNull(siteSitemaps.lastSyncAt), sql`${siteSitemaps.lastSyncAt} <= ${dueBefore}`)))
+		.groupBy(sites.id, sites.userId, users.billingTier, users.planExpiresAt)
+		.orderBy(sql`bool_or(${siteSitemaps.lastSyncAt} is null) desc`, sql`min(${siteSitemaps.lastSyncAt}) asc`)
+		.limit(AUTOMATION_LIMITS.maxDueSitesScanned);
 
 	const entitlements = new Map<string, Entitlement>();
 	for (const row of rows) {
@@ -1457,40 +1702,52 @@ async function findDueSites(now: Date) {
 		}
 	}
 	const paused = await getPausedSiteIdsForUsers(entitlements);
-
-	const due: Array<{ siteId: string; entitlement: Entitlement }> = [];
-	const seen = new Set<string>();
-	for (const row of rows) {
-		const entitlement = entitlements.get(row.userId)!;
-		// Small slack so an hourly cron does not skip a site synced 59m ago.
-		const intervalMs = (entitlement.limits.syncIntervalMinutes - 5) * MINUTE_MS;
-		const isDue = !row.lastSyncAt || now.getTime() - row.lastSyncAt.getTime() >= intervalMs;
-		if (isDue && !paused.has(row.siteId) && !seen.has(row.siteId)) {
-			seen.add(row.siteId);
-			due.push({ siteId: row.siteId, entitlement });
-		}
-	}
-	return due.slice(0, AUTOMATION_LIMITS.maxSitesPerRun);
+	return rows
+		.filter((row) => !paused.has(row.siteId))
+		.map((row) => ({ siteId: row.siteId, entitlement: entitlements.get(row.userId)! }));
 }
 
 /**
  * Hourly entry point (worker.ts `scheduled`). Order matters: expire plans first so the
- * sync step sees post-expiry limits, then crawl, then drain the queue. Each run is logged
- * to cron_runs for the admin panel.
+ * sync step sees post-expiry limits, then crawl, then drain the queue, then housekeeping.
+ * Each step is isolated: one failing step is recorded and the others still run, and the
+ * cron_runs row is always finished (success, or failed with every step's error).
  */
 export async function runScheduledAutomation() {
 	const startedAt = Date.now();
 	const now = new Date(startedAt);
+	const errors: string[] = [];
+	const step = async <T>(name: string, task: () => Promise<T>): Promise<T | null> => {
+		try {
+			return await task();
+		} catch (error) {
+			errors.push(`${name}: ${getErrorMessage(error)}`);
+			return null;
+		}
+	};
+
+	// A run the Worker killed never reaches its own bookkeeping, so the next run closes it.
+	await step("close stale runs", () =>
+		db
+			.update(cronRuns)
+			.set({ status: "failed", errorMessage: "Timed out: the run was stopped before it finished.", finishedAt: now })
+			.where(
+				and(eq(cronRuns.status, "running"), lt(cronRuns.startedAt, new Date(startedAt - AUTOMATION_LIMITS.staleCronRunMinutes * MINUTE_MS))),
+			),
+	);
 	const [run] = await db.insert(cronRuns).values({ status: "running" }).returning({ id: cronRuns.id });
 
-	try {
+	const downgraded = await step("downgrade", async () => {
 		const { downgradeExpiredPlans } = await import("@/lib/platform/razorpay-billing");
-		const downgraded = await downgradeExpiredPlans(now);
+		return downgradeExpiredPlans(now);
+	});
 
+	const syncDeadline = startedAt + AUTOMATION_LIMITS.syncTimeBudgetMs;
+	const sync = await step("sync", async () => {
 		const due = await findDueSites(now);
-		const syncResults: Array<{ siteId: string; ok: boolean; newCount?: number; error?: string }> = [];
+		const results: Array<{ siteId: string; ok: boolean; newCount?: number; error?: string }> = [];
 		for (const { siteId, entitlement } of due) {
-			if (Date.now() - startedAt > AUTOMATION_LIMITS.cronTimeBudgetMs) {
+			if (Date.now() > syncDeadline) {
 				break;
 			}
 			const [site] = await db.select().from(sites).where(eq(sites.id, siteId)).limit(1);
@@ -1498,31 +1755,52 @@ export async function runScheduledAutomation() {
 				continue;
 			}
 			try {
-				const result = await syncActiveSitemaps(site, entitlement);
-				syncResults.push({ siteId, ok: result.success, newCount: result.newCount });
+				const result = await syncActiveSitemaps(site, entitlement, { deadline: syncDeadline });
+				results.push({ siteId, ok: result.success, newCount: result.newCount });
 			} catch (error) {
-				syncResults.push({ siteId, ok: false, error: getErrorMessage(error) });
+				results.push({ siteId, ok: false, error: getErrorMessage(error) });
 			}
 		}
+		return { due: due.length, results };
+	});
 
-		const queue = await processSubmissionQueue();
-		const summary = {
-			downgraded,
-			sitesSynced: syncResults.length,
-			syncFailures: syncResults.filter((result) => !result.ok).length,
-			newUrls: syncResults.reduce((total, result) => total + (result.newCount ?? 0), 0),
-			queue,
-			durationMs: Date.now() - startedAt,
-		};
-		await db.update(cronRuns).set({ status: "success", summary, finishedAt: new Date() }).where(eq(cronRuns.id, run.id));
-		return summary;
-	} catch (error) {
-		await db
-			.update(cronRuns)
-			.set({ status: "failed", errorMessage: truncateMessage(getErrorMessage(error)), finishedAt: new Date() })
-			.where(eq(cronRuns.id, run.id));
-		throw error;
+	const queue = await step("queue", () => processSubmissionQueue({ deadline: startedAt + AUTOMATION_LIMITS.cronTimeBudgetMs }));
+
+	// Search Console URL Inspection, bounded by count, per-property quota and its own budget.
+	const gscInspection = await step("gsc inspection", () => runScheduledGscInspections(Date.now() + GOOGLE_LIMITS.inspectionTimeBudgetMs));
+
+	const prunedUsageEvents = await step("prune usage events", async () => {
+		const cutoff = new Date(startedAt - AUTOMATION_LIMITS.apiUsageRetentionDays * DAY_MS);
+		const result = await db.delete(apiUsageEvents).where(lt(apiUsageEvents.createdAt, cutoff));
+		return result.rowCount ?? 0;
+	});
+	const prunedQuotaRows = await step("prune quota rows", () => pruneQuotaUsage(new Date(startedAt - GOOGLE_LIMITS.quotaRetentionDays * DAY_MS)));
+
+	const summary = {
+		downgraded,
+		sitesDue: sync?.due ?? 0,
+		sitesSynced: sync?.results.length ?? 0,
+		syncFailures: sync?.results.filter((result) => !result.ok).length ?? 0,
+		newUrls: sync?.results.reduce((total, result) => total + (result.newCount ?? 0), 0) ?? 0,
+		queue,
+		gscInspection,
+		prunedUsageEvents,
+		prunedQuotaRows,
+		durationMs: Date.now() - startedAt,
+	};
+	await db
+		.update(cronRuns)
+		.set({
+			status: errors.length > 0 ? "failed" : "success",
+			summary,
+			errorMessage: errors.length > 0 ? truncateMessage(errors.join(" | ")) : null,
+			finishedAt: new Date(),
+		})
+		.where(eq(cronRuns.id, run.id));
+	if (errors.length > 0) {
+		throw new Error(`Scheduled automation finished with errors: ${errors.join(" | ")}`);
 	}
+	return summary;
 }
 
 // ---------------------------------------------------------------------------
@@ -1549,7 +1827,7 @@ export async function getBingStatusForUser(userId: string, siteId?: string) {
 		siteIntegration = row;
 	}
 
-	const key = await readStoredSecret(integration.encryptedSecret).catch(() => null);
+	const key = await decryptSecret(integration.encryptedSecret).catch(() => null);
 	const publicCfg = readPublicConfig(integration.publicConfig);
 	const quota = (publicCfg as Record<string, unknown>)?.quota as { dailyQuota?: number; monthlyQuota?: number } | undefined;
 
@@ -1561,14 +1839,6 @@ export async function getBingStatusForUser(userId: string, siteId?: string) {
 		verifiedAt: integration.verifiedAt,
 		lastErrorMessage: siteIntegration?.lastErrorMessage || integration.lastErrorMessage,
 	};
-}
-
-export async function countOpenJobs(siteId: string) {
-	const [row] = await db
-		.select({ count: sql<number>`cast(count(*) as int)` })
-		.from(submissionJobs)
-		.where(and(eq(submissionJobs.siteId, siteId), inArray(submissionJobs.status, ["queued", "processing"])));
-	return row?.count ?? 0;
 }
 
 export async function getSiteQueueSummary(userId: string, siteId: string) {
@@ -1717,10 +1987,13 @@ export async function getSiteQueueJobs(
 	};
 }
 
-export async function drainSiteQueueForUser(userId: string, siteId: string, maxJobs = 1000) {
+/** "Process now": same rules as the cron, for one owned, active site, at most maxDrainJobsInline jobs. */
+export async function drainSiteQueueForUser(userId: string, siteId: string, maxJobs: number = AUTOMATION_LIMITS.maxDrainJobsInline) {
 	const site = await getSiteForUser(siteId, userId);
 	if (!site) {
 		throw new Error("Site not found or unauthorized");
 	}
-	return processSubmissionQueue({ siteId, maxJobs });
+	await assertSiteActive(userId, siteId);
+	const limit = Math.min(AUTOMATION_LIMITS.maxDrainJobsInline, Math.max(1, Math.floor(Number(maxJobs) || 1)));
+	return processSubmissionQueue({ siteId, maxJobs: limit });
 }
