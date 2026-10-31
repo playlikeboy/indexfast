@@ -2,8 +2,12 @@
  * IndexFast API keys (REST, MCP, CLI). Plaintext is shown once; only a SHA-256 hash and a
  * short prefix are stored. Every authenticated request is checked against the owner's
  * *current* entitlement (so expiry is enforced immediately) and the monthly request quota.
+ *
+ * Quota is reserve-then-check: the usage row is written *before* the handler runs and the
+ * request is refused if the count including it is over quota. A check-then-insert would let
+ * concurrent requests all pass the check at quota - 1.
  */
-import { and, eq, gt, gte, isNull, or, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { apiKeys, apiUsageEvents, users } from "@/db/schema";
 import { getUserEntitlement } from "./entitlements";
@@ -34,6 +38,9 @@ export type AuthenticatedApiKey = {
 	name: string;
 	scopes: ApiScope[];
 	billingTier: BillingTier;
+	/** Monthly REST + MCP request quota for the current entitlement (Infinity = unlimited). */
+	monthlyQuota: number;
+	planName: string;
 };
 
 export async function listApiKeysForUser(userId: string) {
@@ -162,20 +169,9 @@ export async function authenticateApiRequest(
 		}
 	}
 
-	// MCP and CLI are available on every plan; the monthly request quota is the only gate.
+	// MCP and CLI are available on every plan; the monthly request quota (reserveApiUsage) is the only gate.
 	void options;
 	const entitlement = resolveEntitlement(row, now);
-	const quota = entitlement.limits.monthlyApiRequests;
-	if (Number.isFinite(quota)) {
-		const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-		const [{ used }] = await db
-			.select({ used: sql<number>`cast(count(*) as int)` })
-			.from(apiUsageEvents)
-			.where(and(eq(apiUsageEvents.userId, row.userId), gte(apiUsageEvents.createdAt, monthStart)));
-		if (used >= quota) {
-			throw new ApiRequestLimitError(`Monthly API limit reached (${formatLimit(quota)} requests on ${entitlement.plan.name}). Upgrade at https://indexfast.co/dashboard/billing`);
-		}
-	}
 
 	// Only update lastUsedAt if it hasn't been updated in the last hour to reduce DB load
 	const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -189,23 +185,59 @@ export async function authenticateApiRequest(
 		name: row.name,
 		scopes,
 		billingTier: entitlement.tier,
+		monthlyQuota: entitlement.limits.monthlyApiRequests,
+		planName: entitlement.plan.name,
 	};
 }
 
-export async function recordApiUsage(input: {
-	apiKeyId?: string | null;
-	userId: string;
-	method: string;
-	route: string;
-	statusCode: number;
-	metadata?: Record<string, unknown>;
-}) {
-	await db.insert(apiUsageEvents).values({
-		apiKeyId: input.apiKeyId || null,
-		userId: input.userId,
-		method: input.method,
-		route: input.route,
-		statusCode: input.statusCode,
-		metadata: input.metadata || null,
-	});
+export type ApiUsageEntry = { method: string; route: string; metadata?: Record<string, unknown> };
+
+/**
+ * Writes one usage row per billable entry, then refuses (and removes the rows) if this
+ * month's count including them is over quota. Rows start as 200; finalizeApiUsage records
+ * the real status afterwards. Returns the row ids to finalize.
+ */
+export async function reserveApiUsage(auth: AuthenticatedApiKey, entries: ApiUsageEntry[]): Promise<string[]> {
+	if (entries.length === 0) {
+		return [];
+	}
+	const rows = await db
+		.insert(apiUsageEvents)
+		.values(
+			entries.map((entry) => ({
+				apiKeyId: auth.apiKeyId,
+				userId: auth.userId,
+				method: entry.method,
+				route: entry.route,
+				statusCode: 200,
+				metadata: entry.metadata || null,
+			})),
+		)
+		.returning({ id: apiUsageEvents.id });
+	const ids = rows.map((row) => row.id);
+
+	if (Number.isFinite(auth.monthlyQuota)) {
+		const now = new Date();
+		const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+		const [{ used }] = await db
+			.select({ used: sql<number>`cast(count(*) as int)` })
+			.from(apiUsageEvents)
+			.where(and(eq(apiUsageEvents.userId, auth.userId), gte(apiUsageEvents.createdAt, monthStart)));
+		if (used > auth.monthlyQuota) {
+			// A refused request is not usage; dropping the rows keeps the count honest.
+			await db.delete(apiUsageEvents).where(inArray(apiUsageEvents.id, ids));
+			throw new ApiRequestLimitError(
+				`Monthly API limit reached (${formatLimit(auth.monthlyQuota)} requests on ${auth.planName}). Upgrade at https://indexfast.co/dashboard/billing`,
+			);
+		}
+	}
+	return ids;
+}
+
+/** Records the final status on reserved rows; only failures need a write. */
+export async function finalizeApiUsage(ids: string[], statusCode: number) {
+	if (ids.length === 0 || statusCode === 200) {
+		return;
+	}
+	await db.update(apiUsageEvents).set({ statusCode }).where(inArray(apiUsageEvents.id, ids));
 }

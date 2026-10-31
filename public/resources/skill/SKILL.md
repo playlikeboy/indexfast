@@ -1,6 +1,6 @@
 ---
 name: indexfast
-description: Use IndexFast for agentic SEO operations: indexing health checks, sitemap discovery, IndexNow/Bing submissions, diagnostics, alerts, directory resources, and CLI/MCP/API workflows.
+description: Use IndexFast for agentic SEO operations: indexing health checks, sitemap discovery, IndexNow/Bing/Yandex/Baidu submissions, Google Search Console inspection, diagnostics, alerts, directory resources, and CLI/MCP/API workflows.
 ---
 
 # IndexFast
@@ -35,7 +35,7 @@ Use this skill when a user wants to improve search visibility, audit indexing pr
 ### Indexing Recovery
 
 1. List alerts and recent failed submissions.
-2. Inspect URLs marked `blockers`, `not_indexed`, or failed.
+2. Inspect URLs marked `blockers`, `not_indexed`, or failed (`inspect_url` when Search Console is connected).
 3. Check HTTP status, noindex, canonical, robots rules, and sitemap presence.
 4. Submit only URLs that are technically indexable.
 
@@ -82,6 +82,12 @@ Every `site` argument accepts the domain (e.g. `example.com`) or the site id.
 - `recommend_seo_resources`, `list_directories`, `list_seo_tools`, `list_search_engines`
 - `set_bing_api_key` - add/verify developer's Bing API key with auto-submit
 - `get_bing_status`, `set_bing_auto_submit`, `remove_bing_api_key` - manage direct Bing Search Console auto-submission
+- `list_engines` - every engine for a site (IndexNow, Bing, Google Search Console, Google Indexing API, Yandex, Baidu) with plan availability, status and setup hints.
+- `get_google_connection` - Search Console connection and property match per site. If not connected, give the user the returned `connectUrl` to open in a browser; an agent cannot complete OAuth.
+- `inspect_url` - Google's own index verdict for a URL (URL Inspection API). Uses a daily quota per property; inspect representative URLs, not whole sitemaps.
+- `submit_sitemap_to_gsc` - submit or resubmit sitemaps to Search Console (also done automatically after a sync finds new URLs).
+- `set_yandex_token`, `set_baidu_token` - connect Yandex Webmaster recrawl / Baidu push for a site (paid plans).
+- `set_engine_auto_submit`, `remove_engine` - toggle or disconnect `google_indexing_api`, `yandex`, `baidu`. Only enable `google_indexing_api` for sites with JobPosting or livestream pages; every page is checked and other pages are skipped.
 
 Older names (`list_sites`, `sync_sitemap`, `submit_url`, `bulk_submit_urls`, `run_diagnostics`, `list_alerts`) still work as aliases.
 

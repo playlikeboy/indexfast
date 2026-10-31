@@ -9,6 +9,8 @@ import { alerts, apiKeys, apiUsageEvents, siteSitemaps, sites, submissionJobs, s
 import { getIndexNowSetup, getBingStatusForUser, getSiteForUser, getSiteQueueSummary } from "@/lib/automation/service";
 import { getUserAccess } from "@/lib/platform/entitlements";
 import { maskApiKeyPrefix } from "@/lib/platform/api-key-utils";
+import { listEnginesForUser } from "@/lib/engines/extra-engines";
+import { getGoogleConnectionStatus } from "@/lib/engines/google-service";
 
 export type SiteStatus = "live" | "setup" | "paused" | "error";
 
@@ -104,6 +106,7 @@ export async function getSitePage(userId: string, siteId: string, options: { tab
 		issues,
 		bing,
 		queueSummary,
+		google,
 	] = await Promise.all([
 		getUserAccess(userId),
 		getIndexNowSetup(site),
@@ -121,6 +124,8 @@ export async function getSitePage(userId: string, siteId: string, options: { tab
 						lastSubmittedEngine: urls.lastSubmittedEngine,
 						httpStatus: urls.httpStatus,
 						indexingStatus: urls.indexingStatus,
+						gscStatus: urls.gscStatus,
+						lastCheckedAt: urls.lastCheckedAt,
 					})
 					.from(urls)
 					.where(and(...urlFilters))
@@ -166,7 +171,10 @@ export async function getSitePage(userId: string, siteId: string, options: { tab
 		db.select().from(alerts).where(and(eq(alerts.siteId, siteId), eq(alerts.resolved, false))).orderBy(desc(alerts.createdAt)).limit(5),
 		getBingStatusForUser(userId, siteId),
 		getSiteQueueSummary(userId, siteId),
+		getGoogleConnectionStatus(userId),
 	]);
+	// Needs the entitlement for plan availability, so it runs after the parallel batch.
+	const engines = await listEnginesForUser(userId, siteId, access.entitlement);
 
 	const filtered = isQueueTab ? (queueCountRow[0]?.filtered ?? 0) : (urlCountRow[0]?.filtered ?? 0);
 	const openJobs = queueSummary?.openTotal ?? 0;
@@ -186,6 +194,8 @@ export async function getSitePage(userId: string, siteId: string, options: { tab
 		issues,
 		bing,
 		openJobs,
+		google,
+		engines,
 	};
 }
 
@@ -194,7 +204,7 @@ export type DashboardHomeData = Awaited<ReturnType<typeof getDashboardHome>>;
 
 export async function getConnectPage(userId: string) {
 	const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
-	const [access, keys, [usage], siteRows] = await Promise.all([
+	const [access, keys, [usage], siteRows, google] = await Promise.all([
 		getUserAccess(userId),
 		db
 			.select({ id: apiKeys.id, name: apiKeys.name, keyPrefix: apiKeys.keyPrefix, lastUsedAt: apiKeys.lastUsedAt, createdAt: apiKeys.createdAt })
@@ -206,12 +216,14 @@ export async function getConnectPage(userId: string) {
 			.from(apiUsageEvents)
 			.where(and(eq(apiUsageEvents.userId, userId), sql`${apiUsageEvents.createdAt} >= ${monthStart}`)),
 		db.select({ domain: sites.domain }).from(sites).where(eq(sites.userId, userId)).limit(1),
+		getGoogleConnectionStatus(userId),
 	]);
 	return {
 		entitlement: access.entitlement,
 		keys: keys.map((key) => ({ ...key, masked: maskApiKeyPrefix(key.keyPrefix) })),
 		usage: usage?.count ?? 0,
 		exampleDomain: siteRows[0]?.domain ?? null,
+		google,
 	};
 }
 

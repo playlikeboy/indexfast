@@ -41,6 +41,10 @@ export type PlanLimits = {
 	apiKeys: number;
 	monthlyApiRequests: number; // REST + MCP calls
 	bing: boolean; // Direct Bing Webmaster API submissions
+	gscInspectionsPerDay: number; // Search Console URL Inspection calls per site per day (Google caps a property at 2,000)
+	yandex: boolean; // Yandex Webmaster recrawl queue submissions
+	baidu: boolean; // Baidu URL push submissions
+	googleIndexingApi: boolean; // Google Indexing API, only ever for eligible JobPosting / livestream pages
 };
 
 export type PlanDefinition = {
@@ -60,6 +64,10 @@ const FREE_LIMITS: PlanLimits = {
 	apiKeys: 1,
 	monthlyApiRequests: 300,
 	bing: false,
+	gscInspectionsPerDay: 100,
+	yandex: false,
+	baidu: false,
+	googleIndexingApi: false,
 };
 
 const PRO_LIMITS: PlanLimits = {
@@ -69,6 +77,10 @@ const PRO_LIMITS: PlanLimits = {
 	apiKeys: 5,
 	monthlyApiRequests: 20_000,
 	bing: true,
+	gscInspectionsPerDay: 2_000,
+	yandex: true,
+	baidu: true,
+	googleIndexingApi: true,
 };
 
 const UNLIMITED_LIMITS: PlanLimits = {
@@ -78,6 +90,10 @@ const UNLIMITED_LIMITS: PlanLimits = {
 	apiKeys: Infinity,
 	monthlyApiRequests: Infinity,
 	bing: true,
+	gscInspectionsPerDay: 2_000,
+	yandex: true,
+	baidu: true,
+	googleIndexingApi: true,
 };
 
 export const PLANS: Record<BillingTier, PlanDefinition> = {
@@ -87,7 +103,7 @@ export const PLANS: Record<BillingTier, PlanDefinition> = {
 		priceUsd: 0,
 		visible: true,
 		tagline: "Try it on one site.",
-		features: ["1 website", "500 URLs tracked", "Daily sitemap check", "IndexNow auto-submit", "MCP + API access"],
+		features: ["1 website", "500 URLs tracked", "Daily sitemap check", "IndexNow auto-submit", `Search Console URL inspection (${FREE_LIMITS.gscInspectionsPerDay}/day)`, "MCP + API access"],
 		limits: FREE_LIMITS,
 	},
 	pro: {
@@ -96,7 +112,7 @@ export const PLANS: Record<BillingTier, PlanDefinition> = {
 		priceUsd: 19,
 		visible: true,
 		tagline: "For builders shipping a few sites.",
-		features: ["10 websites", "10,000 URLs per site", "Hourly sitemap checks", "IndexNow + Bing auto-submit", "MCP + API (20k calls/mo)"],
+		features: ["10 websites", "10,000 URLs per site", "Hourly sitemap checks", "IndexNow, Bing, Yandex + Baidu auto-submit", "Search Console inspection + sitemap submit", "Google Indexing API for job and livestream pages", "MCP + API (20k calls/mo)"],
 		limits: PRO_LIMITS,
 	},
 	unlimited: {
@@ -105,7 +121,7 @@ export const PLANS: Record<BillingTier, PlanDefinition> = {
 		priceUsd: 99,
 		visible: true,
 		tagline: "Everything on the platform, no caps.",
-		features: ["Unlimited websites", "50,000 URLs per site per sync", "Hourly sitemap checks", "IndexNow + Bing auto-submit", "Unlimited MCP + API calls", "Priority support"],
+		features: ["Unlimited websites", "50,000 URLs per site per sync", "Hourly sitemap checks", "IndexNow, Bing, Yandex + Baidu auto-submit", "Search Console inspection + sitemap submit", "Google Indexing API for job and livestream pages", "Unlimited MCP + API calls", "Priority support"],
 		limits: UNLIMITED_LIMITS,
 	},
 	// Hidden legacy tiers: kept so existing Dodo subscribers retain access.

@@ -22,12 +22,20 @@ export function getRazorpayConfig() {
 /**
  * Charge amount in minor units. Defaults to the USD list price; RAZORPAY_PRICE_PRO /
  * RAZORPAY_PRICE_UNLIMITED override it (e.g. when RAZORPAY_CURRENCY=INR, set paise).
+ * Any non-USD currency without an override throws: the USD cents figure read as paise
+ * would charge about 1/100 of the price.
  */
 export function getPlanCharge(plan: PaidPlan) {
 	const { currency } = getRazorpayConfig();
 	const override = Number(process.env[`RAZORPAY_PRICE_${plan.toUpperCase()}`]);
-	const amount = Number.isInteger(override) && override > 0 ? override : Math.round(PLANS[plan].priceUsd * 100);
-	return { amount, currency };
+	if (Number.isInteger(override) && override > 0) {
+		return { amount: override, currency };
+	}
+	if (currency !== "USD") {
+		// Operator fix: set RAZORPAY_PRICE_PRO / RAZORPAY_PRICE_UNLIMITED in minor units.
+		throw new Error(`Checkout is not configured for ${currency} yet. Please contact support.`);
+	}
+	return { amount: Math.round(PLANS[plan].priceUsd * 100), currency };
 }
 
 function bytesToHex(buffer: ArrayBuffer) {

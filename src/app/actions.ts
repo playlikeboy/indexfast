@@ -35,6 +35,8 @@ import {
 	drainSiteQueueForUser,
 	retryFailedForUser,
 } from "@/lib/automation/service";
+import { removeEngineForUser, setBaiduTokenForUser, setEngineAutoSubmitForUser, setYandexTokenForUser } from "@/lib/engines/extra-engines";
+import { disconnectGoogleForUser, inspectUrlForUser, matchGscPropertiesForUser, submitSitemapsToGscForUser } from "@/lib/engines/google-service";
 import { createApiKeyForUser, revokeApiKeyForUser } from "@/lib/platform/api-keys";
 import { DEFAULT_API_SCOPES, PLAN_PERIOD_DAYS, isPaidPlan, normalizeBillingTier } from "@/lib/platform/plans";
 import { runDiagnosticsForUser } from "@/lib/platform/operations";
@@ -361,5 +363,84 @@ export async function adminGrantPlanAction(_prev: ActionResult, formData: FormDa
 		if (updated.length === 0) throw new Error(`No user with email ${email}`);
 		revalidatePath("/admin");
 		return plan === "free" ? `${email} set to Free.` : `${email} on ${plan} until ${expiresAt?.toDateString()}.`;
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Search engines: Google Search Console, Google Indexing API (gated), Yandex, Baidu
+// ---------------------------------------------------------------------------
+
+function checkbox(formData: FormData, key: string, fallback = true) {
+	const value = formData.get(key);
+	return value === null ? fallback : value === "on" || value === "true";
+}
+
+export async function disconnectGoogleAction(): Promise<ActionResult> {
+	return run(async () => {
+		await disconnectGoogleForUser(await sessionUserId());
+		revalidatePath("/dashboard", "layout");
+		return "Google Search Console disconnected.";
+	});
+}
+
+/** Re-read the user's Search Console properties and match every site (or one) again. */
+export async function refreshGscPropertiesAction(siteId?: string): Promise<ActionResult> {
+	return run(async () => {
+		const result = await matchGscPropertiesForUser(await sessionUserId(), siteId);
+		revalidatePath("/dashboard", "layout");
+		const matched = result.sites.filter((site) => site.property).length;
+		return { message: `Matched ${matched} of ${result.sites.length} site(s) to a Search Console property.`, data: { sites: result.sites } };
+	});
+}
+
+export async function inspectUrlAction(siteId: string, urlId: string): Promise<ActionResult> {
+	return run(async () => {
+		const result = await inspectUrlForUser(await sessionUserId(), siteId, { urlId });
+		revalidateSite(siteId);
+		return { message: `Google: ${result.gscStatus}.`, data: { inspection: result } };
+	});
+}
+
+export async function submitSitemapsToGscAction(siteId: string): Promise<ActionResult> {
+	return run(async () => {
+		const result = await submitSitemapsToGscForUser(await sessionUserId(), siteId);
+		revalidateSite(siteId);
+		const failed = result.results.filter((item) => !item.ok);
+		if (failed.length === result.results.length) throw new Error(failed[0]?.message ?? "Search Console rejected the sitemaps.");
+		return `Submitted ${result.results.length - failed.length} sitemap(s) to ${result.property}.${failed.length > 0 ? ` ${failed.length} failed: ${failed[0].message}` : ""}`;
+	});
+}
+
+export async function saveYandexTokenAction(siteId: string, _prev: ActionResult, formData: FormData): Promise<ActionResult> {
+	return run(async () => {
+		const result = await setYandexTokenForUser(await sessionUserId(), siteId, text(formData, "token"), checkbox(formData, "autoSubmit"));
+		revalidateSite(siteId);
+		const quota = result.quotaRemainder !== null ? ` ${result.quotaRemainder} recrawls left today.` : "";
+		return `Yandex connected for this site.${quota}`;
+	});
+}
+
+export async function saveBaiduTokenAction(siteId: string, _prev: ActionResult, formData: FormData): Promise<ActionResult> {
+	return run(async () => {
+		const result = await setBaiduTokenForUser(await sessionUserId(), siteId, text(formData, "token"), checkbox(formData, "autoSubmit"));
+		revalidateSite(siteId);
+		return `Baidu token saved. ${result.remainToday} pushes left today.`;
+	});
+}
+
+/** engine: 'google_indexing_api' | 'yandex' | 'baidu'. */
+export async function setEngineAutoSubmitAction(siteId: string, engine: string, enabled: boolean): Promise<ActionResult> {
+	return run(async () => {
+		await setEngineAutoSubmitForUser(await sessionUserId(), siteId, engine, enabled);
+		revalidateSite(siteId);
+		return enabled ? "Auto-submit on." : "Auto-submit off.";
+	});
+}
+
+export async function removeEngineAction(siteId: string, engine: string): Promise<ActionResult> {
+	return run(async () => {
+		await removeEngineForUser(await sessionUserId(), siteId, engine);
+		revalidateSite(siteId);
+		return "Disconnected.";
 	});
 }

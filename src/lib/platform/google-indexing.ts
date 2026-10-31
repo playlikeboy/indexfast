@@ -1,3 +1,11 @@
+/**
+ * Google Indexing API guardrail. Google's policy allows this API only for pages with
+ * JobPosting structured data, or a livestream BroadcastEvent embedded in a VideoObject.
+ * Every IndexFast path to the Indexing API must pass checkGoogleIndexingEligibility first;
+ * general pages go through sitemaps, Search Console and IndexNow instead.
+ */
+import { GOOGLE_INDEXING_PUBLISH_ENDPOINT } from "@/lib/automation/constants";
+
 export type GoogleIndexingNotificationType = "URL_UPDATED" | "URL_DELETED";
 
 export type GoogleIndexingEligibility = {
@@ -36,6 +44,21 @@ function collectTypes(value: unknown, types = new Set<string>()) {
 	return types;
 }
 
+function typesOf(record: Record<string, unknown>) {
+	const rawType = record["@type"];
+	return (Array.isArray(rawType) ? rawType : [rawType]).filter((item): item is string => typeof item === "string");
+}
+
+function hasBroadcastInsideVideo(value: unknown, insideVideo: boolean): boolean {
+	if (!value || typeof value !== "object") return false;
+	if (Array.isArray(value)) return value.some((item) => hasBroadcastInsideVideo(item, insideVideo));
+	const record = value as Record<string, unknown>;
+	const types = typesOf(record);
+	if (insideVideo && types.includes("BroadcastEvent")) return true;
+	const nextInside = insideVideo || types.includes("VideoObject");
+	return Object.values(record).some((item) => hasBroadcastInsideVideo(item, nextInside));
+}
+
 function extractJsonLdBlocks(html: string) {
 	const blocks: unknown[] = [];
 	for (const match of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
@@ -69,7 +92,11 @@ export function checkGoogleIndexingEligibility(html: string): GoogleIndexingElig
 		};
 	}
 
-	if (contentTypes.includes("BroadcastEvent") && !contentTypes.includes("VideoObject")) {
+	const blocks = extractJsonLdBlocks(html);
+	const hasJobPosting = contentTypes.includes("JobPosting");
+	// Both types merely appearing on the page is not enough: the BroadcastEvent has to sit
+	// inside the VideoObject (e.g. VideoObject.publication), which is what Google requires.
+	if (!hasJobPosting && !blocks.some((block) => hasBroadcastInsideVideo(block, false))) {
 		return {
 			eligible: false,
 			contentTypes,
@@ -93,13 +120,14 @@ export function getGoogleIndexingMetadataUrl(url: string) {
 }
 
 export async function submitGoogleIndexingNotification(accessToken: string, url: string, type: GoogleIndexingNotificationType) {
-	const response = await fetch("https://indexing.googleapis.com/v3/urlNotifications:publish", {
+	const response = await fetch(GOOGLE_INDEXING_PUBLISH_ENDPOINT, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
 			Authorization: `Bearer ${accessToken}`,
 		},
 		body: JSON.stringify(buildGoogleIndexingNotification(url, type)),
+		signal: AbortSignal.timeout(20_000),
 	});
 
 	const body = await response.text().catch(() => "");

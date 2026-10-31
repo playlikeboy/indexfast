@@ -32,6 +32,14 @@ import {
 	verifySiteForApi,
 	drainSiteQueueForApi,
 	getSiteQueueForApi,
+	getGoogleConnectionForApi,
+	inspectUrlForApi,
+	listEnginesForApi,
+	removeEngineForApi,
+	setBaiduTokenForApi,
+	setEngineAutoSubmitForApi,
+	setYandexTokenForApi,
+	submitSitemapToGscForApi,
 	type UrlFilter,
 } from "@/lib/platform/operations";
 
@@ -46,15 +54,17 @@ export const SUPPORTED_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03
 
 const serverInfo = { name: "indexfast", title: "IndexFast", version: "1.0.0" };
 
-const instructions = `IndexFast gets a website's pages discovered by search engines (IndexNow + Bing) automatically.
+const instructions = `IndexFast gets a website's pages discovered by search engines automatically: IndexNow by default (Bing, Yandex, Seznam, Naver, Yep), plus optional Bing Webmaster API, Google Search Console, Yandex Webmaster and Baidu push.
 Typical flow for a project in the current repo:
 1. add_site { domain } -> finds sitemaps and URLs, returns a key file to create.
 2. Create that key file in the project's public/static folder (exact name and content), deploy.
 3. verify_site { site } -> proves ownership and turns on auto-submit. Done: new pages are submitted hourly.
-Use get_site to see status and issues. Every "site" argument accepts the domain or the site id.
+Use get_site to see status and issues, list_engines to see every engine for a site, inspect_url for Google's own index verdict.
+Every "site" argument accepts the domain or the site id.
 IndexFast never guarantees Google indexing; it speeds up discovery.`;
 
 const site = { type: "string", description: "Site domain (e.g. example.com) or site id" };
+const ENGINE_SCHEMA = { type: "string", enum: ["google_indexing_api", "yandex", "baidu"] };
 
 const tools = [
 	{
@@ -137,8 +147,8 @@ const tools = [
 				site,
 				page: { type: "number" },
 				limit: { type: "number" },
-				status: { type: "string", enum: ["queued", "processing", "success", "failed"] },
-				engine: { type: "string", enum: ["indexnow", "bing"] },
+				status: { type: "string", enum: ["queued", "processing", "success", "failed", "skipped"] },
+				engine: { type: "string", enum: ["indexnow", "bing", "google_indexing_api", "yandex", "baidu"] },
 			},
 			required: ["site"],
 		},
@@ -244,6 +254,66 @@ const tools = [
 		title: "Remove Bing API key",
 		description: "Disconnect the Bing Webmaster API key for a site.",
 		inputSchema: { type: "object", properties: { site }, required: ["site"] },
+	},
+	{
+		name: "list_engines",
+		title: "List engines for a site",
+		description:
+			"Every indexing engine for a site (IndexNow, Bing, Google Search Console, Google Indexing API, Yandex, Baidu): plan availability, connected, auto-submit, last error, quota and setup hint.",
+		inputSchema: { type: "object", properties: { site }, required: ["site"] },
+	},
+	{
+		name: "get_google_connection",
+		title: "Google Search Console connection",
+		description:
+			"Whether Google Search Console is connected, granted scopes, the user's properties and which property each site matched. If not connected, returns the URL the human must open (OAuth cannot be done by an agent).",
+		inputSchema: { type: "object", properties: { site: { ...site, description: "Optional: re-match only this site" } } },
+	},
+	{
+		name: "inspect_url",
+		title: "Inspect URL in Google Search Console",
+		description:
+			"Google's own index verdict for one URL (URL Inspection API): coverage state, last crawl, Google canonical. Updates the URL's indexing status. Uses the property's daily quota (Free plan has a lower cap).",
+		inputSchema: { type: "object", properties: { site, url: { type: "string" } }, required: ["site", "url"] },
+	},
+	{
+		name: "submit_sitemap_to_gsc",
+		title: "Submit sitemap to Search Console",
+		description: "Submit or resubmit the site's sitemaps (or one sitemapUrl) to Google Search Console. Needs Owner or Full access to the property.",
+		inputSchema: { type: "object", properties: { site, sitemapUrl: { type: "string", description: "Optional. Defaults to every active sitemap of the site." } }, required: ["site"] },
+	},
+	{
+		name: "set_yandex_token",
+		title: "Set Yandex token",
+		description: "Save a Yandex OAuth token (Webmaster access) and link the site to its verified Yandex Webmaster host for recrawl submissions. Paid plans.",
+		inputSchema: {
+			type: "object",
+			properties: { site, token: { type: "string" }, autoSubmit: { type: "boolean", description: "Auto-submit new and updated URLs (default true)" } },
+			required: ["site", "token"],
+		},
+	},
+	{
+		name: "set_baidu_token",
+		title: "Set Baidu token",
+		description: "Save the site's Baidu Ziyuan push token. Validated by pushing the homepage once. Paid plans; the site must be verified.",
+		inputSchema: {
+			type: "object",
+			properties: { site, token: { type: "string" }, autoSubmit: { type: "boolean", description: "Auto-submit new and updated URLs (default true)" } },
+			required: ["site", "token"],
+		},
+	},
+	{
+		name: "set_engine_auto_submit",
+		title: "Set engine auto-submit",
+		description:
+			"Turn an optional engine on or off for a site. google_indexing_api is only for JobPosting or livestream (BroadcastEvent in VideoObject) pages; every page is checked and other pages are skipped.",
+		inputSchema: { type: "object", properties: { site, engine: ENGINE_SCHEMA, enabled: { type: "boolean" } }, required: ["site", "engine", "enabled"] },
+	},
+	{
+		name: "remove_engine",
+		title: "Remove engine",
+		description: "Disconnect an optional engine (google_indexing_api, yandex, baidu) from a site.",
+		inputSchema: { type: "object", properties: { site, engine: ENGINE_SCHEMA }, required: ["site", "engine"] },
 	},
 	{
 		name: "list_search_engines",
@@ -376,6 +446,22 @@ async function callTool(auth: AuthenticatedApiKey, rawName: string, args: Record
 			return removeBingApiKeyForApi(auth.userId, siteRef);
 		case "list_search_engines":
 			return listSearchEngineResources(asString(args.engineId) || undefined);
+		case "list_engines":
+			return listEnginesForApi(auth.userId, siteRef);
+		case "get_google_connection":
+			return getGoogleConnectionForApi(auth.userId, siteRef || undefined);
+		case "inspect_url":
+			return inspectUrlForApi(auth.userId, siteRef, { url: asString(args.url) || undefined, urlId: asString(args.urlId) || undefined });
+		case "submit_sitemap_to_gsc":
+			return submitSitemapToGscForApi(auth.userId, siteRef, asString(args.sitemapUrl) || undefined);
+		case "set_yandex_token":
+			return setYandexTokenForApi(auth.userId, siteRef, asString(args.token), args.autoSubmit !== false);
+		case "set_baidu_token":
+			return setBaiduTokenForApi(auth.userId, siteRef, asString(args.token), args.autoSubmit !== false);
+		case "set_engine_auto_submit":
+			return setEngineAutoSubmitForApi(auth.userId, siteRef, asString(args.engine), args.enabled === true);
+		case "remove_engine":
+			return removeEngineForApi(auth.userId, siteRef, asString(args.engine));
 		default:
 			throw new Error(`Unknown tool: ${rawName}`);
 	}

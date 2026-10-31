@@ -6,16 +6,18 @@
  *   Both call activatePaidOrder(); a conditional UPDATE on payments.status guarantees the
  *   period is granted exactly once no matter which arrives first.
  *
+ * Refunds: only a full refund (cumulative) takes the period back, see applyFullRefund().
+ *
  * The Razorpay account may be shared with other apps (same webhook secret), so any event
  * whose order_id is not in our payments table is recorded and ignored.
  */
-import { and, desc, eq, inArray, lt, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { billingEvents, payments, users } from "@/db/schema";
 import {
 	PLANS,
 	PLAN_GRACE_DAYS,
-	computeNextPeriod,
+	PLAN_PERIOD_DAYS,
 	isPaidPlan,
 	normalizeBillingTier,
 	resolveEntitlement,
@@ -61,7 +63,37 @@ export async function createCheckoutOrder(user: { id: string; email: string; nam
 	};
 }
 
-/** Idempotent: grants the paid period once, returns the resulting expiry. */
+/**
+ * Whether a payment that is already `paid` still needs its period written to the user row.
+ * Older code claimed the payment and updated the user in two separate writes, so a failure
+ * in between left a paid order that never upgraded anyone. Heal only when the user holds
+ * nothing better: the same plan ending earlier, or no paid plan in force at all (never
+ * overwrite a different active plan, e.g. a later upgrade).
+ */
+export function needsSelfHeal(
+	user: { billingTier: string | null; planExpiresAt: Date | null } | null | undefined,
+	payment: { status: string; plan: string; periodEnd: Date | null },
+	now = new Date(),
+) {
+	if (payment.status !== "paid" || !payment.periodEnd || payment.periodEnd <= now || !isPaidPlan(payment.plan)) {
+		return false;
+	}
+	if (normalizeBillingTier(user?.billingTier) === payment.plan) {
+		return Boolean(user?.planExpiresAt && user.planExpiresAt < payment.periodEnd);
+	}
+	const status = resolveEntitlement(user, now).status;
+	return status === "free" || status === "expired";
+}
+
+/**
+ * Idempotent: grants the paid period once, returns the resulting expiry.
+ *
+ * The claim, the user upgrade and the period stamp run as one transaction (neon-http batch),
+ * so a failure can never leave a paid order without its upgrade. The new expiry is computed
+ * inside the users UPDATE from the row's current value: concurrent payments for one user are
+ * serialised by the row lock and each stacks onto the previous one instead of both reading the
+ * same old expiry. Same plan still active extends from its expiry, anything else starts now.
+ */
 export async function activatePaidOrder(input: { orderId: string; paymentId: string; expectedUserId?: string }) {
 	const [payment] = await db.select().from(payments).where(eq(payments.orderId, input.orderId)).limit(1);
 	if (!payment) {
@@ -71,45 +103,66 @@ export async function activatePaidOrder(input: { orderId: string; paymentId: str
 		return { ok: false as const, reason: "unauthorized" };
 	}
 	if (payment.status === "paid" || payment.status === "refunded") {
-		return { ok: true as const, alreadyProcessed: true, periodEnd: payment.periodEnd, plan: payment.plan };
+		return healPaidOrder(payment);
 	}
 	if (!isPaidPlan(payment.plan)) {
 		return { ok: false as const, reason: "invalid_plan" };
 	}
 
+	const now = new Date();
+	const utcNow = sql`(now() at time zone 'utc')`;
+	const period = sql`make_interval(days => ${PLAN_PERIOD_DAYS})`;
+	const [claimed, granted] = await db.batch([
+		db
+			.update(payments)
+			.set({ status: "paid", paymentId: input.paymentId, failureReason: null, updatedAt: now })
+			.where(and(eq(payments.orderId, input.orderId), notInArray(payments.status, ["paid", "refunded"])))
+			.returning({ id: payments.id }),
+		db
+			.update(users)
+			.set({
+				billingTier: payment.plan,
+				planExpiresAt: sql`(case when ${users.billingTier} = ${payment.plan} and ${users.planExpiresAt} > ${utcNow} then ${users.planExpiresAt} else ${utcNow} end) + ${period}`,
+				updatedAt: now,
+			})
+			// Only the transaction that just claimed the order (paid, not yet stamped) may grant.
+			.where(
+				and(
+					eq(users.id, payment.userId),
+					sql`exists (select 1 from ${payments} where ${payments.orderId} = ${input.orderId} and ${payments.paymentId} = ${input.paymentId} and ${payments.status} = 'paid' and ${payments.periodEnd} is null)`,
+				),
+			)
+			.returning({ planExpiresAt: users.planExpiresAt }),
+		db
+			.update(payments)
+			.set({
+				periodEnd: sql`(select ${users.planExpiresAt} from ${users} where ${users.id} = ${payment.userId})`,
+				periodStart: sql`(select ${users.planExpiresAt} from ${users} where ${users.id} = ${payment.userId}) - ${period}`,
+			})
+			.where(and(eq(payments.orderId, input.orderId), eq(payments.status, "paid"), isNull(payments.periodEnd))),
+	]);
+
+	if (claimed.length === 0) {
+		const [latest] = await db.select().from(payments).where(eq(payments.orderId, input.orderId)).limit(1);
+		return healPaidOrder(latest ?? payment);
+	}
+
+	return { ok: true as const, alreadyProcessed: false, periodEnd: granted[0]?.planExpiresAt ?? null, plan: payment.plan };
+}
+
+async function healPaidOrder(payment: typeof payments.$inferSelect) {
 	const [user] = await db
 		.select({ billingTier: users.billingTier, planExpiresAt: users.planExpiresAt })
 		.from(users)
 		.where(eq(users.id, payment.userId))
 		.limit(1);
-	const now = new Date();
-	// Only extend from the current expiry if that plan is still in force (active or grace).
-	const current = resolveEntitlement(user, now).status === "expired" ? { billingTier: "free", planExpiresAt: null } : user ?? { billingTier: "free", planExpiresAt: null };
-	const period = computeNextPeriod(current, payment.plan, now);
-
-	const claimed = await db
-		.update(payments)
-		.set({
-			status: "paid",
-			paymentId: input.paymentId,
-			periodStart: period.start,
-			periodEnd: period.end,
-			failureReason: null,
-			updatedAt: now,
-		})
-		.where(and(eq(payments.orderId, input.orderId), ne(payments.status, "paid"), ne(payments.status, "refunded")))
-		.returning({ id: payments.id });
-
-	if (claimed.length === 0) {
-		return { ok: true as const, alreadyProcessed: true, periodEnd: payment.periodEnd, plan: payment.plan };
+	if (needsSelfHeal(user, payment)) {
+		await db
+			.update(users)
+			.set({ billingTier: payment.plan, planExpiresAt: payment.periodEnd, updatedAt: new Date() })
+			.where(eq(users.id, payment.userId));
 	}
-
-	await db
-		.update(users)
-		.set({ billingTier: payment.plan, planExpiresAt: period.end, updatedAt: now })
-		.where(eq(users.id, payment.userId));
-
-	return { ok: true as const, alreadyProcessed: false, periodEnd: period.end, plan: payment.plan };
+	return { ok: true as const, alreadyProcessed: true, periodEnd: payment.periodEnd, plan: payment.plan };
 }
 
 export async function markPaymentFailed(orderId: string, paymentId: string | null, reason: string) {
@@ -119,29 +172,49 @@ export async function markPaymentFailed(orderId: string, paymentId: string | nul
 		.where(and(eq(payments.orderId, orderId), eq(payments.status, "created")));
 }
 
-/** After a full refund, the user's entitlement falls back to their latest remaining paid period. */
-async function recomputeEntitlementFromLedger(userId: string) {
-	const [latest] = await db
-		.select({ plan: payments.plan, periodEnd: payments.periodEnd })
-		.from(payments)
-		.where(and(eq(payments.userId, userId), eq(payments.status, "paid")))
-		.orderBy(desc(payments.periodEnd))
-		.limit(1);
+/**
+ * Total refunded so far for the payment. Razorpay sends one event per refund, so two partial
+ * refunds that add up to the full amount only show as full via the payment's cumulative
+ * amount_refunded; the single refund amount is the fallback for payloads without it.
+ */
+export function refundedAmount(paymentEntity: { amount_refunded?: number } | undefined, refund: { amount?: number } | undefined) {
+	if (typeof paymentEntity?.amount_refunded === "number") return paymentEntity.amount_refunded;
+	return typeof refund?.amount === "number" ? refund.amount : 0;
+}
 
-	await db
-		.update(users)
-		.set(
-			latest?.periodEnd && latest.periodEnd > new Date()
-				? { billingTier: latest.plan, planExpiresAt: latest.periodEnd, updatedAt: new Date() }
-				: { billingTier: "free", planExpiresAt: new Date(), updatedAt: new Date() },
-		)
-		.where(eq(users.id, userId));
+/**
+ * Full refund: flip the payment to `refunded` and take exactly its period back off the user.
+ * Only when the user is still on the refunded plan; an admin grant or legacy tier the user is
+ * on now has nothing to do with this payment. Both writes are one transaction; the users
+ * UPDATE is tied to this call's flip via its updatedAt marker so a duplicate refund event
+ * (refund.created + refund.processed) subtracts once.
+ */
+async function applyFullRefund(paymentRowId: string) {
+	const marker = new Date();
+	await db.batch([
+		db
+			.update(payments)
+			.set({ status: "refunded", updatedAt: marker })
+			.where(and(eq(payments.id, paymentRowId), eq(payments.status, "paid"))),
+		db
+			.update(users)
+			.set({
+				planExpiresAt: sql`${users.planExpiresAt} - (select ${payments.periodEnd} - ${payments.periodStart} from ${payments} where ${payments.id} = ${paymentRowId})`,
+				updatedAt: marker,
+			})
+			.where(
+				and(
+					isNotNull(users.planExpiresAt),
+					sql`exists (select 1 from ${payments} where ${payments.id} = ${paymentRowId} and ${payments.userId} = ${users.id} and ${payments.plan} = ${users.billingTier} and ${payments.status} = 'refunded' and ${payments.periodStart} is not null and ${payments.periodEnd} is not null and ${eq(payments.updatedAt, marker)})`,
+				),
+			),
+	]);
 }
 
 type RazorpayWebhook = {
 	event?: string;
 	payload?: {
-		payment?: { entity?: { id?: string; order_id?: string; amount?: number; error_description?: string } };
+		payment?: { entity?: { id?: string; order_id?: string; amount?: number; amount_refunded?: number; error_description?: string } };
 		order?: { entity?: { id?: string } };
 		refund?: { entity?: { payment_id?: string; amount?: number } };
 	};
@@ -176,6 +249,21 @@ export async function handleRazorpayWebhook(rawBody: string, eventIdHeader: stri
 		return { handled: false, reason: "not_an_indexfast_order" };
 	}
 
+	try {
+		return await processRazorpayEvent(eventType, ours, paymentEntity, refund);
+	} catch (error) {
+		// Drop the ledger row so Razorpay's retry of this event is processed, not skipped as a duplicate.
+		await db.delete(billingEvents).where(eq(billingEvents.id, inserted[0].id));
+		throw error;
+	}
+}
+
+async function processRazorpayEvent(
+	eventType: string,
+	ours: typeof payments.$inferSelect,
+	paymentEntity: NonNullable<NonNullable<RazorpayWebhook["payload"]>["payment"]>["entity"],
+	refund: NonNullable<NonNullable<RazorpayWebhook["payload"]>["refund"]>["entity"],
+) {
 	switch (eventType) {
 		case "payment.captured":
 		case "order.paid":
@@ -188,9 +276,8 @@ export async function handleRazorpayWebhook(rawBody: string, eventIdHeader: stri
 			return { handled: true };
 		case "refund.processed":
 		case "refund.created":
-			if (refund?.amount !== undefined && refund.amount >= ours.amount) {
-				await db.update(payments).set({ status: "refunded", updatedAt: new Date() }).where(eq(payments.id, ours.id));
-				await recomputeEntitlementFromLedger(ours.userId);
+			if (refundedAmount(paymentEntity, refund) >= ours.amount) {
+				await applyFullRefund(ours.id);
 			}
 			return { handled: true };
 		default:

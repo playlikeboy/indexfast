@@ -25,6 +25,19 @@ import {
 	getSiteQueueJobs,
 	getSiteQueueSummary,
 } from "@/lib/automation/service";
+import {
+	listEnginesForUser,
+	removeEngineForUser,
+	setBaiduTokenForUser,
+	setEngineAutoSubmitForUser,
+	setYandexTokenForUser,
+} from "@/lib/engines/extra-engines";
+import {
+	getGoogleConnectionStatus,
+	inspectUrlForUser,
+	matchGscPropertiesForUser,
+	submitSitemapsToGscForUser,
+} from "@/lib/engines/google-service";
 import { getUserAccess } from "./entitlements";
 import { formatLimit } from "./plans";
 import { getSiteHost, normalizeUrlForHost } from "@/lib/url-utils";
@@ -203,6 +216,8 @@ export async function listUrlsForUser(userId: string, siteRef: string, limit = 1
 			lastSubmissionStatus: urls.lastSubmissionStatus,
 			httpStatus: urls.httpStatus,
 			indexingStatus: urls.indexingStatus,
+			gscStatus: urls.gscStatus,
+			lastCheckedAt: urls.lastCheckedAt,
 		})
 		.from(urls)
 		.where(and(...conditions))
@@ -309,8 +324,10 @@ export async function runDiagnosticsForUser(input: { userId: string; siteId: str
 			.update(urls)
 			.set({
 				httpStatus: result.httpStatus,
-				// Diagnostics can only prove a page is *indexable*, not that it is indexed.
-				indexingStatus: result.status === "fail" ? "blockers" : "unknown",
+				// Diagnostics can only prove a page is *indexable*, not that it is indexed, so a pass
+				// keeps Google's verdict (from URL Inspection) and only clears our own "blockers".
+				indexingStatus:
+					result.status === "fail" ? "blockers" : sql`case when ${urls.indexingStatus} = 'blockers' then 'unknown' else ${urls.indexingStatus} end`,
 				lastCheckedAt: checkedAt,
 			})
 			.where(eq(urls.id, urlRow.id)),
@@ -434,4 +451,67 @@ export async function drainSiteQueueForApi(userId: string, siteRef: string, maxJ
 		processed: result,
 		remainingQueue: summary,
 	};
+}
+
+// ---------------------------------------------------------------------------
+// Search engines beyond IndexNow/Bing: Google Search Console, Google Indexing API (gated),
+// Yandex, Baidu. Logic lives in src/lib/engines; these only resolve the site reference.
+// ---------------------------------------------------------------------------
+
+function siteSummary(site: { id: string; domain: string; indexingHost: string | null }) {
+	return { id: site.id, domain: site.domain, host: getSiteHost(site) };
+}
+
+export async function listEnginesForApi(userId: string, siteRef: string) {
+	const site = await resolveSiteForUser(userId, siteRef);
+	const { entitlement } = await getUserAccess(userId);
+	return { site: siteSummary(site), plan: entitlement.plan.name, engines: await listEnginesForUser(userId, site.id, entitlement) };
+}
+
+/** Google connection + Search Console property match for every site (or one). */
+export async function getGoogleConnectionForApi(userId: string, siteRef?: string) {
+	const google = await getGoogleConnectionStatus(userId);
+	const connectUrl = `https://indexfast.co${google.connectUrl}`;
+	if (!google.connected) {
+		return {
+			...google,
+			connectUrl,
+			nextStep: google.configured
+				? `Ask the user to open ${connectUrl} in a browser while signed in to IndexFast (OAuth needs a human).`
+				: "Google integration is not configured on this IndexFast server.",
+		};
+	}
+	const site = siteRef ? await resolveSiteForUser(userId, siteRef) : null;
+	const match = await matchGscPropertiesForUser(userId, site?.id);
+	return { ...google, connectUrl, properties: match.properties, sites: match.sites };
+}
+
+export async function inspectUrlForApi(userId: string, siteRef: string, input: { url?: string; urlId?: string }) {
+	const site = await resolveSiteForUser(userId, siteRef);
+	return inspectUrlForUser(userId, site.id, input);
+}
+
+export async function submitSitemapToGscForApi(userId: string, siteRef: string, sitemapUrl?: string) {
+	const site = await resolveSiteForUser(userId, siteRef);
+	return { site: siteSummary(site), ...(await submitSitemapsToGscForUser(userId, site.id, sitemapUrl)) };
+}
+
+export async function setYandexTokenForApi(userId: string, siteRef: string, token: string, autoSubmit = true) {
+	const site = await resolveSiteForUser(userId, siteRef);
+	return { site: siteSummary(site), yandex: await setYandexTokenForUser(userId, site.id, token, autoSubmit) };
+}
+
+export async function setBaiduTokenForApi(userId: string, siteRef: string, token: string, autoSubmit = true) {
+	const site = await resolveSiteForUser(userId, siteRef);
+	return { site: siteSummary(site), baidu: await setBaiduTokenForUser(userId, site.id, token, autoSubmit) };
+}
+
+export async function setEngineAutoSubmitForApi(userId: string, siteRef: string, engine: string, enabled: boolean) {
+	const site = await resolveSiteForUser(userId, siteRef);
+	return { site: siteSummary(site), ...(await setEngineAutoSubmitForUser(userId, site.id, engine, enabled)) };
+}
+
+export async function removeEngineForApi(userId: string, siteRef: string, engine: string) {
+	const site = await resolveSiteForUser(userId, siteRef);
+	return { site: siteSummary(site), ...(await removeEngineForUser(userId, site.id, engine)) };
 }

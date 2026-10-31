@@ -34,6 +34,15 @@ Every `site` argument accepts a domain or a site id.
 | `list_submissions` / `check_url` / `list_issues` | Debugging |
 | `recommend_seo_resources` / `list_directories` / `list_seo_tools` / `list_search_engines` | Launch resources & search engine API specs |
 | `set_bing_api_key` / `get_bing_status` / `set_bing_auto_submit` / `remove_bing_api_key` | Bing Webmaster API direct key and auto-submit management |
+| `list_engines` | Every engine for a site: plan availability, connected, auto-submit, last error, quota, setup hint |
+| `get_google_connection` | Google Search Console connection, scopes, properties and per-site property match. Not connected: returns the URL a human must open (OAuth needs a browser) |
+| `inspect_url` | Search Console URL Inspection: Google's verdict, coverage, last crawl, canonical. Updates `indexingStatus`; uses the property's daily quota |
+| `submit_sitemap_to_gsc` | Submit/resubmit the site's sitemaps (or one `sitemapUrl`) to Search Console |
+| `set_yandex_token` / `set_baidu_token` | Connect Yandex Webmaster recrawl / Baidu push for a site (paid plans) |
+| `set_engine_auto_submit` / `remove_engine` | Toggle or disconnect `google_indexing_api`, `yandex`, `baidu` for a site. The Google Indexing API only ever sends JobPosting or livestream pages; others are skipped |
+
+REST equivalents: `GET/PATCH/DELETE /api/v1/sites/:site/engines`, `POST /api/v1/sites/:site/inspect`,
+`GET/POST /api/v1/sites/:site/gsc`, `POST /api/v1/sites/:site/yandex`, `POST /api/v1/sites/:site/baidu`.
 
 Aliases for v0 names: `list_sites`, `sync_sitemap`, `submit_url`, `bulk_submit_urls`,
 `run_diagnostics`, `list_alerts`.

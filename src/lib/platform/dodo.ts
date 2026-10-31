@@ -1,18 +1,7 @@
-import type { ClientOptions } from "dodopayments";
-
-export function getDodoEnvironment(): ClientOptions["environment"] {
-	const environment = process.env.DODO_PAYMENTS_ENVIRONMENT;
-	return environment === "live_mode" ? "live_mode" : "test_mode";
-}
-
-export function getDodoApiKey() {
-	return process.env.DODO_PAYMENTS_API_KEY || "";
-}
-
+/**
+ * LEGACY: DodoPayments config. Only the webhook key is still needed: checkout and the
+ * customer portal were removed, the webhook stays so existing subscribers keep syncing.
+ */
 export function getDodoWebhookKey() {
 	return process.env.DODO_PAYMENTS_WEBHOOK_KEY || "";
-}
-
-export function getDodoReturnUrl() {
-	return process.env.DODO_PAYMENTS_RETURN_URL || "https://indexfast.co/dashboard";
 }

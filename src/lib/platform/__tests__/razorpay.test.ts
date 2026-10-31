@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { hmacSha256Hex, safeEqual, verifyCheckoutSignature, verifyWebhookSignature } from "@/lib/platform/razorpay";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { getPlanCharge, hmacSha256Hex, safeEqual, verifyCheckoutSignature, verifyWebhookSignature } from "@/lib/platform/razorpay";
 
 describe("Razorpay signatures", () => {
 	it("matches a known HMAC-SHA256 vector", async () => {
@@ -29,5 +29,35 @@ describe("Razorpay signatures", () => {
 		expect(safeEqual("abc", "abc")).toBe(true);
 		expect(safeEqual("abc", "abd")).toBe(false);
 		expect(safeEqual("abc", "ab")).toBe(false);
+	});
+});
+
+describe("getPlanCharge", () => {
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
+	it("charges the USD list price in cents by default", () => {
+		vi.stubEnv("RAZORPAY_CURRENCY", "");
+		vi.stubEnv("RAZORPAY_PRICE_PRO", "");
+		expect(getPlanCharge("pro")).toEqual({ amount: 1900, currency: "USD" });
+	});
+
+	it("throws for a non-USD currency without a price override", () => {
+		vi.stubEnv("RAZORPAY_CURRENCY", "inr");
+		vi.stubEnv("RAZORPAY_PRICE_PRO", "");
+		expect(() => getPlanCharge("pro")).toThrow(/not configured for INR/);
+	});
+
+	it("uses the override in minor units for any currency", () => {
+		vi.stubEnv("RAZORPAY_CURRENCY", "INR");
+		vi.stubEnv("RAZORPAY_PRICE_UNLIMITED", "829900");
+		expect(getPlanCharge("unlimited")).toEqual({ amount: 829900, currency: "INR" });
+	});
+
+	it("ignores a non-integer override", () => {
+		vi.stubEnv("RAZORPAY_CURRENCY", "INR");
+		vi.stubEnv("RAZORPAY_PRICE_PRO", "19.5");
+		expect(() => getPlanCharge("pro")).toThrow();
 	});
 });
