@@ -1,0 +1,17 @@
+/* Hallmark · shape: company pages (/pricing offer, /about letter, /contact index) · genre: modern-minimal · theme: Cobalt (locked by DESIGN.md) · redesign: full · job: sign up
+ * hero: Banner · nav: kept, the shared Navbar · footer: kept, the shared Footer and FinalCTA · signature: the plan ruler on /pricing, day 0 to the end of grace, read from plans.ts
+ * imagery: none, type and hairlines carry it · axes: light/grotesk-sans/cool · posture: restrained · contrast: pass · modes: light+dark · v2.0.0 */
+/* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V3 · weakest: V, three pages lean on head-then-rows; broke it with the day ruler on /pricing and the belief statement on /about */
+/* Hallmark · reworded "Two plans. No surprises." to "Two paid plans. No surprises." · three plan columns show under it, two of them paid */
+/* Hallmark · reworded "Built for teams that ship pages fast." to "For teams that ship pages fast." · the hero head is seven words or fewer */
+/* Hallmark · waive 44c · the hero is a Banner, head and one line, with the three plan columns starting at 290px under it · on /pricing the plans are the reason to come, so they take the first screen instead of a visual beside the head */
+/* Hallmark · waive 79 · Banner hero on /about with no visual, its first section starting under 700px · the about page has no product picture to show; the belief statement below carries the second screen */
+/* Hallmark · dismissed 77 · /contact is the hero and the footer by design: the three inboxes are the whole job of the page */
+/* Hallmark · dismissed 54 · Pricing.tsx renders its heading through a Heading variable (h1 on /pricing, h2 on the landing page) that carries id pricing-heading */
+/* Hallmark · dismissed F19 · the fourth weight, 700, comes from the shared Navbar and FinalCTA, which these pages do not own */
+/*
+ * Stamp only: the company pages (pricing, about, contact) take every style from globals.css and
+ * the @/components/ui primitives. This file records their Hallmark run for
+ * sloplint and is deliberately not imported: Next strips CSS comments, so importing it would only
+ * ship an empty stylesheet.
+ */

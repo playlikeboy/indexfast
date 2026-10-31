@@ -1,3 +1,9 @@
+/*
+ * Marketing content data: the single list of free tools and blog posts. /tools, /blog, every post
+ * header and /sitemap.xml read from here, so a post's date and read time live in one place.
+ * Every page under src/app/blog/<slug> must have an entry here or it is orphaned from the index
+ * and the sitemap. Read time is the body word count at about 230 words a minute, rounded up.
+ */
 export type ToolDefinition = {
 	slug: string;
 	aliases?: string[];
@@ -108,7 +114,7 @@ export const blogPosts: BlogPost[] = [
 		description:
 			"A step-by-step guide to auditing your sitemap, running index checks, and recovering dropped pages.",
 		date: "2026-06-01",
-		readTime: "6 min read",
+		readTime: "3 min read",
 		sections: [
 			{
 				heading: "Start with your sitemap",
@@ -130,7 +136,7 @@ export const blogPosts: BlogPost[] = [
 		description:
 			"Comparing IndexNow, Bing Webmaster, and Google's limited Indexing API for modern SEO teams.",
 		date: "2026-05-28",
-		readTime: "8 min read",
+		readTime: "3 min read",
 		sections: [
 			{
 				heading: "IndexNow is a discovery signal",
@@ -152,7 +158,7 @@ export const blogPosts: BlogPost[] = [
 		description:
 			"How to keep sitemap coverage high, spot stale entries, and catch orphaned pages before they get dropped.",
 		date: "2026-05-20",
-		readTime: "7 min read",
+		readTime: "3 min read",
 		sections: [
 			{
 				heading: "Keep sitemap indexes clean",
@@ -174,7 +180,7 @@ export const blogPosts: BlogPost[] = [
 		description:
 			"Common pSEO indexing failures and how to fix them before they tank your organic growth.",
 		date: "2026-05-15",
-		readTime: "9 min read",
+		readTime: "3 min read",
 		sections: [
 			{
 				heading: "Indexing comes before ranking",
@@ -196,7 +202,7 @@ export const blogPosts: BlogPost[] = [
 		description:
 			"Automate your indexing health monitoring with GSC visibility workflows and deindexing alerts.",
 		date: "2026-05-10",
-		readTime: "5 min read",
+		readTime: "3 min read",
 		sections: [
 			{
 				heading: "Start from verified properties",
@@ -218,7 +224,7 @@ export const blogPosts: BlogPost[] = [
 		description:
 			"An in-depth guide answering what the Bing Webmaster Tools API key is, why you need it to automate indexing, and how to configure it step-by-step.",
 		date: "2026-06-05",
-		readTime: "12 min read",
+		readTime: "4 min read",
 		sections: [
 			{
 				heading: "What is the Bing Webmaster Tools API Key?",
@@ -244,7 +250,7 @@ export const blogPosts: BlogPost[] = [
 		description:
 			"An exhaustive guide to the IndexNow protocol, explaining why instant URL submissions are necessary, who supports it, and how to verify your domain key.",
 		date: "2026-06-03",
-		readTime: "14 min read",
+		readTime: "4 min read",
 		sections: [
 			{
 				heading: "What is the IndexNow Protocol?",
@@ -262,6 +268,28 @@ export const blogPosts: BlogPost[] = [
 			{
 				heading: "How to generate, host, and verify your key",
 				body: "Generate an 8-to-128 character alphanumeric key and host it as a text file (e.g., /your-key.txt) returning a 200 OK status code at the root of your domain. Once hosted, register it in IndexFast to enable automatic trigger loops every time a sitemap update is crawled.",
+			},
+		],
+	},
+	{
+		slug: "seo-meta-tags-that-matter",
+		title: "SEO Meta Tags That Actually Matter for Indexing",
+		description:
+			"The meta tags, HTTP headers, and directives that control whether your pages get indexed, and which ones SEOs still waste time on.",
+		date: "2026-05-05",
+		readTime: "3 min read",
+		sections: [
+			{
+				heading: "The meta tags that control indexing",
+				body: "The robots meta tag, the X-Robots-Tag HTTP header, and the canonical link element decide whether a page is indexed. Get these wrong and the page will not appear in search results.",
+			},
+			{
+				heading: "Meta tags that do not matter for indexing",
+				body: "The keywords, author, revisit-after, and expires tags have no effect on indexing in major search engines.",
+			},
+			{
+				heading: "How to audit your meta tags at scale",
+				body: "Spot-check small sites in the browser; for large or dynamic sites, scan pages for noindex signals, verify canonicals, and check X-Robots-Tag headers on non-HTML assets.",
 			},
 		],
 	},

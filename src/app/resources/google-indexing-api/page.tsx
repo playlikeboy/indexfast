@@ -1,6 +1,13 @@
+/*
+ * /resources/google-indexing-api: states the policy IndexFast enforces. Google's Indexing API is
+ * only for JobPosting and livestream BroadcastEvent pages; every other page goes through sitemaps,
+ * diagnostics and Search Console. The page must never read as a promise of Google indexing.
+ */
 import Link from "next/link";
 import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
+import { Container, Panel, buttonClass } from "@/components/ui";
+import { ResourceHeader } from "../_components/ResourceHeader";
 
 export const metadata = {
 	title: "Google Indexing API Guardrails",
@@ -32,39 +39,39 @@ export default function GoogleIndexingApiPage() {
 		<>
 			<Navbar />
 			<main>
-				<section className="py-20 sm:py-28">
-					<div className="mx-auto max-w-6xl px-4 sm:px-6">
-						<Link href="/resources" className="label-mono text-muted hover:text-ink">
+				<ResourceHeader
+					title="Google's Indexing API: jobs and livestreams only"
+					lede="IndexFast sends only job and livestream pages; other pages use sitemaps."
+					actions={
+						<Link href="/resources" className={buttonClass({ variant: "ghost", size: "lg" })}>
 							Back to resources
 						</Link>
-						<h1 className="display mt-4 max-w-3xl text-4xl sm:text-5xl">
-							Google Indexing API is powerful, but{" "}
-							<span className="text-highlight">not for every page.</span>
-						</h1>
-						<p className="mt-5 max-w-2xl text-lg text-muted">
-							IndexFast treats Google's Indexing API as a gated integration for jobs
-							and livestream pages only. For every other page type, the safer path is
-							clean sitemap discovery, diagnostics, GSC, and search-engine-friendly
-							discovery signals.
-						</p>
-						<div className="mt-12 grid gap-px bg-ink/10 md:grid-cols-2">
-							{rules.map((rule) => (
-								<article key={rule.title} className="bg-surface p-6">
-									<h2 className="text-base font-bold uppercase tracking-tight">{rule.title}</h2>
-									<p className="mt-2 text-sm leading-relaxed text-muted">{rule.desc}</p>
-								</article>
+					}
+				/>
+				<section aria-labelledby="rules-heading" className="pb-(--section-gap)">
+					<Container>
+						<h2 id="rules-heading" className="text-section">
+							The rules IndexFast applies
+						</h2>
+						<ol className="mt-10 grid border-t border-border-strong md:grid-cols-2 md:gap-x-16">
+							{rules.map((rule, index) => (
+								<li key={rule.title} className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-2 border-b border-border py-8">
+									<span className="num font-display text-title font-semibold text-muted">{index + 1}</span>
+									<div className="min-w-0">
+										<h3 className="text-title">{rule.title}</h3>
+										<p className="mt-2 max-w-[35em] text-md text-ink-2">{rule.desc}</p>
+									</div>
+								</li>
 							))}
-						</div>
-						<div className="mt-10 border border-ink bg-card p-6">
-							<p className="label-mono">IndexFast guardrail</p>
-							<p className="mt-3 max-w-3xl text-sm leading-relaxed text-muted">
-								The backend helper only marks a page eligible when JSON-LD contains
-								JobPosting or BroadcastEvent with VideoObject. The notification payload
-								is limited to URL_UPDATED and URL_DELETED, and metadata status checks use
-								Google's documented metadata endpoint.
+						</ol>
+						<Panel title="IndexFast guardrail" className="mt-16 max-w-3xl">
+							<p className="text-md text-ink-2">
+								The backend helper only marks a page eligible when JSON-LD contains JobPosting or BroadcastEvent with
+								VideoObject. The notification payload is limited to URL_UPDATED and URL_DELETED, and metadata status
+								checks use Google&apos;s documented metadata endpoint.
 							</p>
-						</div>
-					</div>
+						</Panel>
+					</Container>
 				</section>
 			</main>
 			<Footer />

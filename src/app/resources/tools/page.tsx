@@ -1,6 +1,12 @@
+/*
+ * /resources/tools: curated third-party SEO tools, ordered by priority, as one ruled table so the
+ * category, cost and priority columns compare at a glance. Links go straight to each tool.
+ */
 import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
+import { Badge, Container, Table, Td, Th } from "@/components/ui";
 import { getToolsByPriority } from "@/lib/resources/tools";
+import { ResourceHeader } from "../_components/ResourceHeader";
 
 export const metadata = {
 	title: "Best Free and Paid SEO Tools for Indexing, Sitemaps, and AI Visibility",
@@ -15,32 +21,45 @@ export default function ResourceToolsPage() {
 		<>
 			<Navbar />
 			<main>
-				<section className="py-20 sm:py-28">
-					<div className="mx-auto max-w-6xl px-4 sm:px-6">
-						<p className="label-mono">Third-party SEO tools</p>
-						<h1 className="display mt-3 max-w-3xl text-4xl sm:text-5xl">
-							The best tools to improve indexing, crawlability, and{" "}
-							<span className="text-highlight">AI visibility.</span>
-						</h1>
-						<p className="mt-5 max-w-2xl text-lg text-muted">
-							Use these alongside IndexFast when you need official search data, structured-data validation, performance traces, competitor research, or client reporting.
-						</p>
-						<div className="mt-12 grid gap-px bg-ink/10 sm:grid-cols-2 lg:grid-cols-3">
-							{tools.map((tool) => (
-								<a key={`${tool.name}-${tool.url}`} href={tool.url} className="group bg-surface p-6 transition-colors hover:bg-accent">
-									<div className="flex items-start justify-between gap-3">
-										<h2 className="text-base font-bold group-hover:text-accent-foreground">{tool.name}</h2>
-										<span className="rounded-sm border border-border px-2 py-1 font-mono text-[10px] font-bold uppercase text-muted group-hover:border-accent-foreground/40 group-hover:text-accent-foreground">
-											{tool.priority}
-										</span>
-									</div>
-									<p className="mt-2 text-sm text-muted group-hover:text-accent-foreground/70">{tool.bestFor}</p>
-									<p className="mt-4 font-mono text-xs text-muted group-hover:text-accent-foreground/70">{tool.category} · {tool.cost}</p>
-									<p className="mt-2 text-xs leading-relaxed text-muted group-hover:text-accent-foreground/70">{tool.notes}</p>
-								</a>
-							))}
-						</div>
-					</div>
+				<ResourceHeader
+					title="SEO tools to use alongside IndexFast"
+					lede="Official search data, structured-data checks, performance traces and research, in one list."
+				/>
+				<section aria-label="SEO tools" className="pb-(--section-gap)">
+					<Container>
+						<Table caption="Third-party SEO tools">
+							<thead>
+								<tr>
+									<Th className="sticky left-0 z-(--z-raised) bg-background">Tool</Th>
+									<Th>Priority</Th>
+									<Th>Category</Th>
+									<Th>Cost</Th>
+									<Th>Notes</Th>
+								</tr>
+							</thead>
+							<tbody>
+								{tools.map((tool) => (
+									<tr key={`${tool.name}-${tool.url}`}>
+										<Td className="sticky left-0 z-(--z-raised) bg-background min-w-48 md:min-w-64">
+											<a
+												href={tool.url}
+												className="font-display font-medium text-ink underline decoration-border-strong underline-offset-4 hover:decoration-signal"
+											>
+												{tool.name}
+											</a>
+											<span className="mt-1 block text-ink-2">{tool.bestFor}</span>
+										</Td>
+										<Td>
+											<Badge>{tool.priority}</Badge>
+										</Td>
+										<Td className="text-ink-2">{tool.category}</Td>
+										<Td className="text-ink-2">{tool.cost}</Td>
+										<Td className="min-w-64 text-muted">{tool.notes}</Td>
+									</tr>
+								))}
+							</tbody>
+						</Table>
+					</Container>
 				</section>
 			</main>
 			<Footer />

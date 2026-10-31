@@ -1,6 +1,5 @@
-import { Navbar } from "@/components/marketing/Navbar";
-import { Footer } from "@/components/marketing/Footer";
-import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
+import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
+import { TOOL_LEADS } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -8,7 +7,10 @@ const SITE_URL = "https://indexfast.co";
 const breadcrumbs = [
 	{ name: "Home", url: SITE_URL },
 	{ name: "Free SEO Tools", url: `${SITE_URL}/tools` },
-	{ name: "Google Index Checker", url: `${SITE_URL}/tools/google-index-checker` },
+	{
+		name: "Google Index Checker",
+		url: `${SITE_URL}/tools/google-index-checker`,
+	},
 ];
 
 const toolJsonLd = {
@@ -19,7 +21,7 @@ const toolJsonLd = {
 	operatingSystem: "Web",
 	url: `${SITE_URL}/tools/google-index-checker`,
 	description:
-		"Check if a URL is indexed by Google using live SERP verification. Free, no signup required.",
+		"Find the status, noindex and canonical problems that keep a URL out of Google, then confirm in Search Console. Free, no signup required.",
 	offers: {
 		"@type": "AggregateOffer",
 		lowPrice: "0",
@@ -37,7 +39,7 @@ const faqJsonLd = {
 			name: "How does the Google Index Checker work?",
 			acceptedAnswer: {
 				"@type": "Answer",
-				text: "The tool performs a live Google search using the site: operator and analyzes the first page of results to confirm whether the target URL is currently present in Google's index.",
+				text: "The tool fetches the URL and checks its HTTP status, noindex directives and canonical tag, then links straight to URL Inspection in Google Search Console, the only reliable source for a URL's index status.",
 			},
 		},
 		{
@@ -62,7 +64,7 @@ const faqJsonLd = {
 export const metadata = {
 	title: "Free Google Index Checker | Verify If Google Has Indexed Your URL",
 	description:
-		"Check if any URL is indexed in Google using live SERP verification. Fast, free, no signup required. Use the Google Index Checker to confirm indexing status instantly.",
+		"Check whether Google can index a URL: HTTP status, noindex tags and canonical, with a direct link to URL Inspection in Search Console. Free, no signup required.",
 	keywords: [
 		"google index checker",
 		"check if url is indexed",
@@ -79,64 +81,41 @@ export const metadata = {
 
 export default function GoogleIndexCheckerPage() {
 	return (
-		<>
-			<Navbar />
-			<main>
-				<BreadcrumbJsonLd items={breadcrumbs} />
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(toolJsonLd) }}
-				/>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-				/>
-				<section className="py-20 sm:py-28" aria-labelledby="tool-heading">
-					<div className="mx-auto max-w-3xl px-4 sm:px-6">
-						<p className="label-mono">Free SEO Tool</p>
-						<h1 id="tool-heading" className="display mt-3 text-4xl sm:text-5xl">
-							Google Index{" "}
-							<span className="text-highlight">Checker</span>
-						</h1>
-						<p className="mt-5 max-w-2xl text-lg text-muted">
-							Verify whether Google has indexed a specific URL using live SERP checks.
-							Free. No signup required.
-						</p>
-
-						<ToolRunner toolType="google-index-checker" buttonLabel="Analyze Google Indexability" placeholder="https://example.com/page" />
-
-						<div className="prose prose-muted mt-14 max-w-none space-y-6 text-sm leading-relaxed text-muted">
-							<h2 className="text-base font-bold text-ink">How to check if a URL is indexed</h2>
-							<ol className="list-decimal space-y-2 pl-5">
-								<li>Enter the full URL you want to verify.</li>
-								<li>Submit the form.</li>
-								<li>Review the live SERP result to confirm index status.</li>
-							</ol>
-							<h2 className="text-base font-bold text-ink">What does indexed mean?</h2>
-							<p>
-								A URL is indexed when Google has discovered, crawled, and stored it in its search
-								index. Indexed pages can appear in Google Search results. Pages that are not
-								indexed are invisible to most organic traffic.
-							</p>
-							<h2 className="text-base font-bold text-ink">Common reasons a URL is not indexed</h2>
-							<ul className="list-disc space-y-2 pl-5">
-								<li>The page is too new for Google to discover.</li>
-								<li>Robots.txt or a noindex tag blocks indexing.</li>
-								<li>The URL returns an error, redirect, or 4xx/5xx status.</li>
-								<li>Duplicate or thin content is filtered by Google.</li>
-								<li>The page has no or very few internal or external links.</li>
-							</ul>
-							<h2 className="text-base font-bold text-ink">When to use this tool</h2>
-							<p>
-								Use the Google Index Checker right after publishing a new page, after submitting
-								a URL to Google Search Console, or after launching a programmatic SEO batch to
-								confirm that important pages were actually discovered.
-							</p>
-						</div>
-					</div>
-				</section>
-			</main>
-			<Footer />
-		</>
+		<ToolPage
+			breadcrumbs={breadcrumbs}
+			jsonLd={[toolJsonLd, faqJsonLd]}
+			title="Google index checker"
+			lead={TOOL_LEADS["google-index-checker"]}
+			tool={<ToolRunner toolType="google-index-checker" buttonLabel="Check indexability" placeholder="https://example.com/page" />}
+		>
+			<GuideTopic title="How to check if a URL is indexed">
+				<ol>
+					<li>Enter the full URL you want to verify.</li>
+					<li>Submit the form and review the status, noindex and canonical results.</li>
+					<li>Open the URL in Search Console URL Inspection to confirm index status.</li>
+				</ol>
+			</GuideTopic>
+			<GuideTopic title="What does indexed mean?">
+				<p>
+					A URL is indexed when Google has discovered, crawled and stored it in its search index. Indexed pages can appear in Google Search
+					results. Pages that are not indexed are invisible to most organic traffic.
+				</p>
+			</GuideTopic>
+			<GuideTopic title="Common reasons a URL is not indexed">
+				<ul>
+					<li>The page is too new for Google to discover.</li>
+					<li>Robots.txt or a noindex tag blocks indexing.</li>
+					<li>The URL returns an error, a redirect, or a 4xx or 5xx status.</li>
+					<li>Duplicate or thin content is filtered by Google.</li>
+					<li>The page has few or no internal or external links.</li>
+				</ul>
+			</GuideTopic>
+			<GuideTopic title="When to use this tool">
+				<p>
+					Right after publishing a new page, after submitting a URL in Google Search Console, or after launching a programmatic SEO batch,
+					to confirm nothing technical stops important pages from being indexed.
+				</p>
+			</GuideTopic>
+		</ToolPage>
 	);
 }

@@ -1,6 +1,5 @@
-import { Navbar } from "@/components/marketing/Navbar";
-import { Footer } from "@/components/marketing/Footer";
-import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
+import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
+import { TOOL_LEADS } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -18,8 +17,7 @@ const toolJsonLd = {
 	applicationCategory: "BusinessApplication",
 	operatingSystem: "Web",
 	url: `${SITE_URL}/tools/noindex-tag-checker`,
-	description:
-		"Scan any URL or list of URLs for noindex meta tags and X-Robots-Tag headers. Free noindex tag checker.",
+	description: "Scan any URL or list of URLs for noindex meta tags and X-Robots-Tag headers. Free noindex tag checker.",
 	offers: {
 		"@type": "AggregateOffer",
 		lowPrice: "0",
@@ -53,8 +51,7 @@ const faqJsonLd = {
 
 export const metadata = {
 	title: "Free Noindex Tag Checker | Detect Noindex Meta Tags and X-Robots Headers",
-	description:
-		"Check if a URL uses noindex meta tags or X-Robots-Tag headers. Free noindex tag checker for diagnosing indexing blockers.",
+	description: "Check if a URL uses noindex meta tags or X-Robots-Tag headers. Free noindex tag checker for diagnosing indexing blockers.",
 	keywords: [
 		"noindex tag checker",
 		"noindex checker",
@@ -70,49 +67,30 @@ export const metadata = {
 
 export default function NoindexTagCheckerPage() {
 	return (
-		<>
-			<Navbar />
-			<main>
-				<BreadcrumbJsonLd items={breadcrumbs} />
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(toolJsonLd) }}
-				/>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-				/>
-				<section className="py-20 sm:py-28" aria-labelledby="tool-heading">
-					<div className="mx-auto max-w-3xl px-4 sm:px-6">
-						<p className="label-mono">Free SEO Tool</p>
-						<h1 id="tool-heading" className="display mt-3 text-4xl sm:text-5xl">
-							Noindex Tag{" "}
-							<span className="text-highlight">Checker</span>
-						</h1>
-						<p className="mt-5 max-w-2xl text-lg text-muted">
-							Detect noindex meta tags and X-Robots-Tag headers on any URL. Free. No signup required.
-						</p>
-
-						<ToolRunner toolType="noindex-tag-checker" buttonLabel="Check Noindex Tag" placeholder="https://example.com/page" />
-
-						<div className="prose prose-muted mt-14 max-w-none space-y-6 text-sm leading-relaxed text-muted">
-							<h2 className="text-base font-bold text-ink">What this tool detects</h2>
-							<ul className="list-disc space-y-2 pl-5">
-								<li>&lt;meta name=&quot;robots&quot; content=&quot;noindex&quot;&gt; in the page head.</li>
-								<li>X-Robots-Tag: noindex HTTP response header.</li>
-								<li>Conflicting directives such as index, nofollow combinations.</li>
-							</ul>
-							<h2 className="text-base font-bold text-ink">How noindex affects indexing</h2>
-							<p>
-								Pages with a noindex directive are typically excluded from Google's index. Accidental
-								noindex tags are one of the most common causes of missing pages after a site launch
-								or migration.
-							</p>
-						</div>
-					</div>
-				</section>
-			</main>
-			<Footer />
-		</>
+		<ToolPage
+			breadcrumbs={breadcrumbs}
+			jsonLd={[toolJsonLd, faqJsonLd]}
+			title="Noindex tag checker"
+			lead={TOOL_LEADS["noindex-tag-checker"]}
+			tool={<ToolRunner toolType="noindex-tag-checker" buttonLabel="Check noindex tag" placeholder="https://example.com/page" />}
+		>
+			<GuideTopic title="What this tool detects">
+				<ul>
+					<li>
+						<code>&lt;meta name=&quot;robots&quot; content=&quot;noindex&quot;&gt;</code> in the page head.
+					</li>
+					<li>
+						The <code>X-Robots-Tag: noindex</code> HTTP response header.
+					</li>
+					<li>Conflicting directives such as index and nofollow combinations.</li>
+				</ul>
+			</GuideTopic>
+			<GuideTopic title="How noindex affects indexing">
+				<p>
+					Pages with a noindex directive are typically excluded from Google&apos;s index. Accidental noindex tags are one of the most common
+					causes of missing pages after a site launch or migration.
+				</p>
+			</GuideTopic>
+		</ToolPage>
 	);
 }

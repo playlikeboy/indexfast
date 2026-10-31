@@ -1,7 +1,15 @@
+/*
+ * /resources/directories: the prioritized launch-directory catalog as one ruled table. The
+ * priority filter lives in the URL (?priority=P0..P3) so a filtered view is linkable; the filter
+ * links carry aria-current instead of client state. Figures are counted from the catalog itself.
+ * Submissions stay manual on purpose: the page links out, it never submits on anyone's behalf.
+ */
 import Link from "next/link";
 import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
+import { Badge, Container, Stat, Table, Td, Th, cn } from "@/components/ui";
 import { getDirectoriesByPriority, getDirectoryStats, type DirectoryPriority } from "@/lib/resources/directories";
+import { ResourceHeader } from "../_components/ResourceHeader";
 
 export const metadata = {
 	title: "100+ Startup, SaaS, AI, and SEO Submission Directories",
@@ -24,65 +32,84 @@ export default async function DirectoriesPage({ searchParams }: { searchParams: 
 		<>
 			<Navbar />
 			<main>
-				<section className="py-20 sm:py-28">
-					<div className="mx-auto max-w-6xl px-4 sm:px-6">
-						<p className="label-mono">Submission directories</p>
-						<h1 className="display mt-3 max-w-3xl text-4xl sm:text-5xl">
-							100+ places to submit your startup, SaaS, AI tool, or{" "}
-							<span className="text-highlight">developer product.</span>
-						</h1>
-						<p className="mt-5 max-w-2xl text-lg text-muted">
-							Prioritized by authority, relevance, traffic potential, free/easy access, and AI visibility value. Track these manually; do not spam-submit.
-						</p>
-						<div className="mt-8 flex flex-wrap gap-2">
-							{priorities.map((item) => (
-								<Link
-									key={item}
-									href={item === "all" ? "/resources/directories" : `/resources/directories?priority=${item}`}
-									className={`rounded-md border px-3 py-2 font-mono text-xs font-black uppercase ${
-										(item === "all" && !activePriority) || item === activePriority
-											? "border-accent bg-accent text-accent-foreground"
-											: "border-border bg-surface text-muted hover:text-ink"
-									}`}
-								>
-									{item}
-								</Link>
-							))}
+				<ResourceHeader
+					title="100+ launch directories, ranked"
+					lede="Ranked by authority, relevance, traffic and access. Track them manually; never spam-submit."
+				/>
+				<section aria-labelledby="directory-list" className="pb-(--section-gap)">
+					<Container>
+						<div className="grid grid-cols-2 gap-6 md:grid-cols-4">
+							<Stat label="Total" value={stats.total} />
+							<Stat label="P0" value={stats.p0} />
+							<Stat label="P1" value={stats.p1} />
+							<Stat label="Free" value={stats.free} />
 						</div>
-						<div className="mt-8 grid gap-px bg-ink/10 sm:grid-cols-4">
-							<div className="bg-card p-4"><p className="stat text-3xl">{stats.total}</p><p className="text-xs text-muted">Total</p></div>
-							<div className="bg-card p-4"><p className="stat text-3xl">{stats.p0}</p><p className="text-xs text-muted">P0</p></div>
-							<div className="bg-card p-4"><p className="stat text-3xl">{stats.p1}</p><p className="text-xs text-muted">P1</p></div>
-							<div className="bg-card p-4"><p className="stat text-3xl">{stats.free}</p><p className="text-xs text-muted">Free</p></div>
+						<div className="mt-24 flex flex-wrap items-end justify-between gap-6">
+							<h2 id="directory-list" className="text-section">
+								{activePriority ? `${activePriority} directories` : "Every directory"}
+							</h2>
+							<nav aria-label="Filter by priority" className="flex flex-wrap gap-1 border-b border-border">
+								{priorities.map((item) => {
+									const current = (item === "all" && !activePriority) || item === activePriority;
+									return (
+										<Link
+											key={item}
+											href={item === "all" ? "/resources/directories" : `/resources/directories?priority=${item}`}
+											aria-current={current ? "page" : undefined}
+											className={cn(
+												"-mb-px inline-flex min-h-11 items-center border-b-2 px-3 font-display text-sm font-medium transition-colors duration-(--dur-short)",
+												current ? "border-signal text-ink" : "border-transparent text-muted hover:text-ink",
+											)}
+										>
+											{item === "all" ? "All" : item}
+										</Link>
+									);
+								})}
+							</nav>
 						</div>
-						<div className="mt-12 divide-y divide-border rounded-md border border-border bg-card">
-							{directories.map((directory) => (
-								<article key={`${directory.name}-${directory.url}`} className="grid gap-4 p-5 lg:grid-cols-[1fr_160px_120px] lg:items-center">
-									<div>
-										<div className="flex flex-wrap items-center gap-2">
-											<h2 className="text-base font-bold">{directory.name}</h2>
-											<span className="rounded-sm bg-accent px-2 py-1 font-mono text-[10px] font-bold uppercase text-accent-foreground">
-												{directory.priority}
-											</span>
-											<span className="rounded-sm border border-border px-2 py-1 font-mono text-[10px] font-bold uppercase text-muted">
-												{directory.category}
-											</span>
-										</div>
-										<p className="mt-2 text-sm text-muted">{directory.bestFor}</p>
-										<p className="mt-2 font-mono text-xs text-muted">{directory.submissionNotes}</p>
-									</div>
-									<div className="font-mono text-xs text-muted">
-										<p>Cost: {directory.cost}</p>
-										<p>Review: {directory.reviewRequired ? "yes" : "no"}</p>
-										<p>Effort: {directory.expectedEffort}</p>
-									</div>
-									<a href={directory.url} className="rounded-md border border-ink px-3 py-2 text-center font-mono text-xs font-black uppercase text-ink transition-colors hover:bg-ink hover:text-surface">
-										Open
-									</a>
-								</article>
-							))}
-						</div>
-					</div>
+						<Table caption="Submission directories" className="relative mt-6">
+							<thead>
+								<tr>
+									<Th className="sticky left-0 z-(--z-raised) bg-background">Directory</Th>
+									<Th>Priority</Th>
+									<Th>Category</Th>
+									<Th>Cost</Th>
+									<Th>Review</Th>
+									<Th>Effort</Th>
+									<Th>
+										<span className="visually-hidden">Link</span>
+									</Th>
+								</tr>
+							</thead>
+							<tbody>
+								{directories.map((directory) => (
+									<tr key={`${directory.name}-${directory.url}`}>
+										<Td className="sticky left-0 z-(--z-raised) bg-background min-w-56 md:min-w-72">
+											<span className="block font-display font-medium text-ink">{directory.name}</span>
+											<span className="mt-1 block text-ink-2">{directory.bestFor}</span>
+											<span className="mt-1 block text-muted">{directory.submissionNotes}</span>
+										</Td>
+										<Td>
+											<Badge>{directory.priority}</Badge>
+										</Td>
+										<Td className="text-ink-2">{directory.category}</Td>
+										<Td className="text-ink-2">{directory.cost}</Td>
+										<Td className="text-ink-2">{directory.reviewRequired ? "yes" : "no"}</Td>
+										<Td className="text-ink-2">{directory.expectedEffort}</Td>
+										<Td>
+											<a
+												href={directory.url}
+												aria-label={`Open ${directory.name}`}
+												className="whitespace-nowrap text-ink underline decoration-border-strong underline-offset-4 hover:decoration-signal"
+											>
+												Open
+											</a>
+										</Td>
+									</tr>
+								))}
+							</tbody>
+						</Table>
+					</Container>
 				</section>
 			</main>
 			<Footer />

@@ -15,7 +15,14 @@ Legacy tiers `indie`, `growth`, `agency`, `scale` (Dodo era) are **hidden, not r
 They map to Pro (`indie`, `growth`) or Unlimited (`agency`, `scale`) limits so existing
 subscribers keep working. Never delete them from `PLANS`.
 
-MCP tool calls count toward the monthly quota; `initialize`, `tools/list` and notifications do not.
+MCP `tools/call` and `resources/read` count toward the monthly quota, one unit per entry even
+inside a JSON-RPC batch; `initialize`, listings and notifications do not. Batches are capped at
+20 entries (`MCP_MAX_BATCH` in `http.ts`).
+
+Quota is reserve-then-check (`reserveApiUsage` in `api-keys.ts`): usage rows are inserted
+before the handler runs, and the request is refused with 429 (rows removed) when this month's
+count including them is over quota. Concurrent requests therefore cannot all slip past the
+last unit. The final HTTP status is written back by `finalizeApiUsage`.
 
 ## Why prepaid Orders instead of Razorpay Subscriptions
 
@@ -31,22 +38,40 @@ There is no auto-charge; users get reminders instead.
 3. On success two independent paths call `activatePaidOrder()`:
    - client -> `confirmPaymentAction()` verifies `HMAC_SHA256(order_id|payment_id, key_secret)`;
    - Razorpay -> `POST /api/webhooks/razorpay` verifies `HMAC_SHA256(raw body, webhook secret)`.
-4. `activatePaidOrder()` flips the payment to `paid` with a conditional UPDATE, so the
-   period is granted exactly once, then sets `users.billingTier` and `users.planExpiresAt`.
+4. `activatePaidOrder()` runs one neon-http batch (a single transaction): a conditional
+   UPDATE flips the payment to `paid` (so the period is granted exactly once), one UPDATE on
+   `users` computes the new `planExpiresAt` in SQL from the row's current value, and the
+   result is stamped onto `payments.periodStart` / `periodEnd`.
+5. If an order is already `paid` (the other path won, or an older partial failure),
+   `activatePaidOrder()` self-heals: when the user row does not reflect that payment and holds
+   nothing better (`needsSelfHeal`), it is set to the payment's plan and `periodEnd`.
 
 Webhook events handled: `payment.captured`, `order.paid` (activate), `payment.failed`
-(mark failed), `refund.processed` / `refund.created` (full refund -> `refunded`, entitlement
-recomputed from remaining paid periods). Every event is stored in `billing_events`
-(`event_id = razorpay:<x-razorpay-event-id>`) which also makes replays a no-op.
+(mark failed), `refund.processed` / `refund.created` (full refund, see below). Every event is
+stored in `billing_events` (`event_id = razorpay:<x-razorpay-event-id>`) which makes replays a
+no-op. If processing throws, the ledger row is deleted and the route returns 500, so
+Razorpay's retry is processed instead of being skipped as a duplicate.
+
+### Refunds
+
+A refund is "full" when the payment entity's cumulative `amount_refunded` (fallback: the
+single refund's `amount`) reaches the charged amount; partial refunds change nothing. A full
+refund flips the payment to `refunded` and subtracts exactly that payment's period
+(`periodEnd - periodStart`) from `users.planExpiresAt`, only when `users.billingTier` still
+equals the refunded plan (an admin grant or a different plan is left alone). Both writes are
+one transaction keyed to this call, so `refund.created` + `refund.processed` subtract once.
 
 The Razorpay account may be shared with other apps. Events whose `order_id` is not in
 `payments` are recorded and ignored (200 OK so Razorpay stops retrying).
 
 ## Periods
 
-- Renewing the **same** plan stacks onto the remaining time (`computeNextPeriod`).
-- Switching plan starts immediately (upgrade takes effect on payment).
-- After full expiry the next purchase starts from now.
+Computed in the `users` UPDATE inside `activatePaidOrder()`:
+
+- Renewing the **same** plan while it is still active (`planExpiresAt > now`) extends from
+  `planExpiresAt`.
+- Anything else (different plan, in grace, expired, free) starts from now.
+- Each period is `PLAN_PERIOD_DAYS` (30) and is stored on the payment as `periodStart` / `periodEnd`.
 
 ## Expiry policy (what happens when a plan ends)
 
@@ -70,7 +95,7 @@ RAZORPAY_KEY_ID=            # server + returned to the browser per order
 RAZORPAY_KEY_SECRET=        # server only
 RAZORPAY_WEBHOOK_SECRET=    # webhook signing secret set in the Razorpay dashboard
 NEXT_PUBLIC_RAZORPAY_KEY_ID=
-RAZORPAY_CURRENCY=USD       # optional, default USD
+RAZORPAY_CURRENCY=USD       # optional, default USD; any other currency REQUIRES both RAZORPAY_PRICE_*
 RAZORPAY_PRICE_PRO=         # optional, minor units, overrides 1900 (e.g. INR paise)
 RAZORPAY_PRICE_UNLIMITED=   # optional, minor units, overrides 9900
 ```
@@ -79,13 +104,25 @@ Webhook URL: `https://indexfast.co/api/webhooks/razorpay`. Enable at least
 `payment.captured`, `payment.failed`, `order.paid`, `refund.processed`.
 
 If the Razorpay account cannot accept USD (international payments disabled), set
-`RAZORPAY_CURRENCY=INR` and both `RAZORPAY_PRICE_*` values in paise.
+`RAZORPAY_CURRENCY=INR` and both `RAZORPAY_PRICE_*` values in paise. `getPlanCharge()` throws
+for a non-USD currency without an override, so checkout fails loudly instead of charging the
+USD cent figure as paise (about 1/100 of the price).
 
 ## DodoPayments (hidden)
 
-`/api/checkout`, `/api/customer-portal`, `/api/webhooks/dodo` and `lib/platform/billing.ts`
-remain so legacy subscribers keep syncing. They are not linked anywhere in the UI.
-Do not build new features on them.
+Only `/api/webhooks/dodo`, `lib/platform/billing.ts` and `getDodoWebhookKey()` in
+`lib/platform/dodo.ts` remain, so legacy subscribers keep syncing. The Dodo checkout and
+customer portal routes were removed. Do not build new features on them.
+
+Webhook rules (`recordDodoBillingEvent`, `resolveDodoTierChange`):
+
+- The `billing_events` insert is the idempotency key; a duplicate event id is not reprocessed.
+- The plan comes only from the product id (`getPlanFromDodoProductId`); `metadata.plan` is ignored.
+- `payment.*` events never change the tier.
+- A paid tier is granted only for a `subscription.*` event with status `active`, and sets
+  `planExpiresAt = NULL` (legacy tiers never expire on our side).
+- `subscription.cancelled` / `expired` (or that status) drops to Free only a user still on a
+  legacy tier with null expiry; a Razorpay period or admin grant survives.
 
 ## Support
 

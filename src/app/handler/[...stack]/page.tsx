@@ -1,3 +1,7 @@
+/*
+ * Mount point for every Stack Auth screen (sign in, sign up, account). Stack draws the form with the
+ * Cobalt theme set in layout.tsx; this wrapper only centres it on the page ground.
+ */
 import { StackHandler } from "@stackframe/stack";
 import { stack } from "@/stack";
 
@@ -11,7 +15,7 @@ export default async function HandlerPage(props: HandlerPageProps) {
 	const searchParams = await props.searchParams;
 
 	return (
-		<div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
+		<main className="flex min-h-dvh items-center justify-center bg-background px-(--gutter) py-(--section-gap-s)">
 			<StackHandler
 				app={stack}
 				fullPage={false}
@@ -20,6 +24,6 @@ export default async function HandlerPage(props: HandlerPageProps) {
 					searchParams,
 				}}
 			/>
-		</div>
+		</main>
 	);
 }

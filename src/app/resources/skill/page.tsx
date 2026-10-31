@@ -1,5 +1,12 @@
+/*
+ * /resources/skill: how an AI coding agent installs the IndexFast SKILL.md and connects to the
+ * MCP server. The download is the page's one primary action and sits on the first screen; the
+ * commands use the shared CodeBlock so copy works and reports its result.
+ */
 import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
+import { CodeBlock, Container, buttonClass } from "@/components/ui";
+import { ResourceHeader } from "../_components/ResourceHeader";
 
 export const metadata = {
 	title: "IndexFast SKILL.md for AI Coding Agents",
@@ -7,38 +14,9 @@ export const metadata = {
 		"Install the IndexFast SKILL.md file so AI IDEs and coding agents can operate indexing, sitemap, MCP, CLI, and SEO workflows safely.",
 };
 
-function CodeBlock({ children }: { children: string }) {
-	return (
-		<pre className="overflow-x-auto rounded-md border border-border bg-surface p-4 font-mono text-xs text-ink">
-			<code>{children}</code>
-		</pre>
-	);
-}
+const downloadCommand = `curl -fsSL https://indexfast.co/resources/skill/SKILL.md -o ~/.codex/skills/indexfast/SKILL.md`;
 
-export default function SkillPage() {
-	return (
-		<>
-			<Navbar />
-			<main>
-				<section className="py-20 sm:py-28">
-					<div className="mx-auto max-w-4xl px-4 sm:px-6">
-						<p className="label-mono">Agent skill</p>
-						<h1 className="display mt-3 max-w-3xl text-4xl sm:text-5xl">
-							Install IndexFast into your{" "}
-							<span className="text-highlight">AI coding agent.</span>
-						</h1>
-						<p className="mt-5 max-w-2xl text-lg text-muted">
-							The IndexFast skill teaches AI IDEs how to use the dashboard, API, MCP server, CLI, and safe indexing workflows without guessing.
-						</p>
-
-						<div className="mt-10 space-y-6">
-							<div>
-								<h2 className="text-base font-bold text-ink">Download</h2>
-								<CodeBlock>{`curl -fsSL https://indexfast.co/resources/skill/SKILL.md -o ~/.codex/skills/indexfast/SKILL.md`}</CodeBlock>
-							</div>
-							<div>
-								<h2 className="text-base font-bold text-ink">Use with MCP</h2>
-								<CodeBlock>{`{
+const mcpConfig = `{
   "mcpServers": {
     "indexfast": {
       "type": "streamable-http",
@@ -48,13 +26,37 @@ export default function SkillPage() {
       }
     }
   }
-}`}</CodeBlock>
+}`;
+
+export default function SkillPage() {
+	return (
+		<>
+			<Navbar />
+			<main>
+				<ResourceHeader
+					title="Install IndexFast into your coding agent"
+					lede="The skill teaches AI IDEs the dashboard, API, MCP server and CLI."
+					actions={
+						<a href="/resources/skill/SKILL.md" className={buttonClass({ variant: "primary", size: "lg" })}>
+							Open SKILL.md
+						</a>
+					}
+				/>
+				<section aria-label="Setup" className="pb-(--section-gap)">
+					<Container>
+						<div className="grid gap-10 border-t border-border pt-10 lg:grid-cols-2 lg:gap-16">
+							<div className="min-w-0">
+								<h2 className="text-section">Download</h2>
+								<p className="mt-3 max-w-[35em] text-md text-ink-2">Save the skill where your agent loads skills from.</p>
+								<CodeBlock title="shell" code={downloadCommand} className="mt-6" />
 							</div>
-							<a href="/resources/skill/SKILL.md" className="inline-flex rounded-md border border-accent bg-accent px-5 py-3 font-mono text-xs font-black uppercase text-accent-foreground transition-colors hover:bg-accent-dark">
-								Open SKILL.md
-							</a>
+							<div className="min-w-0">
+								<h2 className="text-section">Use with MCP</h2>
+								<p className="mt-3 max-w-[35em] text-md text-ink-2">Add the server to your MCP client config with an IndexFast API key.</p>
+								<CodeBlock title="mcp.json" code={mcpConfig} className="mt-6" />
+							</div>
 						</div>
-					</div>
+					</Container>
 				</section>
 			</main>
 			<Footer />

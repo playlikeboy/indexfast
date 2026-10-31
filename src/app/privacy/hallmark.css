@@ -1,0 +1,13 @@
+/* Hallmark · shape: Long Document (/privacy, /terms) · genre: modern-minimal · theme: Cobalt (locked by DESIGN.md) · redesign: full · copy: verbatim
+ * hero: Banner · nav: kept, the shared Navbar · footer: kept, the shared Footer · signature: the title and revision date held in view beside the legal text
+ * imagery: none · axes: light/grotesk-sans/cool · posture: restrained · contrast: pass · modes: light+dark · v2.0.0 */
+/* Hallmark · pre-emit critique: P3 H4 E5 S3 R5 V3 · weakest: S, a legal page is a legal page; kept it quiet and gave the text a 65ch measure at 16px instead of 14px */
+/* Hallmark · dropped "How we handle your data." · the eyebrow's plain label "Privacy policy" became the heading and the figurative line went with it */
+/* Hallmark · waive 44c · Banner hero: the sticky title column, with the legal text filling the right columns from the top of the first screen · the measured band is beside the text, not under it */
+/* Hallmark · waive 79 · Banner hero on a Long Document whose text starts at the top of the first screen in the next columns · the empty band under the title column is the margin of a legal page, not a dead hero */
+/* Hallmark · dismissed 77 · a privacy policy or terms page is one document between the nav and the footer */
+/*
+ * Stamp only: /privacy and /terms take every style from globals.css and @/components/ui. Legal
+ * wording is never reworded (copy: verbatim), so the screen word budget reports as a note here.
+ * Deliberately not imported: Next strips CSS comments, so importing it would ship an empty file.
+ */

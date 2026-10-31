@@ -1,6 +1,5 @@
-import { Navbar } from "@/components/marketing/Navbar";
-import { Footer } from "@/components/marketing/Footer";
-import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
+import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
+import { TOOL_LEADS } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -8,7 +7,10 @@ const SITE_URL = "https://indexfast.co";
 const breadcrumbs = [
 	{ name: "Home", url: SITE_URL },
 	{ name: "Free SEO Tools", url: `${SITE_URL}/tools` },
-	{ name: "Sitemap URL Extractor", url: `${SITE_URL}/tools/sitemap-url-extractor` },
+	{
+		name: "Sitemap URL Extractor",
+		url: `${SITE_URL}/tools/sitemap-url-extractor`,
+	},
 ];
 
 const toolJsonLd = {
@@ -18,8 +20,7 @@ const toolJsonLd = {
 	applicationCategory: "BusinessApplication",
 	operatingSystem: "Web",
 	url: `${SITE_URL}/tools/sitemap-url-extractor`,
-	description:
-		"Parse any XML sitemap and extract every URL instantly. Free, no signup required.",
+	description: "Parse any XML sitemap and extract every URL instantly. Free, no signup required.",
 	offers: {
 		"@type": "AggregateOffer",
 		lowPrice: "0",
@@ -70,58 +71,39 @@ export const metadata = {
 
 export default function SitemapUrlExtractorPage() {
 	return (
-		<>
-			<Navbar />
-			<main>
-				<BreadcrumbJsonLd items={breadcrumbs} />
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(toolJsonLd) }}
-				/>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-				/>
-				<section className="py-20 sm:py-28" aria-labelledby="tool-heading">
-					<div className="mx-auto max-w-3xl px-4 sm:px-6">
-						<p className="label-mono">Free SEO Tool</p>
-						<h1 id="tool-heading" className="display mt-3 text-4xl sm:text-5xl">
-							Sitemap URL{" "}
-							<span className="text-highlight">Extractor</span>
-						</h1>
-						<p className="mt-5 max-w-2xl text-lg text-muted">
-							Paste a sitemap URL and instantly extract every page URL contained in it.
-							Free. No signup required.
-						</p>
-
-						<ToolRunner toolType="sitemap-url-extractor" buttonLabel="Extract Sitemap URLs" placeholder="https://example.com/sitemap.xml" />
-
-						<div className="prose prose-muted mt-14 max-w-none space-y-6 text-sm leading-relaxed text-muted">
-							<h2 className="text-base font-bold text-ink">Why sitemap coverage matters</h2>
-							<p>
-								Sitemaps tell search engines which pages exist and should be crawled. Missing or
-								outdated sitemap entries are one of the most common causes of orphaned, unindexed
-								pages.
-							</p>
-							<h2 className="text-base font-bold text-ink">How to use this tool</h2>
-							<ol className="list-decimal space-y-2 pl-5">
-								<li>Find your sitemap URL (usually at /sitemap.xml).</li>
-								<li>Paste it into the tool above.</li>
-								<li>Review the extracted list of URLs.</li>
-								<li>Compare it against your known pages and crawl data.</li>
-							</ol>
-							<h2 className="text-base font-bold text-ink">Common sitemap issues</h2>
-							<ul className="list-disc space-y-2 pl-5">
-								<li>Out-of-date sitemaps that omit new pages.</li>
-								<li>Sitemap indexes pointing to removed sitemaps.</li>
-								<li>Blocked sitemaps in robots.txt.</li>
-								<li>Non-XML or malformed sitemaps rejected by search engines.</li>
-							</ul>
-						</div>
-					</div>
-				</section>
-			</main>
-			<Footer />
-		</>
+		<ToolPage
+			breadcrumbs={breadcrumbs}
+			jsonLd={[toolJsonLd, faqJsonLd]}
+			title="Sitemap URL extractor"
+			lead={TOOL_LEADS["sitemap-url-extractor"]}
+			tool={
+				<ToolRunner toolType="sitemap-url-extractor" buttonLabel="Extract sitemap URLs" placeholder="https://example.com/sitemap.xml" />
+			}
+		>
+			<GuideTopic title="Why sitemap coverage matters">
+				<p>
+					Sitemaps tell search engines which pages exist and should be crawled. Missing or outdated sitemap entries are one of the most
+					common causes of orphaned, unindexed pages.
+				</p>
+			</GuideTopic>
+			<GuideTopic title="How to use this tool">
+				<ol>
+					<li>
+						Find your sitemap URL (usually <code>/sitemap.xml</code>).
+					</li>
+					<li>Paste it into the tool above.</li>
+					<li>Review the extracted URLs and any child sitemaps.</li>
+					<li>Compare the list against your known pages and crawl data.</li>
+				</ol>
+			</GuideTopic>
+			<GuideTopic title="Common sitemap issues">
+				<ul>
+					<li>Out-of-date sitemaps that omit new pages.</li>
+					<li>Sitemap indexes pointing to removed sitemaps.</li>
+					<li>Sitemaps blocked in robots.txt.</li>
+					<li>Non-XML or malformed sitemaps rejected by search engines.</li>
+				</ul>
+			</GuideTopic>
+		</ToolPage>
 	);
 }

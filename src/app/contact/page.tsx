@@ -1,8 +1,14 @@
+/*
+ * /contact: the three real inboxes are the page. Each row is one mailto link naming who reads it,
+ * what to send there, and the address itself, so a visitor can copy it without opening a mail app.
+ * No form: nothing on this page may claim a message was sent.
+ */
 import Link from "next/link";
 import { Mail, MessageSquare, ShieldCheck } from "lucide-react";
 import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
+import { Container } from "@/components/ui";
 import type { Metadata } from "next";
 
 const SITE_URL = "https://indexfast.co";
@@ -54,39 +60,41 @@ export default function ContactPage() {
 						{ name: "Contact", url: `${SITE_URL}/contact` },
 					]}
 				/>
-				<section className="py-20 sm:py-28" aria-labelledby="contact-heading">
-					<div className="mx-auto max-w-5xl px-4 sm:px-6">
-						<p className="label-mono">Contact</p>
-						<h1 id="contact-heading" className="display mt-3 max-w-3xl text-4xl sm:text-5xl">
-							Talk to the team behind{" "}
-							<span className="text-highlight">IndexFast.</span>
-						</h1>
-						<p className="mt-5 max-w-2xl text-lg text-muted">
-							Send us the context, site type, and scale you are working with. We will point you
-							to the right workflow.
-						</p>
-						<div className="mt-12 grid gap-px bg-ink/10 md:grid-cols-3">
+				<section className="pt-(--section-gap-s) pb-(--section-gap)" aria-labelledby="contact-heading">
+					<Container>
+						<div className="grid gap-4 lg:grid-cols-12 lg:items-end lg:gap-8">
+							<h1 id="contact-heading" className="max-w-[16ch] font-display text-display text-ink lg:col-span-7">
+								Talk to the team behind IndexFast.
+							</h1>
+							<p className="max-w-[36ch] text-lead text-ink-2 lg:col-span-4 lg:col-start-9">
+								Send your site type and scale, and we will suggest a workflow.
+							</p>
+						</div>
+						<ul className="mt-16 border-t border-border-strong">
 							{contactPaths.map((path) => {
 								const Icon = path.icon;
+								const address = path.href.replace(/^mailto:/, "");
 
 								return (
-									<Link
-										key={path.href}
-										href={path.href}
-										className="group bg-surface p-6 transition-colors hover:bg-accent"
-									>
-										<Icon className="h-6 w-6 text-ink group-hover:text-accent-foreground" />
-										<h2 className="mt-5 text-base font-bold group-hover:text-accent-foreground">
-											{path.title}
-										</h2>
-										<p className="mt-2 text-sm leading-relaxed text-muted group-hover:text-accent-foreground/70">
-											{path.description}
-										</p>
-									</Link>
+									<li key={path.href} className="border-b border-border">
+										<Link
+											href={path.href}
+											className="group -mx-4 grid gap-2 px-4 py-8 transition-colors duration-(--dur-short) hover:bg-well md:grid-cols-12 md:items-baseline md:gap-8"
+										>
+											<h2 className="flex items-center gap-3 font-display text-title text-ink md:col-span-4">
+												<Icon aria-hidden="true" className="size-5 shrink-0 text-muted" />
+												{path.title}
+											</h2>
+											<p className="text-ink-2 md:col-span-4">{path.description}</p>
+											<span className="text-md break-all text-ink underline decoration-border-strong underline-offset-4 group-hover:decoration-signal md:col-span-4 md:text-right">
+												{address}
+											</span>
+										</Link>
+									</li>
 								);
 							})}
-						</div>
-					</div>
+						</ul>
+					</Container>
 				</section>
 			</main>
 			<Footer />

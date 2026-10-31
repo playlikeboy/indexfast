@@ -2,80 +2,73 @@
  * Marketing pricing. Plans and prices come from src/lib/platform/plans.ts (VISIBLE_PLANS)
  * so the site, dashboard and checkout can never disagree. Checkout happens in the
  * dashboard (/dashboard/billing) via Razorpay; signed-out visitors are sent to sign in first.
+ *
+ * Rendered only on /pricing, where this block is the page's hero and owns its h1 (the landing page
+ * has its own HomePricing). The plans are columns parted by hairlines, not cards:
+ * a tier is emphasised only by its key and one word, never by a different card colour.
  */
 import Link from "next/link";
-import { PLAN_GRACE_DAYS, VISIBLE_PLANS } from "@/lib/platform/plans";
+import { Check } from "lucide-react";
+import { Badge, Container, buttonClass } from "@/components/ui";
+import { PLAN_PERIOD_DAYS, VISIBLE_PLANS } from "@/lib/platform/plans";
 
-export function Pricing({ compact = false }: { compact?: boolean }) {
+// The tier sold as "everything" carries the screen's one primary key; the others are secondary.
+const FEATURED_PLAN_ID = "unlimited";
+
+export function Pricing() {
 	return (
-		<section className={`border-b border-border/40 ${compact ? "py-16 sm:py-20" : "bg-card/20 py-20 sm:py-24"}`} id="pricing" aria-labelledby="pricing-heading">
-			<div className="mx-auto max-w-6xl px-4 sm:px-6">
-				<div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-					<div>
-						<p className="label-mono">Pricing</p>
-						<h2 id="pricing-heading" className={compact ? "display mt-3 max-w-2xl text-3xl sm:text-4xl" : "display mt-3 max-w-2xl text-4xl sm:text-5xl"}>
-							{compact ? "Free to start. $19 when you grow." : <>Two plans. <span className="text-highlight">No surprises.</span></>}
-						</h2>
-						<p className="mt-3 max-w-2xl text-muted">Start free. Pay for 30 days when you need more. No auto-renewal, cancel by simply not renewing.</p>
-					</div>
-					{compact ? (
-						<Link href="/pricing" className="text-sm font-medium text-ink underline underline-offset-4">
-							Plan details
-						</Link>
-					) : null}
-				</div>
+		<section className="pt-16 pb-(--section-gap-s)" id="pricing" aria-labelledby="pricing-heading">
+			<Container>
+				{/* A header of its own: on /pricing it is the banner hero (head and one line), the plans sit under it. */}
+				<header className="grid gap-4 lg:grid-cols-12 lg:items-end lg:gap-8">
+					<h1 id="pricing-heading" className="font-display text-display-s text-ink lg:col-span-7">
+						Two paid plans. No surprises.
+					</h1>
+					<p className="text-lead text-ink-2 lg:col-span-4 lg:col-start-9">
+						Start free. Pay for {PLAN_PERIOD_DAYS} days when you need more.
+					</p>
+				</header>
 
-				<div className="mt-10 grid gap-5 md:grid-cols-3">
+				<div className="mt-10 grid border-t border-border-strong lg:grid-cols-3">
 					{VISIBLE_PLANS.map((plan) => {
-						const highlight = plan.id === "unlimited";
+						const featured = plan.id === FEATURED_PLAN_ID;
+						const paid = plan.priceUsd > 0;
 						return (
-							<article key={plan.id} className={`flex flex-col rounded-lg border p-6 ${highlight ? "border-accent bg-zinc-950 text-zinc-100 dark:bg-zinc-900" : "border-border/70 bg-card/40"}`}>
-								<div className="flex items-center justify-between">
-									<h3 className={`text-sm font-bold uppercase tracking-wide ${highlight ? "text-zinc-100" : "text-ink"}`}>{plan.name}</h3>
-									{highlight ? <span className="rounded-sm bg-accent/15 px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-accent">Everything</span> : null}
+							<article
+								key={plan.id}
+								aria-labelledby={`plan-${plan.id}`}
+								className="flex min-w-0 flex-col gap-4 border-b border-border py-8 lg:border-b-0 lg:border-l lg:px-8 lg:first:border-l-0 lg:first:pl-0 lg:last:pr-0"
+							>
+								<div className="flex items-center justify-between gap-3">
+									<h2 id={`plan-${plan.id}`} className="font-display text-title font-medium text-ink">
+										{plan.name}
+									</h2>
+									{featured ? <Badge>Everything</Badge> : null}
 								</div>
-								<div className="mt-4 flex items-baseline gap-1">
-									<span className={`stat text-4xl ${highlight ? "text-accent" : "text-ink"}`}>${plan.priceUsd}</span>
-									{plan.priceUsd > 0 ? <span className={`text-xs ${highlight ? "text-zinc-400" : "text-muted"}`}>/month</span> : null}
-								</div>
-								<p className={`mt-2 text-sm ${highlight ? "text-zinc-400" : "text-muted"}`}>{plan.tagline}</p>
-								<ul className="mt-5 flex-1 space-y-2.5">
+								<p className="flex items-baseline gap-1">
+									<span className="num font-display text-display-s leading-none font-semibold tracking-display text-ink">${plan.priceUsd}</span>
+									{paid ? <span className="text-sm text-muted">/{PLAN_PERIOD_DAYS} days</span> : null}
+								</p>
+								<p className="text-ink-2">{plan.tagline}</p>
+								<ul className="flex flex-1 flex-col gap-2 border-t border-border pt-4">
 									{plan.features.map((feature) => (
-										<li key={feature} className={`flex items-start gap-2 text-sm ${highlight ? "text-zinc-300" : "text-muted"}`}>
-											<svg width="12" height="12" viewBox="0 0 14 14" fill="none" className={`mt-1 shrink-0 ${highlight ? "text-accent" : "text-ink"}`} aria-hidden="true">
-												<path d="M3 7l3 3 5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-											</svg>
+										<li key={feature} className="flex items-start gap-2 text-ink-2">
+											<Check aria-hidden="true" className="mt-1 size-4 shrink-0 text-muted" />
 											{feature}
 										</li>
 									))}
 								</ul>
 								<Link
-									href={plan.priceUsd > 0 ? "/dashboard/billing" : "/dashboard"}
-									className={`mt-6 inline-flex min-h-10 items-center justify-center rounded-sm px-4 py-2.5 font-mono text-xs font-bold uppercase tracking-wide transition ${
-										highlight ? "bg-accent text-accent-foreground hover:bg-accent-dark" : "border border-border text-ink hover:border-ink"
-									}`}
+									href={paid ? "/dashboard/billing" : "/dashboard"}
+									className={buttonClass({ variant: featured ? "primary" : "secondary", size: "lg", className: "mt-2 w-full" })}
 								>
-									{plan.priceUsd > 0 ? `Get ${plan.name}` : "Start free"}
+									{paid ? `Get ${plan.name}` : "Start free"}
 								</Link>
 							</article>
 						);
 					})}
 				</div>
-
-				{compact ? null : (
-					<div className="mt-10 grid gap-4 text-sm text-muted sm:grid-cols-3">
-						<p>
-							<strong className="text-ink">Prepaid, not subscribed.</strong> Each payment covers 30 days. Renew early and the time stacks.
-						</p>
-						<p>
-							<strong className="text-ink">Gentle expiry.</strong> {PLAN_GRACE_DAYS} days of grace after the end date, then Free. Extra sites pause, nothing is deleted.
-						</p>
-						<p>
-							<strong className="text-ink">Honest.</strong> We speed up discovery through IndexNow and Bing. No one can guarantee Google indexing.
-						</p>
-					</div>
-				)}
-			</div>
+			</Container>
 		</section>
 	);
 }

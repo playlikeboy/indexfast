@@ -1,3 +1,7 @@
+/*
+ * BreadcrumbList JSON-LD for public pages. It renders only a script tag (no UI), so search
+ * engines get the page trail without any visible markup to keep in sync.
+ */
 type BreadcrumbItem = {
 	name: string;
 	url: string;

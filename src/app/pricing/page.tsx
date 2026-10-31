@@ -1,15 +1,21 @@
+/*
+ * /pricing: the offer first (plans from VISIBLE_PLANS as the hero), then how a prepaid period
+ * ends, then the shared close. Prices are never written here; they come from plans.ts.
+ */
 import { Metadata } from "next";
 import { Navbar } from "@/components/marketing/Navbar";
 import { Pricing } from "@/components/marketing/Pricing";
 import { FinalCTA, Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
+import { PLAN_PERIOD_DAYS, PLANS } from "@/lib/platform/plans";
+import { PlanPeriod } from "./PlanPeriod";
 
 const SITE_URL = "https://indexfast.co";
 
+// Same sentence as before, with the prices read from the catalog so search snippets never go stale.
 export const metadata: Metadata = {
 	title: "Pricing | IndexFast",
-	description:
-		"Free, Pro at $19/month, or Unlimited at $99/month. Prepaid 30-day plans with no auto-renewal.",
+	description: `Free, Pro at $${PLANS.pro.priceUsd} per ${PLAN_PERIOD_DAYS} days, or Unlimited at $${PLANS.unlimited.priceUsd} per ${PLAN_PERIOD_DAYS} days. Prepaid ${PLAN_PERIOD_DAYS}-day plans with no auto-renewal.`,
 };
 
 export default function PricingPage() {
@@ -24,6 +30,7 @@ export default function PricingPage() {
 					]}
 				/>
 				<Pricing />
+				<PlanPeriod />
 				<FinalCTA />
 			</main>
 			<Footer />

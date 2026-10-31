@@ -1,3 +1,8 @@
+/*
+ * sitemap.xml: every public, indexable route. It must never list a path robots.ts disallows
+ * (/dashboard, /api/, /login, /signup), or engines get contradictory signals. Tool and blog
+ * routes come from marketing-data so a new entry there is listed automatically.
+ */
 import { MetadataRoute } from "next";
 import { blogPosts, tools } from "@/lib/marketing-data";
 
@@ -88,18 +93,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
 			lastModified: new Date(),
 			changeFrequency: "yearly",
 			priority: 0.3,
-		},
-		{
-			url: `${SITE_URL}/login`,
-			lastModified: new Date(),
-			changeFrequency: "monthly",
-			priority: 0.5,
-		},
-		{
-			url: `${SITE_URL}/signup`,
-			lastModified: new Date(),
-			changeFrequency: "monthly",
-			priority: 0.5,
 		},
 	];
 

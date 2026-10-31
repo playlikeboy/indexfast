@@ -1,4 +1,11 @@
-/** Single source for the visible FAQ and its FAQPage JSON-LD (rendered on the home page). */
+/*
+ * Single source for the visible FAQ and its FAQPage JSON-LD (rendered on the home page), so the
+ * structured data can never claim an answer the page does not show. Keep answers honest: no
+ * Google indexing guarantee.
+ */
+import { Plus } from "lucide-react";
+import { Container } from "@/components/ui";
+
 export const faqs = [
 	{
 		q: "How long does setup take?",
@@ -6,11 +13,11 @@ export const faqs = [
 	},
 	{
 		q: "Which search engines get my pages?",
-		a: "Every engine in the IndexNow network, including Bing, Yandex, Naver, Seznam and Yep. On Pro and Unlimited you can also add a Bing Webmaster API key for direct Bing submissions.",
+		a: "Every engine in the IndexNow network, including Bing, Yandex, Naver, Seznam and Yep, on every plan. On Pro and Unlimited you can also add your own keys for direct Bing Webmaster API, Yandex recrawl and Baidu URL push submissions.",
 	},
 	{
 		q: "Does it work with Google?",
-		a: "Google does not take IndexNow submissions, and nobody can guarantee Google indexing. IndexFast still helps there: it keeps your sitemap monitored and flags noindex, canonical and HTTP problems that stop any engine from indexing a page.",
+		a: "Google does not take IndexNow, and nobody can guarantee Google indexing. Connect Search Console and IndexFast inspects your URLs, resubmits your sitemap and flags noindex, canonical and HTTP problems. The Indexing API is used only for eligible job and livestream pages.",
 	},
 	{
 		q: "Do I need to write code?",
@@ -24,24 +31,23 @@ export const faqs = [
 
 export function FAQ() {
 	return (
-		<section className="py-16 sm:py-20" id="faq" aria-labelledby="faq-heading">
-			<div className="mx-auto max-w-3xl px-4 sm:px-6">
-				<p className="label-mono">FAQ</p>
-				<h2 id="faq-heading" className="display mt-3 text-3xl sm:text-4xl">A few quick answers.</h2>
-				<div className="mt-7 divide-y divide-border/60 border-y border-border/60">
+		<section id="faq" aria-labelledby="faq-heading" className="py-(--section-gap)">
+			<Container className="grid gap-y-12 lg:grid-cols-12 lg:gap-x-(--gap-columns)">
+				<h2 id="faq-heading" className="max-w-[10ch] text-section lg:col-span-4">
+					A few quick answers.
+				</h2>
+				<div className="border-t border-border lg:col-span-8">
 					{faqs.map((faq) => (
-						<details key={faq.q} className="group py-4">
-							<summary className="flex cursor-pointer list-none items-center justify-between gap-5 text-sm font-semibold text-ink transition hover:text-muted [&::-webkit-details-marker]:hidden">
+						<details key={faq.q} className="group border-b border-border">
+							<summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-6 py-6 font-display text-title font-medium transition-colors duration-(--dur-short) hover:text-signal [&::-webkit-details-marker]:hidden">
 								<span>{faq.q}</span>
-								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0 text-muted transition-transform group-open:rotate-45" aria-hidden="true">
-									<path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-								</svg>
+								<Plus aria-hidden="true" className="size-6 shrink-0 text-muted transition-transform duration-(--dur-short) group-open:rotate-45 motion-reduce:transition-none" />
 							</summary>
-							<p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">{faq.a}</p>
+							<p className="max-w-[62ch] pb-6 text-ink-2">{faq.a}</p>
 						</details>
 					))}
 				</div>
-			</div>
+			</Container>
 		</section>
 	);
 }

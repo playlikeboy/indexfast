@@ -1,6 +1,5 @@
-import { Navbar } from "@/components/marketing/Navbar";
-import { Footer } from "@/components/marketing/Footer";
-import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
+import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
+import { TOOL_LEADS } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -8,7 +7,10 @@ const SITE_URL = "https://indexfast.co";
 const breadcrumbs = [
 	{ name: "Home", url: SITE_URL },
 	{ name: "Free SEO Tools", url: `${SITE_URL}/tools` },
-	{ name: "Bing IndexNow Submitter", url: `${SITE_URL}/tools/bing-indexnow-submitter` },
+	{
+		name: "Bing IndexNow Submitter",
+		url: `${SITE_URL}/tools/bing-indexnow-submitter`,
+	},
 ];
 
 const toolJsonLd = {
@@ -18,8 +20,7 @@ const toolJsonLd = {
 	applicationCategory: "BusinessApplication",
 	operatingSystem: "Web",
 	url: `${SITE_URL}/tools/bing-indexnow-submitter`,
-	description:
-		"Submit URLs to Bing and IndexNow-supported search engines via the IndexNow protocol. Free submitter tool.",
+	description: "Submit URLs to Bing and IndexNow-supported search engines via the IndexNow protocol. Free submitter tool.",
 	offers: {
 		"@type": "AggregateOffer",
 		lowPrice: "0",
@@ -55,13 +56,7 @@ export const metadata = {
 	title: "Free Bing IndexNow Submitter | Submit URLs to Bing IndexNow API",
 	description:
 		"Submit up to 10,000 URLs per request via the IndexNow protocol to Bing and Yandex. Free Bing IndexNow submitter for fast discovery.",
-	keywords: [
-		"bing indexnow submitter",
-		"indexnow submitter",
-		"submit urls to bing",
-		"indexnow api submitter",
-		"indexnow url submitter",
-	],
+	keywords: ["bing indexnow submitter", "indexnow submitter", "submit urls to bing", "indexnow api submitter", "indexnow url submitter"],
 	alternates: {
 		canonical: `${SITE_URL}/tools/bing-indexnow-submitter`,
 	},
@@ -69,51 +64,28 @@ export const metadata = {
 
 export default function BingIndexNowSubmitterPage() {
 	return (
-		<>
-			<Navbar />
-			<main>
-				<BreadcrumbJsonLd items={breadcrumbs} />
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(toolJsonLd) }}
-				/>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-				/>
-				<section className="py-20 sm:py-28" aria-labelledby="tool-heading">
-					<div className="mx-auto max-w-3xl px-4 sm:px-6">
-						<p className="label-mono">Free SEO Tool</p>
-						<h1 id="tool-heading" className="display mt-3 text-4xl sm:text-5xl">
-							Bing IndexNow{" "}
-							<span className="text-highlight">Submitter</span>
-						</h1>
-						<p className="mt-5 max-w-2xl text-lg text-muted">
-							Submit URLs to Bing and IndexNow-supported search engines via the IndexNow protocol.
-							Free. No signup required.
-						</p>
-
-						<ToolRunner toolType="bing-indexnow-submitter" buttonLabel="Submit URLs to IndexNow" />
-
-						<div className="prose prose-muted mt-14 max-w-none space-y-6 text-sm leading-relaxed text-muted">
-							<h2 className="text-base font-bold text-ink">How IndexNow submission works</h2>
-							<p>
-								IndexNow lets you push URL changes directly to Bing and supported engines rather
-								than waiting for them to discover the changes through crawling. You send a list of
-								URLs with the action type (urlAdded, urlUpdated, urlDeleted, urlExpired) along
-								with your API key.
-							</p>
-							<h2 className="text-base font-bold text-ink">Best practices</h2>
-							<ul className="list-disc space-y-2 pl-5">
-								<li>Submit only your own verified domains.</li>
-								<li>Batch submissions during low-traffic periods.</li>
-									<li>Confirm your key file is reachable at https://yourdomain.com/{"{key}"}.txt.</li>
-							</ul>
-						</div>
-					</div>
-				</section>
-			</main>
-			<Footer />
-		</>
+		<ToolPage
+			breadcrumbs={breadcrumbs}
+			jsonLd={[toolJsonLd, faqJsonLd]}
+			title="Bing IndexNow submitter"
+			lead={TOOL_LEADS["bing-indexnow-submitter"]}
+			tool={<ToolRunner toolType="bing-indexnow-submitter" buttonLabel="Submit URLs to IndexNow" />}
+		>
+			<GuideTopic title="How IndexNow submission works">
+				<p>
+					IndexNow lets you push URL changes directly to Bing and supported engines rather than waiting for them to discover the changes
+					through crawling. You send your host, your key, the URL of its key file and the list of changed URLs.
+				</p>
+			</GuideTopic>
+			<GuideTopic title="Best practices">
+				<ul>
+					<li>Submit only your own verified domains.</li>
+					<li>Batch submissions during low-traffic periods.</li>
+					<li>
+						Confirm your key file is reachable at <code>https://yourdomain.com/{"{key}"}.txt</code>.
+					</li>
+				</ul>
+			</GuideTopic>
+		</ToolPage>
 	);
 }

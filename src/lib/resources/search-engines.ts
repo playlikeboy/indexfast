@@ -2,6 +2,9 @@
  * Search engine indexing automation and URL submission specifications.
  * Comprehensive research catalog covering protocols, REST APIs, authentication, quotas,
  * restrictions, and setup steps across major search engines worldwide.
+ * `inIndexFast` says what IndexFast does with each method ("live" or "adding"); it is page copy
+ * on /resources/search-engines, so it must never promise that any engine, Google above all,
+ * will index a submitted URL.
  */
 
 export type SubmissionMethodType = "indexnow" | "direct_api" | "inspection_only" | "sitemap_only" | "syndicated";
@@ -21,6 +24,9 @@ export type SearchEngineMethod = {
 	documentationUrl: string;
 	curlExample: string;
 	notes?: string;
+	// What IndexFast does with this method today: "live" ships now, "adding" is in progress.
+	// Notes must never imply that a submission guarantees indexing.
+	inIndexFast?: { status: "live" | "adding"; note: string };
 };
 
 export type SearchEngine = {
@@ -75,6 +81,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
     ]
   }'`,
 				notes: "Created jointly by Microsoft and Yandex. Pinging one IndexNow endpoint shares notifications across all participating search engines.",
+				inIndexFast: { status: "live", note: "Sent automatically for every verified site." },
 			},
 			{
 				name: "Bing Webmaster API (SubmitUrlBatch)",
@@ -97,6 +104,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
     ]
   }'`,
 				notes: "Quota can be queried via GetUrlSubmissionQuota endpoint. IndexFast supports automated submissions through both IndexNow and Bing Webmaster API.",
+				inIndexFast: { status: "live", note: "Optional: connect your own Bing Webmaster API key; submissions use that key’s daily quota." },
 			},
 		],
 		setupGuide: {
@@ -145,6 +153,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
     "type": "URL_UPDATED"
   }'`,
 				notes: "IndexFast enforces safe guardrails for Google Indexing API to protect domains from API quota revocation or algorithmic penalties.",
+				inIndexFast: { status: "adding", note: "Being added as a gated connection: only pages whose JSON-LD contains JobPosting or BroadcastEvent in VideoObject are sent. No other page is ever submitted, and nothing guarantees Google indexes a page." },
 			},
 			{
 				name: "Google Search Console URL Inspection API",
@@ -165,6 +174,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
     "siteUrl": "sc-domain:example.com"
   }'`,
 				notes: "Useful for checking whether Google has indexed a URL and verifying user-declared canonical tags.",
+				inIndexFast: { status: "adding", note: "Being added as a Google Search Console connection over OAuth, to read what Google reports for each URL. It does not request indexing." },
 			},
 		],
 		setupGuide: {
@@ -172,7 +182,8 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 			steps: [
 				"Ensure XML sitemaps are referenced in robots.txt and submitted in Google Search Console.",
 				"Ensure pages return 200 HTTP status, valid canonical link tags, and proper schema markup.",
-				"If your site publishes job listings or livestream broadcasts, you can connect a GCP Service Account with Google Indexing API enabled.",
+				"Connect Google Search Console over OAuth (being added to IndexFast) to read what Google reports for each URL; it does not request indexing.",
+				"If your site publishes job listings or livestream broadcasts, the gated Indexing API connection (being added) sends only those pages.",
 				"For general pages, discovery occurs organically via sitemaps and inbound web links.",
 			],
 		},
@@ -213,6 +224,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
     "urlList": ["https://example.com/page-1"]
   }'`,
 				notes: "Standard IndexNow endpoint; submissions through IndexFast reach Yandex automatically.",
+				inIndexFast: { status: "live", note: "Covered by the IndexNow submissions IndexFast already sends." },
 			},
 			{
 				name: "Yandex.Webmaster API (Recrawl Queue)",
@@ -230,6 +242,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
   -H "Content-Type: application/json" \\
   -d '{"url": "https://example.com/page-1"}'`,
 				notes: "Due to small daily quotas (often just 20 URLs/day), IndexNow is much better suited for automated indexing.",
+				inIndexFast: { status: "adding", note: "Being added as an optional Yandex.Webmaster OAuth connection that queues recrawls within Yandex’s daily quota." },
 			},
 		],
 		setupGuide: {
@@ -238,6 +251,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 				"Add your site in IndexFast and verify your IndexNow key.",
 				"All verified IndexFast sites automatically submit URLs to Yandex through the federated IndexNow protocol.",
 				"Optionally add your site in Yandex.Webmaster (webmaster.yandex.com) to track Russian and CIS search analytics.",
+				"IndexFast is adding an optional Yandex.Webmaster OAuth connection for the recrawl queue, limited to Yandex's daily quota.",
 			],
 		},
 		developerTips: [
@@ -270,6 +284,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 				curlExample: `curl -H 'Content-Type:text/plain' --data-binary $'https://example.com/page-1\\nhttps://example.com/page-2' \\
   "http://data.zz.baidu.com/urls?site=https://example.com&token=YOUR_BAIDU_TOKEN"`,
 				notes: "Returns JSON response: {\"remain\":49990,\"success\":10}. Baidu does not currently participate in IndexNow.",
+				inIndexFast: { status: "adding", note: "Being added: push URLs with your own Baidu site token, for sites verified on the Baidu Search Resource Platform." },
 			},
 		],
 		setupGuide: {
@@ -319,6 +334,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
     "urlList": ["https://example.com/ko/new-post"]
   }'`,
 				notes: "Naver receives notifications from the shared IndexNow pool automatically.",
+				inIndexFast: { status: "live", note: "Covered by the IndexNow submissions IndexFast already sends." },
 			},
 		],
 		setupGuide: {
@@ -365,6 +381,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
     "urlList": ["https://example.com/cz/stranka"]
   }'`,
 				notes: "Submissions to api.indexnow.org or indexnow.seznam.cz are shared with SeznamBot.",
+				inIndexFast: { status: "live", note: "Covered by the IndexNow submissions IndexFast already sends." },
 			},
 		],
 		setupGuide: {

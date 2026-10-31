@@ -1,68 +1,58 @@
+/*
+ * Shared marketing footer (every public page imports it): the wordmark over the real site links
+ * and the legal line. FinalCTA is re-exported here because /pricing and the home page import it
+ * from this module; its source lives in FinalCTA.tsx.
+ */
 import Link from "next/link";
+import { Container } from "@/components/ui";
 import { Logo } from "./Navbar";
 
-export function FinalCTA() {
-	return (
-		<section className="px-4 py-12 sm:px-6 sm:py-16" id="cta" aria-labelledby="cta-heading">
-			<div className="relative mx-auto max-w-6xl overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 p-7 text-zinc-100 sm:p-10 lg:flex lg:items-center lg:justify-between lg:gap-12">
-				<div className="relative">
-					<p className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-accent">Get started</p>
-					<h2 id="cta-heading" className="display mt-3 max-w-2xl text-3xl text-zinc-100 sm:text-4xl">
-						Your next page deserves to be found.
-					</h2>
-					<p className="mt-3 max-w-xl text-sm leading-relaxed text-zinc-400">Add your site in two minutes. Free for one site, no credit card.</p>
-				</div>
-				<div className="relative mt-6 flex shrink-0 flex-col gap-3 sm:flex-row lg:mt-0">
-					<Link href="/signup" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-sm bg-accent px-5 py-3 text-xs font-mono font-bold uppercase tracking-wide text-accent-foreground transition hover:bg-accent-dark">
-						Add your site free <span aria-hidden="true">↗</span>
-					</Link>
-					<Link href="/dashboard/connect" className="inline-flex min-h-11 items-center justify-center rounded-sm border border-zinc-700 px-5 py-3 text-xs font-mono font-bold uppercase tracking-wide text-zinc-200 transition hover:border-zinc-400">
-						Connect MCP
-					</Link>
-				</div>
-			</div>
-		</section>
-	);
-}
+export { FinalCTA } from "./FinalCTA";
+
+const linkClass = "text-ink-2 underline decoration-transparent underline-offset-4 transition-colors duration-(--dur-short) hover:decoration-signal";
 
 export function Footer() {
 	return (
-		<footer className="border-t border-border/60 bg-surface py-9 sm:py-11">
-			<div className="mx-auto max-w-6xl px-4 sm:px-6">
-				<div className="grid gap-8 sm:grid-cols-[1.4fr_1fr_1fr]">
-					<div>
-						<Link href="/" className="inline-flex items-center gap-2.5 text-base font-extrabold tracking-tight text-ink">
-							<Logo />
+		<footer className="border-t border-border">
+			<Container className="py-(--space-2xl)">
+				<div className="grid gap-y-12 lg:grid-cols-12 lg:gap-x-(--gap-columns)">
+					<div className="min-w-0 lg:col-span-6">
+						<Link href="/" className="inline-flex items-center gap-3 font-display text-section font-semibold tracking-display text-ink">
+							<Logo className="size-9" />
 							IndexFast
 						</Link>
-						<p className="mt-3 max-w-xs text-sm leading-relaxed text-muted">Automatic page discovery for sites that ship fast. IndexNow, Bing and MCP in one place.</p>
+						<p className="mt-4 max-w-[40ch] text-ink-2">Automatic page discovery for sites that ship fast. IndexNow, Bing and MCP in one place.</p>
 					</div>
-					<div>
-						<h3 className="text-xs font-bold uppercase tracking-wider text-ink">Product</h3>
-						<ul className="mt-3 space-y-2 text-sm text-muted">
-							<li><a href="#features" className="transition hover:text-ink">Features</a></li>
-							<li><a href="#pricing" className="transition hover:text-ink">Pricing</a></li>
-							<li><Link href="/dashboard" className="transition hover:text-ink">Console</Link></li>
-							<li><Link href="/dashboard/connect" className="transition hover:text-ink">MCP integration</Link></li>
-							<li><Link href="/resources" className="transition hover:text-ink">Resources</Link></li>
+					<nav aria-label="Product" className="lg:col-span-3">
+						<h3 className="font-body text-sm font-medium tracking-normal text-muted">
+							Product
+						</h3>
+						<ul className="mt-4 space-y-3">
+							<li><Link href="/#features" className={linkClass}>Features</Link></li>
+							<li><Link href="/#pricing" className={linkClass}>Pricing</Link></li>
+							<li><Link href="/dashboard" className={linkClass}>Console</Link></li>
+							<li><Link href="/dashboard/connect" className={linkClass}>MCP integration</Link></li>
+							<li><Link href="/resources" className={linkClass}>Resources</Link></li>
 						</ul>
-					</div>
-					<div>
-						<h3 className="text-xs font-bold uppercase tracking-wider text-ink">Explore</h3>
-						<ul className="mt-3 space-y-2 text-sm text-muted">
-							<li><Link href="/tools" className="transition hover:text-ink">Free SEO tools</Link></li>
-							<li><Link href="/blog" className="transition hover:text-ink">Blog</Link></li>
-							<li><Link href="/about" className="transition hover:text-ink">About</Link></li>
-							<li><Link href="/privacy" className="transition hover:text-ink">Privacy</Link></li>
-							<li><Link href="/terms" className="transition hover:text-ink">Terms</Link></li>
+					</nav>
+					<nav aria-label="Explore" className="lg:col-span-3">
+						<h3 className="font-body text-sm font-medium tracking-normal text-muted">
+							Explore
+						</h3>
+						<ul className="mt-4 space-y-3">
+							<li><Link href="/tools" className={linkClass}>Free SEO tools</Link></li>
+							<li><Link href="/blog" className={linkClass}>Blog</Link></li>
+							<li><Link href="/about" className={linkClass}>About</Link></li>
+							<li><Link href="/privacy" className={linkClass}>Privacy</Link></li>
+							<li><Link href="/terms" className={linkClass}>Terms</Link></li>
 						</ul>
-					</div>
+					</nav>
 				</div>
-				<div className="mt-8 flex flex-col gap-2 border-t border-border/50 pt-5 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
-					<span>© {new Date().getFullYear()} IndexFast. All rights reserved.</span>
+				<div className="mt-16 flex flex-col gap-2 border-t border-border pt-6 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
+					<span>© {new Date().getFullYear()} IndexFast</span>
 					<span>Discover. Diagnose. Submit.</span>
 				</div>
-			</div>
+			</Container>
 		</footer>
 	);
 }

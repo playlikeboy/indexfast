@@ -1,8 +1,15 @@
+/*
+ * /resources: the hub for free, no-signup material (directories, engine APIs, third-party tools,
+ * the agent skill, Google API guardrails, MCP setup). A ruled two-column index, not a card grid;
+ * counts come from the resource data so the copy never drifts from what the pages list.
+ */
 import Link from "next/link";
 import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
+import { Container } from "@/components/ui";
 import { getDirectoryStats } from "@/lib/resources/directories";
 import { seoTools } from "@/lib/resources/tools";
+import { ResourceHeader } from "./_components/ResourceHeader";
 
 export const metadata = {
 	title: "Free SEO Resources, Directories, and Agent Tools",
@@ -21,12 +28,12 @@ export default function ResourcesPage() {
 		{
 			href: "/resources/search-engines",
 			title: "Search engine submission APIs",
-			desc: "Comprehensive developer guide to IndexNow, Bing Webmaster API, Google Indexing API, Baidu, and Yandex.",
+			desc: "Developer guide to IndexNow, Bing Webmaster API, Google Search Console, the gated Google Indexing API, Baidu, and Yandex.",
 		},
 		{
 			href: "/resources/tools",
 			title: "Third-party SEO tools",
-			desc: `${seoTools.length} high-quality SEO tools for GSC, schema, crawls, performance, and research.`,
+			desc: `${seoTools.length} SEO tools for GSC, schema, crawls, performance, and research.`,
 		},
 		{
 			href: "/resources/skill",
@@ -36,7 +43,7 @@ export default function ResourcesPage() {
 		{
 			href: "/resources/google-indexing-api",
 			title: "Google Indexing API guardrails",
-			desc: "Understand when Google Indexing API is eligible and when sitemap/GSC workflows are safer.",
+			desc: "When Google's Indexing API is eligible, and when sitemap and GSC workflows are the safer path.",
 		},
 		{
 			href: "/dashboard/connect",
@@ -49,28 +56,25 @@ export default function ResourcesPage() {
 		<>
 			<Navbar />
 			<main>
-				<section className="py-20 sm:py-28">
-					<div className="mx-auto max-w-6xl px-4 sm:px-6">
-						<p className="label-mono">Free resources</p>
-						<h1 className="display mt-3 max-w-3xl text-4xl sm:text-5xl">
-							SEO distribution and indexing resources for{" "}
-							<span className="text-highlight">agentic teams.</span>
-						</h1>
-						<p className="mt-5 max-w-2xl text-lg text-muted">
-							Use these free resources to improve discoverability, prioritize launch submissions, and wire IndexFast into AI IDEs, CLIs, and SEO workflows.
-						</p>
-						<div className="mt-12 grid gap-px bg-ink/10 sm:grid-cols-2">
+				<ResourceHeader
+					title="Free SEO and indexing resources"
+					lede="Prioritize launch submissions and wire IndexFast into AI IDEs and CLIs."
+				/>
+				<section aria-label="Resources" className="pb-(--section-gap)">
+					<Container>
+						<ul className="grid border-t border-border-strong md:grid-cols-2 md:gap-x-16">
 							{cards.map((card) => (
-								<Link key={card.href} href={card.href} className="group bg-surface p-6 transition-colors hover:bg-accent">
-									<h2 className="text-base font-bold group-hover:text-accent-foreground">{card.title}</h2>
-									<p className="mt-2 text-sm leading-relaxed text-muted group-hover:text-accent-foreground/70">{card.desc}</p>
-									<span className="mt-5 inline-flex font-mono text-xs font-bold uppercase text-ink group-hover:text-accent-foreground">
-										Open resource
-									</span>
-								</Link>
+								<li key={card.href} className="border-b border-border">
+									<Link href={card.href} className="group block py-8">
+										<h2 className="text-title font-medium text-ink underline decoration-transparent underline-offset-4 transition-colors duration-(--dur-short) group-hover:decoration-signal">
+											{card.title}
+										</h2>
+										<p className="mt-2 max-w-[35em] text-md text-ink-2">{card.desc}</p>
+									</Link>
+								</li>
 							))}
-						</div>
-					</div>
+						</ul>
+					</Container>
 				</section>
 			</main>
 			<Footer />

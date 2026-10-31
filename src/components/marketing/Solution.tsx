@@ -1,34 +1,71 @@
-export function Solution() {
-	const steps = [
-		{ number: "01", title: "Add your domain", desc: "We find your sitemap and import every URL. Nothing to configure." },
-		{ number: "02", title: "Drop in one file", desc: "Put a tiny key file in public/, or ask your AI editor to do it over MCP." },
-		{ number: "03", title: "Forget about it", desc: "Every hour, new and updated pages are submitted automatically, with retries." },
-	];
+/*
+ * How it works: the three real setup steps beside the product walkthrough video, then the three
+ * things the product does once it runs. Capabilities live here (not in their own section) so each
+ * fact appears once on the page: queue and engine detail belong to SearchEnginesShowcase.
+ * The video is the only footage of the running product we have, so it is shown large in a plain
+ * cut frame (never a drawn browser window). preload="metadata" keeps the 9 MB file off the
+ * critical path; the poster is a still from 4s because mobile browsers paint nothing from
+ * metadata alone, and the #t=4 fragment starts playback on that same frame.
+ */
+import { Container } from "@/components/ui";
 
+const steps = [
+	{ title: "Add your domain", desc: "We find your sitemap and import every URL. Nothing to configure." },
+	{ title: "Drop in one file", desc: "Put a small key file in public/, or ask your AI editor to do it over MCP." },
+	{ title: "Forget about it", desc: "New and updated pages are submitted automatically, with retries." },
+];
+
+const features = [
+	{ title: "Bing Webmaster API + IndexNow", desc: "Broadcast through IndexNow to Bing, Yandex, Naver and Seznam. On Pro and Unlimited, add your Bing Webmaster API key for direct submissions." },
+	{ title: "Agent-native MCP & SKILL.md", desc: "Connect Claude Code, Cursor, Windsurf or VS Code and ask your AI to submit new pages as it ships them." },
+	{ title: "Catch what blocks indexing", desc: "Check any URL for noindex tags, canonical mismatches, redirects and HTTP errors." },
+];
+
+export function Solution() {
 	return (
-		<section className="border-b border-border/40 py-14 sm:py-16" id="workflow" aria-labelledby="workflow-heading">
-			<div className="mx-auto max-w-6xl px-4 sm:px-6">
-				<div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-					<div>
-						<p className="label-mono">How it works</p>
-						<h2 id="workflow-heading" className="display mt-3 max-w-xl text-3xl sm:text-4xl">
+		<section id="workflow" aria-labelledby="workflow-heading" className="py-(--section-gap)">
+			<Container>
+				<div className="grid items-center gap-y-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-x-16">
+					<div className="min-w-0">
+						<h2 id="workflow-heading" className="max-w-[14ch] text-section">
 							Live in two minutes. Then it runs itself.
 						</h2>
+						<ol className="mt-10 border-t border-border">
+							{steps.map((step, index) => (
+								<li key={step.title} className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-4 border-b border-border py-6">
+									<span className="num font-display text-title font-semibold text-muted">{index + 1}</span>
+									<div className="min-w-0">
+										<h3 className="text-title">{step.title}</h3>
+										<p className="mt-2 max-w-[44ch] text-ink-2">{step.desc}</p>
+									</div>
+								</li>
+							))}
+						</ol>
 					</div>
-					<p className="max-w-sm text-sm leading-relaxed text-muted">No crawl budget guessing, no copy-pasting URLs into webmaster tools after every deploy.</p>
+					<div className="ui-cut min-w-0 overflow-hidden bg-code-bg">
+						<video
+							className="block aspect-video w-full"
+							src="/IndexFast-Editorial-v2.mp4#t=4"
+							poster="/IndexFast-Editorial-v2-poster.jpg"
+							controls
+							playsInline
+							preload="metadata"
+							aria-label="IndexFast product walkthrough video"
+						>
+							<a href="/IndexFast-Editorial-v2.mp4">Watch the IndexFast walkthrough</a>
+						</video>
+					</div>
 				</div>
-				<div className="mt-8 grid gap-4 md:grid-cols-3">
-					{steps.map((step) => (
-						<article key={step.number} className="flex gap-4 rounded-lg border border-border/70 bg-card/40 p-5">
-							<span className="font-mono text-xs font-bold text-muted">{step.number}</span>
-							<div>
-								<h3 className="text-base font-bold text-ink">{step.title}</h3>
-								<p className="mt-1.5 text-sm leading-relaxed text-muted">{step.desc}</p>
-							</div>
-						</article>
+				{/* id="features" is the nav and footer anchor for what the product does. */}
+				<ul id="features" aria-label="What IndexFast does" className="mt-24 border-t border-border">
+					{features.map((feature) => (
+						<li key={feature.title} className="grid gap-y-2 border-b border-border py-7 lg:grid-cols-12 lg:gap-x-(--gap-columns)">
+							<h3 className="text-title lg:col-span-5">{feature.title}</h3>
+							<p className="max-w-[60ch] text-ink-2 lg:col-span-7 lg:text-lead">{feature.desc}</p>
+						</li>
 					))}
-				</div>
-			</div>
+				</ul>
+			</Container>
 		</section>
 	);
 }

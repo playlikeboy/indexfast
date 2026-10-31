@@ -1,6 +1,5 @@
-import { Navbar } from "@/components/marketing/Navbar";
-import { Footer } from "@/components/marketing/Footer";
-import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
+import { GuideTerms, GuideTopic, ToolPage } from "@/components/tools/ToolPage";
+import { TOOL_LEADS } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -18,8 +17,7 @@ const toolJsonLd = {
 	applicationCategory: "BusinessApplication",
 	operatingSystem: "Web",
 	url: `${SITE_URL}/tools/http-status-checker`,
-	description:
-		"Check HTTP status codes, redirect chains, and response headers for any URL. Free HTTP status checker.",
+	description: "Check HTTP status codes, redirect chains, and response headers for any URL. Free HTTP status checker.",
 	offers: {
 		"@type": "AggregateOffer",
 		lowPrice: "0",
@@ -70,53 +68,49 @@ export const metadata = {
 
 export default function HttpStatusCheckerPage() {
 	return (
-		<>
-			<Navbar />
-			<main>
-				<BreadcrumbJsonLd items={breadcrumbs} />
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(toolJsonLd) }}
+		<ToolPage
+			breadcrumbs={breadcrumbs}
+			jsonLd={[toolJsonLd, faqJsonLd]}
+			title="HTTP status checker"
+			lead={TOOL_LEADS["http-status-checker"]}
+			tool={<ToolRunner toolType="http-status-checker" buttonLabel="Check HTTP status" placeholder="https://example.com/page" />}
+		>
+			<GuideTopic title="Common status codes and what they mean">
+				<GuideTerms
+					items={[
+						{
+							term: <code>200 OK</code>,
+							meaning: "The page is accessible and can be indexed.",
+						},
+						{
+							term: <code>301 Moved Permanently</code>,
+							meaning: "A permanent redirect; typically passes indexing signals.",
+						},
+						{
+							term: <code>302 Found</code>,
+							meaning: "A temporary redirect; may not pass full indexing signals.",
+						},
+						{
+							term: <code>404 Not Found</code>,
+							meaning: "The page is missing; it will not be indexed.",
+						},
+						{
+							term: <code>410 Gone</code>,
+							meaning: "The page is permanently removed; it should drop from the index.",
+						},
+						{
+							term: <code>5xx Server Error</code>,
+							meaning: "Server issues prevent indexing while the error lasts.",
+						},
+					]}
 				/>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-				/>
-				<section className="py-20 sm:py-28" aria-labelledby="tool-heading">
-					<div className="mx-auto max-w-3xl px-4 sm:px-6">
-						<p className="label-mono">Free SEO Tool</p>
-						<h1 id="tool-heading" className="display mt-3 text-4xl sm:text-5xl">
-							HTTP Status{" "}
-							<span className="text-highlight">Checker</span>
-						</h1>
-						<p className="mt-5 max-w-2xl text-lg text-muted">
-							Verify HTTP status codes, redirect chains, and response headers for any URL.
-							Free. No signup required.
-						</p>
-
-						<ToolRunner toolType="http-status-checker" buttonLabel="Check HTTP Status" placeholder="https://example.com/page" />
-
-						<div className="prose prose-muted mt-14 max-w-none space-y-6 text-sm leading-relaxed text-muted">
-							<h2 className="text-base font-bold text-ink">Common status codes and what they mean</h2>
-							<ul className="list-disc space-y-2 pl-5">
-								<li><strong className="text-ink">200 OK</strong> — The page is accessible and can be indexed.</li>
-								<li><strong className="text-ink">301 Moved Permanently</strong> — A permanent redirect; typically passes indexing signals.</li>
-								<li><strong className="text-ink">302 Found</strong> — A temporary redirect; may not pass full indexing signals.</li>
-								<li><strong className="text-ink">404 Not Found</strong> — The page is missing; it will not be indexed.</li>
-								<li><strong className="text-ink">410 Gone</strong> — The page is permanently removed; it should drop from the index.</li>
-								<li><strong className="text-ink">5xx Server Error</strong> — Server issues prevent indexing during the error period.</li>
-							</ul>
-							<h2 className="text-base font-bold text-ink">Why this matters for indexing</h2>
-							<p>
-								A page returning an error, excessive redirect, or unexpected status code is a common
-								reason pages do not appear in Google. Use the HTTP Status Checker alongside index
-								lookups and canonical checks to catch all technical blockers.
-							</p>
-						</div>
-					</div>
-				</section>
-			</main>
-			<Footer />
-		</>
+			</GuideTopic>
+			<GuideTopic title="Why this matters for indexing">
+				<p>
+					A page returning an error, too many redirects or an unexpected status code is a common reason pages do not appear in Google. Use
+					the HTTP status checker alongside index lookups and canonical checks to catch every technical blocker.
+				</p>
+			</GuideTopic>
+		</ToolPage>
 	);
 }

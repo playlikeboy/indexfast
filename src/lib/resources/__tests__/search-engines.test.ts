@@ -52,6 +52,19 @@ describe("search engines research catalog", () => {
 		expect(baidu?.methods[0]?.authMethod).toBe("token");
 	});
 
+	it("marks the engine connections being added without promising Google indexing", () => {
+		const status = (engine: string, method: string) =>
+			getSearchEngineById(engine)?.methods.find((m) => m.name.includes(method))?.inIndexFast?.status;
+		expect(status("google", "Search Console")).toBe("adding");
+		expect(status("google", "Indexing API")).toBe("adding");
+		expect(status("yandex", "Recrawl")).toBe("adding");
+		expect(status("baidu", "Active Push")).toBe("adding");
+		expect(status("bing", "IndexNow")).toBe("live");
+
+		const notes = getAllSearchEngines().flatMap((e) => e.methods.map((m) => m.inIndexFast?.note ?? ""));
+		expect(notes.some((n) => /guarantee(s|d)? (google )?index/i.test(n) && !/nothing guarantees|does not|never/i.test(n))).toBe(false);
+	});
+
 	it("returns only supported search engines when filtered", () => {
 		const supported = getSupportedSearchEngines();
 		expect(supported.every((e) => e.supportedInIndexFast)).toBe(true);
