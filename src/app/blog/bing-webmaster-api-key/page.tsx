@@ -81,7 +81,7 @@ const faqJsonLd = {
 export const metadata: Metadata = {
 	title: "How to Find and Use your Bing Webmaster API Key",
 	description:
-		"Learn how to generate your Bing Webmaster Tools API key, configure search discovery pipelines, and troubleshoot validation errors to index your pages instantly.",
+		"Learn how to generate your Bing Webmaster Tools API key, configure search discovery pipelines, and troubleshoot validation errors so search engines are notified as soon as your pages change.",
 	keywords: [
 		"bing webmaster api key",
 		"bing api key",
@@ -125,13 +125,13 @@ export default function BingApiKeyPost() {
 				<PostShell
 					slug="bing-webmaster-api-key"
 					category="SEO Guide"
-					title="How to Find and Use your Bing Webmaster API Key"
+					title="How to find and use your Bing Webmaster API key"
 					lede="Looking to automate your URL submissions to Bing? You need an API key. Here is the complete walkthrough on how to generate, verify, and integrate your Bing Webmaster Tools API Key with third-party software like IndexFast."
-					outline={[{"id":"what","label":"What is the Bing Webmaster Tools API Key?"},{"id":"why","label":"Why is it necessary for modern SEO?"},{"id":"who","label":"Who needs to configure this key?"},{"id":"when","label":"When should you rotate or regenerate the key?"},{"id":"where","label":"Where to locate your API Key (Step-by-Step)"},{"id":"how","label":"How to integrate and automate submissions"},{"id":"faq","label":"Frequently Asked Questions (FAQ)"},{"id":"citations","label":"References & Official Citations"}]}
+					outline={[{"id":"what","label":"What is the Bing Webmaster Tools API key?"},{"id":"why","label":"Why is it necessary for modern SEO?"},{"id":"who","label":"Who needs to configure this key?"},{"id":"when","label":"When should you rotate or regenerate the key?"},{"id":"where","label":"Where to find your API key, step by step"},{"id":"how","label":"How to integrate and automate submissions"},{"id":"faq","label":"Frequently asked questions"},{"id":"citations","label":"References and official citations"}]}
 				>
 
 					{/* WHAT */}
-					<h2 id="what">What is the Bing Webmaster Tools API Key?</h2>
+					<h2 id="what">What is the Bing Webmaster Tools API key?</h2>
 					<p>
 						The <strong>Bing Webmaster Tools API Key</strong> is a unique, 32-character hexadecimal credential that identifies your user account to Microsoft's search crawler engine. Unlike standard API tokens that are issued for individual domains, the Bing API key is <strong>user-level</strong>. This means once you generate it, you can use the same key to programmatically manage and submit URLs for every website verified inside your Webmaster Tools account.
 					</p>
@@ -164,7 +164,7 @@ export default function BingApiKeyPost() {
 					<ul>
 						<li><strong>SaaS Founders & developers</strong>: Building programmatic SEO sites that publish hundreds of pages daily.</li>
 						<li><strong>SEO Agencies</strong>: Managing index health for multiple client sites.</li>
-						<li><strong>Marketing teams</strong>: Responsible for launching new campaigns or product catalogs that require instant search visibility.</li>
+						<li><strong>Marketing teams</strong>: Responsible for launching new campaigns or product catalogs that need new pages discovered quickly.</li>
 						<li><strong>Platform operators</strong>: Looking to hook up automated tools (like IndexFast or Cursor MCP servers) to manage indexing pipelines programmatically.</li>
 					</ul>
 
@@ -183,7 +183,7 @@ export default function BingApiKeyPost() {
 					</ul>
 
 					{/* WHERE */}
-					<h2 id="where">Where to locate your API Key (Step-by-Step)</h2>
+					<h2 id="where">Where to find your API key, step by step</h2>
 					<p>
 						Follow these steps to find and generate your key inside the official portal:
 					</p>
@@ -214,9 +214,8 @@ export default function BingApiKeyPost() {
 						To connect your key to IndexFast for automated hourly submissions:
 					</p>
 					<ul>
-						<li>Navigate to your IndexFast Dashboard.</li>
-						<li>Open the <strong>Integrations</strong> tab or select a specific site's settings page.</li>
-						<li>Paste your 32-character API key in the Bing integration input.</li>
+						<li>Open your site in the IndexFast dashboard and choose <strong>Settings</strong>.</li>
+						<li>Find <strong>Bing Webmaster API</strong>, paste your 32-character key and choose <strong>Connect and verify</strong>.</li>
 						<li>IndexFast will automatically run a validation request against Bing's API using:
 							<br />
 							<code>https://ssl.bing.com/webmaster/api.svc/json/GetUrlSubmissionQuota</code>
@@ -225,7 +224,7 @@ export default function BingApiKeyPost() {
 					</ul>
 
 					{/* FAQ */}
-					<h2 id="faq">Frequently Asked Questions (FAQ)</h2>
+					<h2 id="faq">Frequently asked questions</h2>
 					
 					<h3>Q1: Can I use the same API key for multiple websites?</h3>
 					<p>
@@ -239,7 +238,7 @@ export default function BingApiKeyPost() {
 
 					<h3>Q3: How do I know how many URL submissions I have left today?</h3>
 					<p>
-						Bing resets your quota daily. You can view your remaining quota directly in the IndexFast dashboard (under Integrations) or by calling the <code>GetUrlSubmissionQuota</code> API endpoint. For most verified sites, the limit is 10,000 URLs per day.
+						Bing resets your quota daily. You can view your remaining quota on the Bing Webmaster API row in your site's Settings in IndexFast, or by calling the <code>GetUrlSubmissionQuota</code> API endpoint. For most verified sites, the limit is 10,000 URLs per day.
 					</p>
 
 					<h3>Q4: Is the Bing Webmaster API key the same as the IndexNow key?</h3>
@@ -248,7 +247,7 @@ export default function BingApiKeyPost() {
 					</p>
 
 					{/* CITATIONS */}
-					<h2 id="citations">References & Official Citations</h2>
+					<h2 id="citations">References and official citations</h2>
 					<p>
 						For official documentation and further reading, refer to these resources:
 					</p>

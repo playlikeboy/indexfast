@@ -102,7 +102,7 @@ export default function GscAlertsSetupPost() {
 				<PostShell
 					slug="gsc-alerts-setup"
 					category="Google Search Console"
-					title="How to Set Up Google Search Console Alerts for Indexing Issues"
+					title="How to set up Google Search Console alerts for indexing issues"
 					lede="Your site was fine yesterday. Today, 200 pages are missing from Google Search Console. Would you know? Here is how to set up GSC alerts, automate coverage monitoring, and catch deindexing incidents before they destroy your traffic."
 				>
 					<h2>Why relying on manual GSC checks is risky</h2>
@@ -144,7 +144,7 @@ export default function GscAlertsSetupPost() {
 							protocols.
 						</li>
 						<li>
-							<strong>Enable email notifications.</strong> Go to Settings →
+							<strong>Enable email notifications.</strong> Go to Settings, then
 							Email notifications and make sure your email is verified and notifications are
 							enabled.
 						</li>

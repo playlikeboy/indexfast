@@ -1,5 +1,5 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
-import { TOOL_LEADS } from "@/components/tools/tool-leads";
+import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -71,7 +71,7 @@ export default function RobotsTxtCheckerPage() {
 		<ToolPage
 			breadcrumbs={breadcrumbs}
 			jsonLd={[toolJsonLd, faqJsonLd]}
-			title="Robots.txt checker"
+			title={TOOL_NAMES["robots-txt-checker"]}
 			lead={TOOL_LEADS["robots-txt-checker"]}
 			tool={<ToolRunner toolType="robots-txt-checker" buttonLabel="Analyze robots.txt" placeholder="example.com" />}
 		>

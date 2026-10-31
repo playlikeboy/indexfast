@@ -289,11 +289,6 @@
 
 	--font-sans: var(--font-body);
 	--font-mono: var(--font-outlier);
-
-	/* Legacy names kept so unmigrated pages compile; delete after migration. */
-	--color-card: var(--color-paper-2);
-	--color-card-hover: var(--color-paper-3);
-	--color-accent-dark: var(--color-accent-deep);
 }
 
 /* The Floor's base rules, once for the whole product. */
@@ -566,60 +561,4 @@
 		appearance: none;
 		padding-right: var(--space-xl);
 	}
-}
-
-/*
- * ---------------------------------------------------------------------------------------------
- * LEGACY, delete after migration. The retired brutalist utilities and the old dashboard tokens,
- * re-pointed at Cobalt so unmigrated pages keep rendering while they move to src/components/ui.
- * Each one is neutralised toward the Floor (no tracked capitals, no highlighted word).
- * ---------------------------------------------------------------------------------------------
- */
-:root {
-	--app-bg: var(--color-paper);
-	--app-panel: var(--color-panel);
-	--app-subtle: var(--color-paper-2);
-	--app-border: var(--color-rule);
-	--app-text: var(--color-ink);
-	--app-muted: var(--color-muted);
-	--app-ok: var(--color-success);
-	--app-ok-bg: var(--color-success-wash);
-	--app-warn: var(--color-warning);
-	--app-warn-bg: var(--color-warning-wash);
-	--app-bad: var(--color-error);
-	--app-bad-bg: var(--color-error-wash);
-	--chart-1: var(--color-chart-1);
-	--chart-2: var(--color-chart-2);
-	--chart-3: var(--color-chart-3);
-	--grid-line: var(--color-glyph-1);
-	--background: var(--color-paper);
-	--foreground: var(--color-ink);
-}
-.display {
-	font-family: var(--font-display);
-	font-weight: var(--display-weight);
-	letter-spacing: var(--tracking-display);
-	line-height: var(--leading-display);
-}
-.stat {
-	font-family: var(--font-display);
-	font-weight: var(--display-weight);
-	letter-spacing: var(--tracking-display);
-	line-height: 1;
-	font-variant-numeric: tabular-nums;
-}
-.label-mono {
-	font-family: var(--font-body);
-	font-size: var(--text-sm);
-	text-transform: none;
-	letter-spacing: normal;
-	color: var(--color-muted);
-}
-.text-highlight {
-	color: inherit;
-	background: none;
-}
-.bg-grid {
-	background-image: radial-gradient(var(--color-glyph-1) 1px, transparent 1px);
-	background-size: var(--cell-w) var(--cell-h);
 }

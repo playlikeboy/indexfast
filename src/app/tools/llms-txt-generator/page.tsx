@@ -1,5 +1,5 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
-import { TOOL_LEADS } from "@/components/tools/tool-leads";
+import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -35,7 +35,7 @@ const faqJsonLd = {
 			name: "What is llms.txt?",
 			acceptedAnswer: {
 				"@type": "Answer",
-				text: "llms.txt is a plain-text file hosted at the root of a domain that provides structured information about a site's content, purpose, and AI-crawler policies. It helps AI crawlers and LLM indexers understand your site.",
+				text: "llms.txt is a plain-text file hosted at the root of a domain that provides structured information about a site's content and purpose. It helps AI crawlers and LLM indexers understand your site.",
 			},
 		},
 		{
@@ -64,15 +64,15 @@ export default function LlmsTxtGeneratorPage() {
 		<ToolPage
 			breadcrumbs={breadcrumbs}
 			jsonLd={[toolJsonLd, faqJsonLd]}
-			title="llms.txt generator"
+			title={TOOL_NAMES["llms-txt-generator"]}
 			lead={TOOL_LEADS["llms-txt-generator"]}
 			tool={<ToolRunner toolType="llms-txt-generator" buttonLabel="Generate llms.txt" placeholder="example.com" />}
 		>
 			<GuideTopic title="What llms.txt includes">
 				<ul>
-					<li>Site identity and purpose.</li>
-					<li>Main sections and content categories.</li>
-					<li>Optional recommended entry points for AI models.</li>
+					<li>Your site name as the title.</li>
+					<li>A one-line summary of what the site does.</li>
+					<li>A link to your home page.</li>
 				</ul>
 			</GuideTopic>
 			<GuideTopic title="Who should use llms.txt?">

@@ -1,5 +1,5 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
-import { TOOL_LEADS } from "@/components/tools/tool-leads";
+import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -62,7 +62,7 @@ const faqJsonLd = {
 };
 
 export const metadata = {
-	title: "Free Google Index Checker | Verify If Google Has Indexed Your URL",
+	title: "Free Google Index Checker | Find What Blocks Indexing",
 	description:
 		"Check whether Google can index a URL: HTTP status, noindex tags and canonical, with a direct link to URL Inspection in Search Console. Free, no signup required.",
 	keywords: [
@@ -84,7 +84,7 @@ export default function GoogleIndexCheckerPage() {
 		<ToolPage
 			breadcrumbs={breadcrumbs}
 			jsonLd={[toolJsonLd, faqJsonLd]}
-			title="Google index checker"
+			title={TOOL_NAMES["google-index-checker"]}
 			lead={TOOL_LEADS["google-index-checker"]}
 			tool={<ToolRunner toolType="google-index-checker" buttonLabel="Check indexability" placeholder="https://example.com/page" />}
 		>

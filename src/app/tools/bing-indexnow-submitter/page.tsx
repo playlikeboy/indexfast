@@ -1,5 +1,5 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
-import { TOOL_LEADS } from "@/components/tools/tool-leads";
+import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -38,7 +38,7 @@ const faqJsonLd = {
 			name: "What is the IndexNow submitter?",
 			acceptedAnswer: {
 				"@type": "Answer",
-				text: "The Bing IndexNow Submitter sends an HTTP POST request to Bing's IndexNow endpoint with your URLs and API key, notifying supported search engines that the URLs have been created, updated, or deleted.",
+				text: "The Bing IndexNow Submitter sends an HTTP POST request to api.indexnow.org with your URLs and IndexNow key, notifying participating search engines that the URLs have been created, updated, or deleted.",
 			},
 		},
 		{
@@ -55,7 +55,7 @@ const faqJsonLd = {
 export const metadata = {
 	title: "Free Bing IndexNow Submitter | Submit URLs to Bing IndexNow API",
 	description:
-		"Submit up to 10,000 URLs per request via the IndexNow protocol to Bing and Yandex. Free Bing IndexNow submitter for fast discovery.",
+		"Send up to 100 changed URLs per request through IndexNow to Bing and other participating engines. Free, no signup.",
 	keywords: ["bing indexnow submitter", "indexnow submitter", "submit urls to bing", "indexnow api submitter", "indexnow url submitter"],
 	alternates: {
 		canonical: `${SITE_URL}/tools/bing-indexnow-submitter`,
@@ -67,7 +67,7 @@ export default function BingIndexNowSubmitterPage() {
 		<ToolPage
 			breadcrumbs={breadcrumbs}
 			jsonLd={[toolJsonLd, faqJsonLd]}
-			title="Bing IndexNow submitter"
+			title={TOOL_NAMES["bing-indexnow-submitter"]}
 			lead={TOOL_LEADS["bing-indexnow-submitter"]}
 			tool={<ToolRunner toolType="bing-indexnow-submitter" buttonLabel="Submit URLs to IndexNow" />}
 		>
@@ -80,7 +80,7 @@ export default function BingIndexNowSubmitterPage() {
 			<GuideTopic title="Best practices">
 				<ul>
 					<li>Submit only your own verified domains.</li>
-					<li>Batch submissions during low-traffic periods.</li>
+					<li>Submit only URLs that changed; resubmitting unchanged URLs can get you throttled (HTTP 429).</li>
 					<li>
 						Confirm your key file is reachable at <code>https://yourdomain.com/{"{key}"}.txt</code>.
 					</li>

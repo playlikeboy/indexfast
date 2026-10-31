@@ -76,16 +76,19 @@ export default async function DirectoriesPage({ searchParams }: { searchParams: 
 									<Th>Cost</Th>
 									<Th>Review</Th>
 									<Th>Effort</Th>
-									<Th>
-										<span className="visually-hidden">Link</span>
-									</Th>
 								</tr>
 							</thead>
 							<tbody>
 								{directories.map((directory) => (
 									<tr key={`${directory.name}-${directory.url}`}>
 										<Td className="sticky left-0 z-(--z-raised) bg-background min-w-56 md:min-w-72">
-											<span className="block font-display font-medium text-ink">{directory.name}</span>
+											{/* The name is the link so a phone can open a row without scrolling sideways to a last column. */}
+											<a
+												href={directory.url}
+												className="font-display font-medium text-ink underline decoration-border-strong underline-offset-4 hover:decoration-signal"
+											>
+												{directory.name}
+											</a>
 											<span className="mt-1 block text-ink-2">{directory.bestFor}</span>
 											<span className="mt-1 block text-muted">{directory.submissionNotes}</span>
 										</Td>
@@ -96,15 +99,6 @@ export default async function DirectoriesPage({ searchParams }: { searchParams: 
 										<Td className="text-ink-2">{directory.cost}</Td>
 										<Td className="text-ink-2">{directory.reviewRequired ? "yes" : "no"}</Td>
 										<Td className="text-ink-2">{directory.expectedEffort}</Td>
-										<Td>
-											<a
-												href={directory.url}
-												aria-label={`Open ${directory.name}`}
-												className="whitespace-nowrap text-ink underline decoration-border-strong underline-offset-4 hover:decoration-signal"
-											>
-												Open
-											</a>
-										</Td>
 									</tr>
 								))}
 							</tbody>

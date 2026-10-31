@@ -1,5 +1,5 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
-import { TOOL_LEADS } from "@/components/tools/tool-leads";
+import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -67,7 +67,7 @@ export default function IndexNowKeyGeneratorPage() {
 		<ToolPage
 			breadcrumbs={breadcrumbs}
 			jsonLd={[toolJsonLd, faqJsonLd]}
-			title="IndexNow key generator"
+			title={TOOL_NAMES["indexnow-key-generator"]}
 			lead={TOOL_LEADS["indexnow-key-generator"]}
 			tool={<ToolRunner toolType="indexnow-key-generator" buttonLabel="Generate IndexNow key" placeholder="example.com" />}
 		>

@@ -103,7 +103,7 @@ export default function SitemapMonitoringPost() {
 				<PostShell
 					slug="sitemap-monitoring-best-practices"
 					category="Technical SEO"
-					title="Sitemap Monitoring Best Practices for Large Sites in 2026"
+					title="Sitemap monitoring best practices for large sites in 2026"
 					lede="A bad sitemap is worse than no sitemap. Learn how to keep sitemap coverage high, spot stale entries, and catch orphaned pages before they get dropped from the index."
 				>
 					<h2>Why sitemaps matter for large sites</h2>

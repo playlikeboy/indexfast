@@ -33,7 +33,10 @@ const bingCurl = `curl -X POST \\
   -H "Content-Type: application/json" \\
   -d '{"apiKey": "BING_KEY", "autoSubmit": true}'`;
 
-const bingMcp = `call_tool("set_bing_api_key", { site: "example.com", apiKey: "..." })`;
+const bingMcp = `call_tool("set_bing_api_key", {
+  site: "example.com",
+  apiKey: "..."
+})`;
 
 function MethodBlock({ method }: { method: SearchEngineMethod }) {
 	// Entries that start with "None" (e.g. "None (any valid page...)") carry no restriction to warn about.
@@ -90,7 +93,7 @@ function EngineSection({ engine }: { engine: SearchEngine }) {
 		<article id={engine.id} className="scroll-mt-24 border-t border-border-strong pt-12">
 			<div className="flex flex-wrap items-start justify-between gap-6">
 				<div className="min-w-0 max-w-[35em]">
-					<h3 className="text-2xl font-semibold">{engine.name}</h3>
+					<h3 className="text-title">{engine.name}</h3>
 					<p className="mt-2 text-sm text-muted">{engine.marketShare}</p>
 					<p className="mt-4 text-md text-ink-2">{engine.summary}</p>
 				</div>
@@ -144,7 +147,7 @@ export default function SearchEnginesGuidePage() {
 					title="Search engine submission APIs"
 					lede="Protocols, rate limits, auth and content rules for every major engine."
 					actions={
-						<Link href="/resources" className={buttonClass({ variant: "ghost", size: "lg" })}>
+						<Link href="/resources" className="text-md text-ink underline decoration-border-strong underline-offset-4 hover:decoration-signal">
 							All resources
 						</Link>
 					}
@@ -225,13 +228,14 @@ export default function SearchEnginesGuidePage() {
 								API key for direct, authenticated batch submissions within their site&apos;s Bing daily quota.
 							</p>
 						</div>
-						<ol className="mt-16 grid gap-12 lg:grid-cols-3 lg:gap-10">
-							<li className="min-w-0">
+						{/* Two columns, not three: the curl and MCP snippets clip in a third-width column. */}
+						<ol className="mt-16 grid gap-12 lg:grid-cols-2 lg:gap-x-16">
+							<li className="min-w-0 lg:col-span-2 lg:max-w-[35em]">
 								<span className="num font-display text-title font-semibold text-muted">1</span>
 								<h3 className="mt-2 text-title">Dashboard, no code</h3>
 								<p className="mt-3 text-md text-ink-2">
 									Open your site in the IndexFast dashboard, then Settings, then Bing Webmaster API. Paste your key, choose
-									Connect &amp; Verify, and enable auto-submit.
+									Connect and verify, and enable auto-submit.
 								</p>
 							</li>
 							<li className="min-w-0">

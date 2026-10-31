@@ -1,5 +1,5 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
-import { TOOL_LEADS } from "@/components/tools/tool-leads";
+import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -20,7 +20,7 @@ const toolJsonLd = {
 	applicationCategory: "BusinessApplication",
 	operatingSystem: "Web",
 	url: `${SITE_URL}/tools/sitemap-url-extractor`,
-	description: "Parse any XML sitemap and extract every URL instantly. Free, no signup required.",
+	description: "Lists the page URLs in one sitemap (first 500 shown) and links any child sitemaps in an index. Free, no signup required.",
 	offers: {
 		"@type": "AggregateOffer",
 		lowPrice: "0",
@@ -38,7 +38,7 @@ const faqJsonLd = {
 			name: "What formats does this tool support?",
 			acceptedAnswer: {
 				"@type": "Answer",
-				text: "The Sitemap URL Extractor works with standard XML sitemaps (sitemap.xml) and sitemap index files. Paste the sitemap URL to extract all contained URLs.",
+				text: "The Sitemap URL Extractor reads standard XML sitemaps (sitemap.xml) and sitemap index files. Lists the page URLs in one sitemap (first 500 shown) and links any child sitemaps in an index. It does not open child sitemaps for you; paste a child sitemap URL to list its pages.",
 			},
 		},
 		{
@@ -53,9 +53,9 @@ const faqJsonLd = {
 };
 
 export const metadata = {
-	title: "Free Sitemap URL Extractor | Parse Sitemap.xml and List All URLs",
+	title: "Free Sitemap URL Extractor | List the URLs in a Sitemap.xml",
 	description:
-		"Extract every URL from any sitemap.xml instantly with IndexFast's free sitemap URL extractor. Works with sitemap indexes and nested sitemaps.",
+		"Lists the page URLs in one sitemap (first 500 shown) and links any child sitemaps in an index. Free, no signup required.",
 	keywords: [
 		"sitemap url extractor",
 		"parse sitemap",
@@ -74,7 +74,7 @@ export default function SitemapUrlExtractorPage() {
 		<ToolPage
 			breadcrumbs={breadcrumbs}
 			jsonLd={[toolJsonLd, faqJsonLd]}
-			title="Sitemap URL extractor"
+			title={TOOL_NAMES["sitemap-url-extractor"]}
 			lead={TOOL_LEADS["sitemap-url-extractor"]}
 			tool={
 				<ToolRunner toolType="sitemap-url-extractor" buttonLabel="Extract sitemap URLs" placeholder="https://example.com/sitemap.xml" />

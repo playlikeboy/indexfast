@@ -103,7 +103,7 @@ export default function IndexNowVsIndexingApiPost() {
 				<PostShell
 					slug="indexnow-vs-indexing-api"
 					category="SEO Guide"
-					title="IndexNow vs. Google's Indexing API: What Actually Works in 2026"
+					title="IndexNow vs. Google's Indexing API: what actually works in 2026"
 					lede="Everyone wants faster Google indexing. The problem? Google's official Indexing API is locked to job postings and events, while IndexNow is open to everyone. Here is a practical breakdown of what each tool actually does, what it does not do, and how to combine them for the best results."
 				>
 					<h2>The indexing discovery problem</h2>

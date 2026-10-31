@@ -65,7 +65,7 @@ function Facts({ rows }: { rows: Array<{ label: string; value: ReactNode; mono?:
 	return (
 		<dl className="divide-y divide-border border-y border-border text-sm">
 			{rows.map((row) => (
-				<div key={row.label} className="grid gap-1 py-2.5 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)] sm:gap-4">
+				<div key={row.label} className="grid gap-1 py-3 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)] sm:gap-4">
 					<dt className="text-muted">{row.label}</dt>
 					<dd className={row.mono ? "min-w-0 font-mono break-all text-ink" : "min-w-0 break-words text-ink"}>{row.value}</dd>
 				</div>
@@ -77,9 +77,9 @@ function Facts({ rows }: { rows: Array<{ label: string; value: ReactNode; mono?:
 function Blockers({ items }: { items: string[] }) {
 	if (items.length === 0) return <Status tone="success">No blockers found</Status>;
 	return (
-		<ul className="space-y-1.5">
+		<ul className="space-y-2">
 			{items.map((b) => (
-				<li key={b} className="flex items-start gap-1.5 text-sm text-danger">
+				<li key={b} className="flex items-start gap-2 text-sm text-danger">
 					<Status tone="danger" className="whitespace-normal">
 						{b}
 					</Status>
@@ -104,7 +104,7 @@ function ExternalLinkText({ href, children }: { href: string; children: ReactNod
 
 function KeyResult({ r }: { r: Ok<typeof generateIndexNowKeyTool> }) {
 	return (
-		<div className="space-y-5">
+		<div className="space-y-6">
 			<CodeBlock title={r.fileName} code={r.key} />
 			<Facts
 				rows={[
@@ -115,7 +115,7 @@ function KeyResult({ r }: { r: Ok<typeof generateIndexNowKeyTool> }) {
 					},
 				]}
 			/>
-			<ol className="list-decimal space-y-2 pl-5 text-sm text-ink-2">
+			<ol className="list-decimal space-y-2 pl-6 text-sm text-ink-2">
 				<li>
 					Create a file named <code className="font-mono text-ink">{r.fileName}</code> containing only the key.
 				</li>
@@ -128,7 +128,7 @@ function KeyResult({ r }: { r: Ok<typeof generateIndexNowKeyTool> }) {
 
 function HttpResult({ r }: { r: Ok<typeof checkHttpStatusTool> }) {
 	return (
-		<div className="space-y-5">
+		<div className="space-y-6">
 			<div className="flex flex-wrap items-end gap-x-6 gap-y-2">
 				<p className="num font-display text-display-s leading-none font-semibold">{r.status}</p>
 				<Status tone={httpTone(r.status)}>HTTP {r.status}</Status>
@@ -167,7 +167,7 @@ function HttpResult({ r }: { r: Ok<typeof checkHttpStatusTool> }) {
 
 function RobotsResult({ r }: { r: Ok<typeof checkRobotsTxtTool> }) {
 	return (
-		<div className="space-y-5">
+		<div className="space-y-6">
 			<Status tone={r.exists ? "success" : "info"} className="whitespace-normal">
 				{r.message}
 			</Status>
@@ -223,10 +223,10 @@ function PageDiagnosticsResult({
 	rows.push({ label: "Blockers", value: <Blockers items={r.blockers} /> });
 
 	return (
-		<div className="space-y-5">
+		<div className="space-y-6">
 			<Facts rows={rows} />
 			{"gscInspectUrl" in r ? (
-				<div className="space-y-4 rounded-(--radius-card) bg-well p-5">
+				<div className="space-y-4 rounded-(--radius-card) bg-well p-6">
 					<p className="text-sm text-ink-2">{r.truthNote}</p>
 					<a href={r.gscInspectUrl} target="_blank" rel="noreferrer" className={buttonClass({ size: "md" })}>
 						Inspect in Search Console
@@ -279,7 +279,7 @@ function AiCrawlerResult({ r }: { r: Ok<typeof checkAiCrawlerTool> }) {
 
 function SitemapResult({ r }: { r: Ok<typeof extractSitemapUrlsTool> }) {
 	return (
-		<div className="space-y-5">
+		<div className="space-y-6">
 			<div className="grid grid-cols-2 gap-4">
 				<Stat label="Page URLs" value={r.urlCount} hint={r.urlCount > r.urls.length ? `First ${r.urls.length} listed` : undefined} />
 				<Stat label="Child sitemaps" value={r.childSitemaps.length} />
@@ -322,20 +322,24 @@ const BULK_TONE: Record<string, StatusTone> = {
 	pass: "success",
 	warn: "warning",
 	fail: "danger",
+	skipped: "info",
 };
 const BULK_LABEL: Record<string, string> = {
 	pass: "Pass",
 	warn: "Warn",
 	fail: "Fail",
+	skipped: "Not checked",
 };
 
 function BulkResult({ r }: { r: Ok<typeof checkBulkIndexTool> }) {
 	return (
-		<div className="space-y-5">
-			<div className="grid grid-cols-3 gap-4">
+		<div className="space-y-6">
+			<div className={r.skipped > 0 ? "grid grid-cols-2 gap-4 sm:grid-cols-4" : "grid grid-cols-3 gap-4"}>
 				<Stat label="Pass" value={r.passed} />
 				<Stat label="Warn" value={r.warned} />
 				<Stat label="Fail" value={r.failed} />
+				{/* Unchecked URLs are not broken pages, so they get their own count, never Fail's. */}
+				{r.skipped > 0 ? <Stat label="Not checked" value={r.skipped} /> : null}
 			</div>
 			<Table caption="Bulk check results">
 				<thead>
@@ -365,7 +369,7 @@ function BulkResult({ r }: { r: Ok<typeof checkBulkIndexTool> }) {
 
 function SubmitResult({ r }: { r: Ok<typeof submitIndexNowTool> }) {
 	return (
-		<div className="space-y-5">
+		<div className="space-y-6">
 			<Status tone="success" className="whitespace-normal">
 				{r.message}
 			</Status>
@@ -413,6 +417,10 @@ function ResultBody({ toolType, result }: { toolType: ToolType; result: ToolOutp
 			return <BulkResult r={result as Ok<typeof checkBulkIndexTool>} />;
 		case "bing-indexnow-submitter":
 			return <SubmitResult r={result as Ok<typeof submitIndexNowTool>} />;
+		default: {
+			const unreachable: never = toolType;
+			return unreachable;
+		}
 	}
 }
 
@@ -439,7 +447,7 @@ export function ToolResult({
 	};
 
 	return (
-		<div className="space-y-5">
+		<div className="space-y-6">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<h2 ref={headingRef} tabIndex={-1} className="text-title">
 					Result

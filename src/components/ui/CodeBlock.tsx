@@ -41,7 +41,7 @@ export function CodeBlock({ code, title, className }: { code: string; title?: st
 				<button
 					type="button"
 					onClick={copy}
-					className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-[4px] px-2 font-display text-xs font-medium text-code-fg transition-colors duration-(--dur-short) hover:bg-code-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:translate-y-px disabled:cursor-not-allowed disabled:opacity-55"
+					className="relative inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-[4px] before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] px-2 font-display text-xs font-medium text-code-fg transition-colors duration-(--dur-short) hover:bg-code-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:translate-y-px disabled:cursor-not-allowed disabled:opacity-55"
 				>
 					{state === "copied" ? <Check aria-hidden="true" className="size-3.5" /> : <Copy aria-hidden="true" className="size-3.5" />}
 					<span aria-live="polite">{label}</span>

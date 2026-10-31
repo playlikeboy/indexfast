@@ -1,5 +1,5 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
-import { TOOL_LEADS } from "@/components/tools/tool-leads";
+import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -50,7 +50,7 @@ const faqJsonLd = {
 };
 
 export const metadata = {
-	title: "Free Bulk Index Checker | Check Multiple URLs on Google at Once",
+	title: "Free Bulk Index Checker | Check 20 URLs for Indexing Blockers",
 	description:
 		"Check up to 20 URLs at once for the status, noindex and canonical problems that keep pages out of Google. Free bulk checker, no signup required.",
 	keywords: [
@@ -70,7 +70,7 @@ export default function BulkIndexCheckerPage() {
 		<ToolPage
 			breadcrumbs={breadcrumbs}
 			jsonLd={[toolJsonLd, faqJsonLd]}
-			title="Bulk index checker"
+			title={TOOL_NAMES["bulk-index-checker"]}
 			lead={TOOL_LEADS["bulk-index-checker"]}
 			tool={<ToolRunner toolType="bulk-index-checker" buttonLabel="Run bulk check" />}
 		>

@@ -110,7 +110,7 @@ export const tools: ToolDefinition[] = [
 export const blogPosts: BlogPost[] = [
 	{
 		slug: "find-unindexed-pages",
-		title: "How to Find Unindexed Pages in 2026",
+		title: "How to find unindexed pages in 2026",
 		description:
 			"A step-by-step guide to auditing your sitemap, running index checks, and recovering dropped pages.",
 		date: "2026-06-01",
@@ -132,7 +132,7 @@ export const blogPosts: BlogPost[] = [
 	},
 	{
 		slug: "indexnow-vs-indexing-api",
-		title: "IndexNow vs. Google's Indexing API: What Actually Works",
+		title: "IndexNow vs. Google's Indexing API: what actually works",
 		description:
 			"Comparing IndexNow, Bing Webmaster, and Google's limited Indexing API for modern SEO teams.",
 		date: "2026-05-28",
@@ -154,7 +154,7 @@ export const blogPosts: BlogPost[] = [
 	},
 	{
 		slug: "sitemap-monitoring-best-practices",
-		title: "Sitemap Monitoring Best Practices for Large Sites",
+		title: "Sitemap monitoring best practices for large sites",
 		description:
 			"How to keep sitemap coverage high, spot stale entries, and catch orphaned pages before they get dropped.",
 		date: "2026-05-20",
@@ -176,7 +176,7 @@ export const blogPosts: BlogPost[] = [
 	},
 	{
 		slug: "pseo-pages-not-ranking",
-		title: "Why Your Programmatic SEO Pages Are Not Ranking",
+		title: "Why your programmatic SEO pages are not ranking",
 		description:
 			"Common pSEO indexing failures and how to fix them before they tank your organic growth.",
 		date: "2026-05-15",
@@ -198,7 +198,7 @@ export const blogPosts: BlogPost[] = [
 	},
 	{
 		slug: "gsc-alerts-setup",
-		title: "How to Set Up Google Search Console Alerts",
+		title: "How to set up Google Search Console alerts",
 		description:
 			"Automate your indexing health monitoring with GSC visibility workflows and deindexing alerts.",
 		date: "2026-05-10",
@@ -220,7 +220,7 @@ export const blogPosts: BlogPost[] = [
 	},
 	{
 		slug: "bing-webmaster-api-key",
-		title: "How to Find and Use your Bing Webmaster API Key",
+		title: "How to find and use your Bing Webmaster API key",
 		description:
 			"An in-depth guide answering what the Bing Webmaster Tools API key is, why you need it to automate indexing, and how to configure it step-by-step.",
 		date: "2026-06-05",
@@ -232,7 +232,7 @@ export const blogPosts: BlogPost[] = [
 			},
 			{
 				heading: "Why is it necessary for automated SEO?",
-				body: "Standard search engine discovery can take days or weeks for crawlers to naturally reach your updated pages. By utilizing the API key, platforms like IndexFast can instantly notify Bing of sitemap changes and manually queue priority URLs, drastically decreasing time-to-index and boosting search visibility.",
+				body: "Standard search engine discovery can take days or weeks for crawlers to naturally reach your updated pages. By utilizing the API key, platforms like IndexFast can notify Bing of sitemap changes immediately and queue priority URLs by hand. Bing still decides when to crawl and whether to index.",
 			},
 			{
 				heading: "How to find and generate your key",
@@ -246,7 +246,7 @@ export const blogPosts: BlogPost[] = [
 	},
 	{
 		slug: "indexnow-key-setup",
-		title: "How to Set Up and Verify an IndexNow Key",
+		title: "How to set up and verify an IndexNow key",
 		description:
 			"An exhaustive guide to the IndexNow protocol, explaining why instant URL submissions are necessary, who supports it, and how to verify your domain key.",
 		date: "2026-06-03",
@@ -273,7 +273,7 @@ export const blogPosts: BlogPost[] = [
 	},
 	{
 		slug: "seo-meta-tags-that-matter",
-		title: "SEO Meta Tags That Actually Matter for Indexing",
+		title: "SEO meta tags that actually matter for indexing",
 		description:
 			"The meta tags, HTTP headers, and directives that control whether your pages get indexed, and which ones SEOs still waste time on.",
 		date: "2026-05-05",

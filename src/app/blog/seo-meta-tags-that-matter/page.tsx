@@ -103,7 +103,7 @@ export default function SeoMetaTagsPost() {
 				<PostShell
 					slug="seo-meta-tags-that-matter"
 					category="Technical SEO"
-					title="SEO Meta Tags That Actually Matter for Indexing in 2026"
+					title="SEO meta tags that actually matter for indexing in 2026"
 					lede="Not all meta tags are created equal. Some actively control whether your pages get indexed. Others are ignored by search engines. Here is which directives you need to pay attention to — and which ones you can stop worrying about."
 				>
 					<h2>The meta tags that control indexing</h2>

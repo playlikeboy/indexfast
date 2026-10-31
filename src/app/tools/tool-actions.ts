@@ -78,9 +78,6 @@ export async function generateLlmsTxtTool(data: { domain: string; title: string;
 
 ## Core Information
 - [Home](https://${host}/): Main overview and core capabilities
-
-## Optional
-- [Full Documentation](https://${host}/llms-full.txt): Complete context for AI models
 `;
 		return { host, llmsTxt };
 	});
@@ -379,17 +376,18 @@ export async function checkGoogleIndexTool(inputUrl: string) {
 type BulkRow = {
 	url: string;
 	httpStatus: number;
-	status: "pass" | "warn" | "fail";
+	// skipped: never fetched before the deadline, so it says nothing about the page itself.
+	status: "pass" | "warn" | "fail" | "skipped";
 	noindex: boolean;
 	canonicalMatch: boolean;
 	blockers: string[];
 };
 
-function failedRow(url: string, reason: string): BulkRow {
+function failedRow(url: string, reason: string, status: "fail" | "skipped" = "fail"): BulkRow {
 	return {
 		url,
 		httpStatus: 0,
-		status: "fail",
+		status,
 		noindex: false,
 		canonicalMatch: false,
 		blockers: [reason],
@@ -433,12 +431,13 @@ export async function checkBulkIndexTool(urlText: string) {
 		clearTimeout(timer);
 		next = urls.length; // stop workers picking up more after the deadline
 
-		const results = rows.map((row, i) => row ?? failedRow(urls[i], "Not checked: the overall time limit was reached"));
+		const results = rows.map((row, i) => row ?? failedRow(urls[i], "Not checked: the overall time limit was reached", "skipped"));
 		return {
 			total: results.length,
 			passed: results.filter((r) => r.status === "pass").length,
 			warned: results.filter((r) => r.status === "warn").length,
 			failed: results.filter((r) => r.status === "fail").length,
+			skipped: results.filter((r) => r.status === "skipped").length,
 			results,
 		};
 	});

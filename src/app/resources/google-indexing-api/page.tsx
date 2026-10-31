@@ -1,12 +1,13 @@
 /*
  * /resources/google-indexing-api: states the policy IndexFast enforces. Google's Indexing API is
  * only for JobPosting and livestream BroadcastEvent pages; every other page goes through sitemaps,
- * diagnostics and Search Console. The page must never read as a promise of Google indexing.
+ * diagnostics and Search Console. The page must never read as a promise of Google indexing,
+ * and the Google connection is not shipped yet, so product behaviour is stated in the future tense.
  */
 import Link from "next/link";
 import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
-import { Container, Panel, buttonClass } from "@/components/ui";
+import { Container, Panel, Status } from "@/components/ui";
 import { ResourceHeader } from "../_components/ResourceHeader";
 
 export const metadata = {
@@ -22,11 +23,11 @@ const rules = [
 	},
 	{
 		title: "Explicit opt-in",
-		desc: "IndexFast requires users to choose the eligible content type before queueing URL_UPDATED or URL_DELETED notifications.",
+		desc: "When the Google connection ships, IndexFast will ask you to choose the eligible content type before it queues URL_UPDATED or URL_DELETED notifications.",
 	},
 	{
 		title: "Structured data check",
-		desc: "The integration inspects JSON-LD first. General blog posts, SaaS pages, directories, ecommerce pages, and pSEO pages are not queued.",
+		desc: "The integration will inspect JSON-LD first. General blog posts, SaaS pages, directories, ecommerce pages, and pSEO pages will not be queued.",
 	},
 	{
 		title: "General Google workflow",
@@ -41,18 +42,21 @@ export default function GoogleIndexingApiPage() {
 			<main>
 				<ResourceHeader
 					title="Google's Indexing API: jobs and livestreams only"
-					lede="IndexFast sends only job and livestream pages; other pages use sitemaps."
+					lede="When the Google connection ships, IndexFast will send only job and livestream pages. Every other page uses sitemaps."
 					actions={
-						<Link href="/resources" className={buttonClass({ variant: "ghost", size: "lg" })}>
+						<Link href="/resources" className="text-md text-ink underline decoration-border-strong underline-offset-4 hover:decoration-signal">
 							Back to resources
 						</Link>
 					}
 				/>
 				<section aria-labelledby="rules-heading" className="pb-(--section-gap)">
 					<Container>
-						<h2 id="rules-heading" className="text-section">
-							The rules IndexFast applies
-						</h2>
+						<div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+							<h2 id="rules-heading" className="text-section">
+								The rules IndexFast applies
+							</h2>
+							<Status tone="info">Being added</Status>
+						</div>
 						<ol className="mt-10 grid border-t border-border-strong md:grid-cols-2 md:gap-x-16">
 							{rules.map((rule, index) => (
 								<li key={rule.title} className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-2 border-b border-border py-8">

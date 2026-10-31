@@ -36,7 +36,7 @@ export function ToolPage({
 					<script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />
 				))}
 				<section aria-labelledby="tool-heading">
-					<Container className="grid items-start gap-y-10 pt-16 pb-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-x-16 lg:pt-24 lg:pb-16">
+					<Container className="grid items-start gap-y-10 pt-16 pb-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-x-16 lg:pt-24 lg:pb-16">
 						<div className="min-w-0 lg:sticky lg:top-24">
 							<h1 id="tool-heading" className="max-w-[12ch] text-display-s leading-[1.02]">
 								{title}
@@ -46,7 +46,7 @@ export function ToolPage({
 						<div className="min-w-0">{tool}</div>
 					</Container>
 				</section>
-				<section aria-label={`About the ${title.toLowerCase()}`} className="pb-(--section-gap)">
+				<section aria-label={`About the ${title}`} className="pb-(--section-gap)">
 					<Container>
 						<div className="divide-y divide-border border-y border-border">{children}</div>
 					</Container>
@@ -64,9 +64,10 @@ export function ToolPage({
  */
 export function GuideTopic({ title, children }: { title: string; children: ReactNode }) {
 	return (
-		<div className="grid gap-y-5 py-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-x-16 lg:py-16">
-			<h2 className="text-3xl leading-[1.05] lg:text-section">{title}</h2>
-			<div className="min-w-0 max-w-[65ch] space-y-4 text-ink-2 lg:pt-2 [&_code]:font-mono [&_code]:text-sm [&_code]:text-ink [&_li]:pl-1 [&_ol]:list-decimal [&_ol]:space-y-2 [&_ol]:pl-5 [&_strong]:font-medium [&_strong]:text-ink [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5">
+		<div className="grid gap-y-6 py-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-x-16 lg:py-16">
+			{/* text-title keeps the h1 the largest head at every width; these are doc rows, not heroes. */}
+			<h2 className="text-title leading-tight">{title}</h2>
+			<div className="min-w-0 max-w-[65ch] space-y-4 text-ink-2 [&_code]:font-mono [&_code]:text-sm [&_code]:text-ink [&_li]:pl-1 [&_ol]:list-decimal [&_ol]:space-y-2 [&_ol]:pl-6 [&_strong]:font-medium [&_strong]:text-ink [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-6">
 				{children}
 			</div>
 		</div>

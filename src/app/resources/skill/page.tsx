@@ -14,7 +14,9 @@ export const metadata = {
 		"Install the IndexFast SKILL.md file so AI IDEs and coding agents can operate indexing, sitemap, MCP, CLI, and SEO workflows safely.",
 };
 
-const downloadCommand = `curl -fsSL https://indexfast.co/resources/skill/SKILL.md -o ~/.codex/skills/indexfast/SKILL.md`;
+// --create-dirs: on a first install the skills folder does not exist and curl would exit 23.
+const downloadCommand = `curl -fsSL --create-dirs -o ~/.codex/skills/indexfast/SKILL.md \\
+  https://indexfast.co/resources/skill/SKILL.md`;
 
 const mcpConfig = `{
   "mcpServers": {

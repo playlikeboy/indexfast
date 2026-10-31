@@ -103,7 +103,7 @@ export default function PseoNotRankingPost() {
 				<PostShell
 					slug="pseo-pages-not-ranking"
 					category="Programmatic SEO"
-					title="Why Your Programmatic SEO Pages Are Not Ranking (And How to Fix It)"
+					title="Why your programmatic SEO pages are not ranking (and how to fix it)"
 					lede="You launched 500 pSEO pages. Three months later, Google Search Console shows 40 indexed — and most of those are on page 10+. What is going wrong? Here is a comprehensive breakdown of the most common pSEO failures and how to fix them."
 				>
 					<h2>The pSEO indexing gap</h2>

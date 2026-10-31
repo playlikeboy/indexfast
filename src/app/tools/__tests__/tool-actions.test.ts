@@ -21,7 +21,8 @@ describe("free tool actions", () => {
 		if (!res.success) throw new Error(res.error);
 		expect(res.llmsTxt).toContain("# My Brand");
 		expect(res.llmsTxt).toContain("> Fast indexing");
-		expect(res.llmsTxt).toContain("https://mybrand.com/llms-full.txt");
+		// llms-full.txt is not generated, so the output must not link to it.
+		expect(res.llmsTxt).not.toContain("llms-full.txt");
 	});
 
 	it("rejects malformed IndexNow keys and off-host key files before sending", async () => {
@@ -45,5 +46,6 @@ describe("free tool actions", () => {
 		if (!res.success) throw new Error(res.error);
 		expect(res.total).toBe(1);
 		expect(res.failed).toBe(1);
+		expect(res.skipped).toBe(0);
 	});
 });

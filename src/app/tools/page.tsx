@@ -6,12 +6,11 @@
  */
 import Link from "next/link";
 import type { Metadata } from "next";
-import { ArrowRight } from "lucide-react";
 import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
-import { Badge, Container } from "@/components/ui";
-import { TOOL_LEADS } from "@/components/tools/tool-leads";
+import { Container } from "@/components/ui";
+import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { tools, type ToolDefinition } from "@/lib/marketing-data";
 
 const SITE_URL = "https://indexfast.co";
@@ -74,18 +73,12 @@ function ToolRow({ tool }: { tool: ToolDefinition }) {
 		<li>
 			<Link
 				href={`/tools/${tool.slug}`}
-				className="group grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-6 gap-y-1 py-5 no-underline outline-offset-4"
+				className="group grid gap-y-1 py-4 no-underline outline-offset-4"
 			>
-				<span className="flex min-w-0 flex-wrap items-center gap-3">
-					<span className="font-display text-title font-medium text-ink decoration-signal underline-offset-4 group-hover:underline">
-						{tool.title}
-					</span>
-					{tool.tag ? <Badge>{tool.tag}</Badge> : null}
+				{/* No popularity badge: there is no usage data behind one. The whole row is the link. */}
+				<span className="font-display text-title font-medium text-ink decoration-signal underline-offset-4 group-hover:underline">
+					{TOOL_NAMES[tool.slug] ?? tool.title}
 				</span>
-				<ArrowRight
-					aria-hidden="true"
-					className="row-span-2 mt-1.5 size-5 text-muted transition-transform duration-(--dur-short) ease-(--ease-out) group-hover:translate-x-1 group-hover:text-signal"
-				/>
 				<span className="max-w-[60ch] text-ink-2">{TOOL_LEADS[tool.slug] ?? tool.description}</span>
 			</Link>
 		</li>
@@ -115,7 +108,7 @@ export default function ToolsPage() {
 							<section
 								key={group.id}
 								aria-labelledby={`group-${group.id}`}
-								className="grid gap-y-4 border-t border-border-strong py-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-x-16 lg:py-14"
+								className="grid gap-y-4 border-t border-border-strong py-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-x-16 lg:py-16"
 							>
 								<h2 id={`group-${group.id}`} className="text-3xl leading-[1.05] lg:text-section">
 									{group.title}

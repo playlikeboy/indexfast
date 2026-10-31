@@ -18,7 +18,7 @@ const articleJsonLd = {
 	"@type": "Article",
 	headline: "How to Set Up and Verify an IndexNow Key: The Complete Guide",
 	description:
-		"Step-by-step instructions for generating an IndexNow API key, hosting the verification file on your server, and submitting URLs to search engines instantly.",
+		"Step-by-step instructions for generating an IndexNow API key, hosting the verification file on your server, and submitting URLs to search engines as soon as they change.",
 	image: `${SITE_URL}/og-image.png`,
 	datePublished: "2026-06-03",
 	dateModified: "2026-06-03",
@@ -89,14 +89,14 @@ const faqJsonLd = {
 export const metadata: Metadata = {
 	title: "How to Set Up and Verify an IndexNow Key",
 	description:
-		"Learn how to generate, host, and verify your IndexNow API key to enable instant indexing submissions to Bing and other search engines.",
+		"Learn how to generate, host, and verify your IndexNow API key so you can notify Bing and other search engines as soon as URLs change.",
 	keywords: [
 		"indexnow key setup",
 		"indexnow verification",
 		"indexnow protocol",
 		"how to verify indexnow",
 		"generate indexnow key",
-		"instant indexing",
+		"indexnow submission",
 		"technical seo",
 	],
 	alternates: {
@@ -133,13 +133,13 @@ export default function IndexNowKeyPost() {
 				<PostShell
 					slug="indexnow-key-setup"
 					category="SEO Guide"
-					title="How to Set Up and Verify an IndexNow Key"
+					title="How to set up and verify an IndexNow key"
 					lede="Tired of waiting for search engines to crawl your sitemaps? The IndexNow protocol allows you to instantly notify engines about new pages. Here is the complete guide on generating, hosting, and verifying your IndexNow key."
-					outline={[{"id":"what","label":"What is the IndexNow Protocol?"},{"id":"why","label":"Why is IndexNow a game-changer for crawling?"},{"id":"who","label":"Who supports the IndexNow protocol?"},{"id":"where","label":"Where should the key be hosted?"},{"id":"when","label":"When does IndexNow trigger submissions?"},{"id":"how","label":"How to generate and verify your key (Step-by-Step)"},{"id":"faq","label":"Frequently Asked Questions (FAQ)"},{"id":"citations","label":"References & Official Citations"}]}
+					outline={[{"id":"what","label":"What is the IndexNow protocol?"},{"id":"why","label":"Why is IndexNow a game-changer for crawling?"},{"id":"who","label":"Who supports the IndexNow protocol?"},{"id":"where","label":"Where should the key be hosted?"},{"id":"when","label":"When does IndexNow trigger submissions?"},{"id":"how","label":"How to generate and verify your key, step by step"},{"id":"faq","label":"Frequently asked questions"},{"id":"citations","label":"References and official citations"}]}
 				>
 
 					{/* WHAT */}
-					<h2 id="what">What is the IndexNow Protocol?</h2>
+					<h2 id="what">What is the IndexNow protocol?</h2>
 					<p>
 						<strong>IndexNow</strong> is a simple, lightweight HTTP protocol designed to allow website owners to instantly notify participating search engines about recent content changes on their site.
 					</p>
@@ -196,17 +196,17 @@ export default function IndexNowKeyPost() {
 					</ul>
 
 					{/* HOW */}
-					<h2 id="how">How to generate and verify your key (Step-by-Step)</h2>
+					<h2 id="how">How to generate and verify your key, step by step</h2>
 					<p>
 						Follow this step-by-step workflow to verify your domain and enable automation:
 					</p>
 					
-					<h3>1. Generate an API Key</h3>
+					<h3>1. Generate an API key</h3>
 					<p>
 						Your key must be an alphanumeric or hexadecimal string between 8 and 128 characters. You can generate one automatically in IndexFast, or write a custom string.
 					</p>
 
-					<h3>2. Host the Verification File</h3>
+					<h3>2. Host the verification file</h3>
 					<p>
 						Create a file named <code>your-key.txt</code> and paste the key inside it. Upload this to the root of your web server. Ensure that:
 					</p>
@@ -217,11 +217,11 @@ export default function IndexNowKeyPost() {
 
 					<h3>3. Verify in IndexFast</h3>
 					<p>
-						Navigate to your site settings in the IndexFast Dashboard. Enter your key and key location, and click <strong>Verify Key</strong>. IndexFast will run a live validation check. Once verified, sitemap updates will trigger automatic pushes.
+						IndexFast generates the key for you when you add your site. Deploy the file it shows, then open your site in the IndexFast dashboard and choose <strong>Verify and turn on auto-submit</strong>. IndexFast fetches the file live. Once verified, sitemap updates trigger automatic pushes. If you already host a key, choose <strong>Use my key and verify</strong> instead.
 					</p>
 
 					{/* FAQ */}
-					<h2 id="faq">Frequently Asked Questions (FAQ)</h2>
+					<h2 id="faq">Frequently asked questions</h2>
 					
 					<h3>Q1: Can I use the same IndexNow key for multiple websites?</h3>
 					<p>
@@ -244,7 +244,7 @@ export default function IndexNowKeyPost() {
 					</p>
 
 					{/* CITATIONS */}
-					<h2 id="citations">References & Official Citations</h2>
+					<h2 id="citations">References and official citations</h2>
 					<p>
 						For the official specifications and engine guides, refer to these links:
 					</p>

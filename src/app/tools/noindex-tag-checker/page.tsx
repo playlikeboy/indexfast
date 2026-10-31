@@ -1,5 +1,5 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
-import { TOOL_LEADS } from "@/components/tools/tool-leads";
+import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -17,7 +17,7 @@ const toolJsonLd = {
 	applicationCategory: "BusinessApplication",
 	operatingSystem: "Web",
 	url: `${SITE_URL}/tools/noindex-tag-checker`,
-	description: "Scan any URL or list of URLs for noindex meta tags and X-Robots-Tag headers. Free noindex tag checker.",
+	description: "Check one URL for noindex meta tags and X-Robots-Tag headers. Free noindex tag checker.",
 	offers: {
 		"@type": "AggregateOffer",
 		lowPrice: "0",
@@ -70,7 +70,7 @@ export default function NoindexTagCheckerPage() {
 		<ToolPage
 			breadcrumbs={breadcrumbs}
 			jsonLd={[toolJsonLd, faqJsonLd]}
-			title="Noindex tag checker"
+			title={TOOL_NAMES["noindex-tag-checker"]}
 			lead={TOOL_LEADS["noindex-tag-checker"]}
 			tool={<ToolRunner toolType="noindex-tag-checker" buttonLabel="Check noindex tag" placeholder="https://example.com/page" />}
 		>

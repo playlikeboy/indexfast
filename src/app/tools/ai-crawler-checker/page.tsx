@@ -1,5 +1,5 @@
 import { GuideTerms, GuideTopic, ToolPage } from "@/components/tools/ToolPage";
-import { TOOL_LEADS } from "@/components/tools/tool-leads";
+import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -17,7 +17,7 @@ const toolJsonLd = {
 	applicationCategory: "BusinessApplication",
 	operatingSystem: "Web",
 	url: `${SITE_URL}/tools/ai-crawler-checker`,
-	description: "Detect which AI crawlers can access your pages and identify blocking rules. Free AI crawler checker.",
+	description: "See which AI crawlers your robots.txt allows at the site root, and which group decides. Free AI crawler checker.",
 	offers: {
 		"@type": "AggregateOffer",
 		lowPrice: "0",
@@ -50,8 +50,8 @@ const faqJsonLd = {
 };
 
 export const metadata = {
-	title: "Free AI Crawler Checker | Detect Which AI Bots Can Access Your Pages",
-	description: "Check which AI crawlers can access your URLs and identify blocking rules. Free AI crawler checker for modern SEO.",
+	title: "Free AI Crawler Checker | See Which AI Bots Your robots.txt Allows",
+	description: "See which AI crawlers your robots.txt allows at the site root, and which group decides. Free AI crawler checker.",
 	keywords: ["ai crawler checker", "ai bot checker", "gptbot checker", "google extended checker", "ai crawler access tool"],
 	alternates: {
 		canonical: `${SITE_URL}/tools/ai-crawler-checker`,
@@ -63,7 +63,7 @@ export default function AiCrawlerCheckerPage() {
 		<ToolPage
 			breadcrumbs={breadcrumbs}
 			jsonLd={[toolJsonLd, faqJsonLd]}
-			title="AI crawler checker"
+			title={TOOL_NAMES["ai-crawler-checker"]}
 			lead={TOOL_LEADS["ai-crawler-checker"]}
 			tool={<ToolRunner toolType="ai-crawler-checker" buttonLabel="Check AI crawlers" placeholder="example.com" />}
 		>
@@ -91,7 +91,7 @@ export default function AiCrawlerCheckerPage() {
 			</GuideTopic>
 			<GuideTopic title="Why AI crawler access matters">
 				<p>
-					AI crawlers obey robots.txt just like traditional crawlers. A crawler follows only the most specific group that names it, and
+					Well-behaved AI crawlers read robots.txt. A crawler follows only the most specific group that names it, and
 					falls back to the <code>*</code> group when none does. Use this tool to audit your AI crawler policy and make sure it matches your
 					content strategy.
 				</p>

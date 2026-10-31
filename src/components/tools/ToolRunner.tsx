@@ -92,7 +92,7 @@ export function ToolRunner({ toolType, placeholder, buttonLabel }: { toolType: T
 					<>
 						<Field label="Domain" required>
 							{(f) => (
-								<Input {...f} type="text" size="lg" value={input} onChange={(e) => setInput(e.target.value)} placeholder="example.com" />
+								<Input {...f} type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} size="lg" value={input} onChange={(e) => setInput(e.target.value)} placeholder="example.com" />
 							)}
 						</Field>
 						<Field label="Site name">
@@ -123,7 +123,7 @@ export function ToolRunner({ toolType, placeholder, buttonLabel }: { toolType: T
 					<>
 						<Field label="Domain" required>
 							{(f) => (
-								<Input {...f} type="text" size="lg" value={input} onChange={(e) => setInput(e.target.value)} placeholder="example.com" />
+								<Input {...f} type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} size="lg" value={input} onChange={(e) => setInput(e.target.value)} placeholder="example.com" />
 							)}
 						</Field>
 						<Field label="IndexNow key" required hint="Hosted at https://your-domain/<key>.txt">
@@ -131,6 +131,8 @@ export function ToolRunner({ toolType, placeholder, buttonLabel }: { toolType: T
 								<Input
 									type="text"
 									{...f}
+									autoCapitalize="none"
+									spellCheck={false}
 									size="lg"
 									className="font-mono"
 									value={secondInput}
@@ -144,6 +146,10 @@ export function ToolRunner({ toolType, placeholder, buttonLabel }: { toolType: T
 								<Textarea
 									{...f}
 									rows={4}
+									inputMode="url"
+									autoCapitalize="none"
+									autoCorrect="off"
+									spellCheck={false}
 									className="font-mono"
 									value={thirdInput}
 									onChange={(e) => setThirdInput(e.target.value)}
@@ -158,6 +164,10 @@ export function ToolRunner({ toolType, placeholder, buttonLabel }: { toolType: T
 							<Textarea
 								{...f}
 								rows={5}
+								inputMode="url"
+								autoCapitalize="none"
+								autoCorrect="off"
+								spellCheck={false}
 								className="font-mono"
 								value={input}
 								onChange={(e) => setInput(e.target.value)}
@@ -171,6 +181,10 @@ export function ToolRunner({ toolType, placeholder, buttonLabel }: { toolType: T
 							<Input
 								type="text"
 								{...f}
+								inputMode="url"
+								autoCapitalize="none"
+								autoCorrect="off"
+								spellCheck={false}
 								size="lg"
 								value={input}
 								onChange={(e) => setInput(e.target.value)}

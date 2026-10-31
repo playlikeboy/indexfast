@@ -1,5 +1,5 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
-import { TOOL_LEADS } from "@/components/tools/tool-leads";
+import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -63,7 +63,7 @@ export default function CanonicalCheckerPage() {
 		<ToolPage
 			breadcrumbs={breadcrumbs}
 			jsonLd={[toolJsonLd, faqJsonLd]}
-			title="Canonical checker"
+			title={TOOL_NAMES["canonical-checker"]}
 			lead={TOOL_LEADS["canonical-checker"]}
 			tool={<ToolRunner toolType="canonical-checker" buttonLabel="Check canonical tag" placeholder="https://example.com/page" />}
 		>

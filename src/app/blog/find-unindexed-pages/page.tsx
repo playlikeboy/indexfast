@@ -116,7 +116,7 @@ export default function FindUnindexedPagesPost() {
 				<PostShell
 					slug="find-unindexed-pages"
 					category="SEO Guide"
-					title="How to Find Unindexed Pages in 2026: The Complete Guide"
+					title="How to find unindexed pages in 2026: the complete guide"
 					lede="Your sitemap says you have 10,000 pages. Google Search Console shows only 6,200 indexed. Where did the other 3,800 pages go? Here is the exact workflow top SEO teams use to find, diagnose, and recover unindexed pages — and get them back into Google's index fast."
 				>
 					<h2>Why finding unindexed pages matters more than ever</h2>

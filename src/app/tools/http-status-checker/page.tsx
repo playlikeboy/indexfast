@@ -1,5 +1,5 @@
 import { GuideTerms, GuideTopic, ToolPage } from "@/components/tools/ToolPage";
-import { TOOL_LEADS } from "@/components/tools/tool-leads";
+import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
 
 const SITE_URL = "https://indexfast.co";
@@ -17,7 +17,7 @@ const toolJsonLd = {
 	applicationCategory: "BusinessApplication",
 	operatingSystem: "Web",
 	url: `${SITE_URL}/tools/http-status-checker`,
-	description: "Check HTTP status codes, redirect chains, and response headers for any URL. Free HTTP status checker.",
+	description: "Check HTTP status codes, the final URL after redirects, and response headers for any URL. Free HTTP status checker.",
 	offers: {
 		"@type": "AggregateOffer",
 		lowPrice: "0",
@@ -52,11 +52,10 @@ const faqJsonLd = {
 export const metadata = {
 	title: "Free HTTP Status Checker | Check Redirects, 404s, and Response Codes",
 	description:
-		"Check HTTP status codes, redirect chains, and response headers for any URL. Free HTTP status checker for SEO and technical diagnostics.",
+		"Check HTTP status codes, the final URL after redirects, and response headers for any URL. Free HTTP status checker for SEO and technical diagnostics.",
 	keywords: [
 		"http status checker",
 		"http status code checker",
-		"redirect chain checker",
 		"check http headers",
 		"http response checker",
 		"404 checker",
@@ -71,7 +70,7 @@ export default function HttpStatusCheckerPage() {
 		<ToolPage
 			breadcrumbs={breadcrumbs}
 			jsonLd={[toolJsonLd, faqJsonLd]}
-			title="HTTP status checker"
+			title={TOOL_NAMES["http-status-checker"]}
 			lead={TOOL_LEADS["http-status-checker"]}
 			tool={<ToolRunner toolType="http-status-checker" buttonLabel="Check HTTP status" placeholder="https://example.com/page" />}
 		>
@@ -108,7 +107,7 @@ export default function HttpStatusCheckerPage() {
 			<GuideTopic title="Why this matters for indexing">
 				<p>
 					A page returning an error, too many redirects or an unexpected status code is a common reason pages do not appear in Google. Use
-					the HTTP status checker alongside index lookups and canonical checks to catch every technical blocker.
+					the HTTP status checker alongside the noindex and canonical checkers to catch technical blockers.
 				</p>
 			</GuideTopic>
 		</ToolPage>
