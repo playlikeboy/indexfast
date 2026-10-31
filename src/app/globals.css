@@ -1,150 +1,625 @@
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: Cobalt (deal 1/3, seed indexfast-agent-native-seo-indexing-5b49·0fa31046·2026-10-31·r0) · redesign: full
+ * nav: kept, each surface owns its shell · signature: the submission queue, every URL and what each engine answered · states: loading, empty, error, full
+ * axes: light/grotesk-sans/cool · posture: restrained · contrast: pass · modes: light+dark · v2.0.0 */
+/* Hallmark · pre-emit critique: P4 H4 E4 S3 R5 V4 · weakest: S, a token file alone could dress any dev tool; tied the system to the queue and engine responses and kept cobalt for state and the one primary action */
+
+/*
+ * IndexFast design system: the single source of every colour, face, size, radius, shadow and
+ * duration in the product (marketing, dashboard, admin). DESIGN.md at the repo root explains the
+ * roles and when to use each; components read these tokens through Tailwind utilities or var().
+ * Rules this file enforces: no literal colour or font-family outside the token blocks, dark mode
+ * is a re-derived token set (never an inversion), and the Hallmark Floor base rules live here once.
+ */
+
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme inline {
-	--color-background: var(--background);
-	--color-foreground: var(--foreground);
-	--font-sans: var(--font-geist-sans);
-	--font-mono: var(--font-geist-mono);
+/*
+ * Raw Cobalt tokens. `static` so every token is emitted as a CSS variable even when no utility
+ * uses it yet (hand-written CSS and inline styles rely on them), and not `inline` so the .dark
+ * block below can re-derive them at runtime.
+ */
+@theme static {
+	/* Type scale: marketing (Persuade) roles on a 1.25 ratio; [data-scope="app"] swaps to 1.2. */
+	--text-xs: 0.8125rem;
+	--text-sm: 0.875rem;
+	--text-md: 1rem;
+	--text-lg: 1.25rem;
+	--text-xl: 1.5625rem;
+	--text-2xl: 1.953rem;
+	--text-3xl: 2.441rem;
+	--text-display-s: clamp(2.25rem, 4vw + 0.5rem, 3.75rem);
+	--text-display: clamp(2.75rem, 5vw + 1rem, 5.25rem);
+	--text-section: clamp(2rem, 2.5vw + 1rem, 3.5rem);
+	--text-title: clamp(1.25rem, 0.75vw + 0.875rem, 1.625rem);
+	--text-lead: clamp(1.125rem, 0.35vw + 1rem, 1.375rem);
+	--tracking-display: -0.028em;
+	--leading-display: 1.02;
 
-	/* Acid-lime accent — identical in both themes */
-	--color-accent: #ccff00;
-	--color-accent-dark: #b3e600;
-	--color-accent-foreground: #0a0a0a;
+	--ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+	--ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+	--ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 
-	/* Neutrals reference runtime vars so they flip in dark mode */
-	--color-ink: var(--ink);
-	--color-surface: var(--surface);
-	--color-card: var(--card);
-	--color-card-hover: var(--card-hover);
-	--color-muted: var(--muted);
-	--color-border: var(--border);
+	/* Paper, ink and hairlines: neutrals tilt to hue 250-262 so greys never read dead. */
+	--color-paper: oklch(98.6% 0.005 250);
+	--color-paper-2: oklch(96.2% 0.008 252);
+	--color-paper-3: oklch(93% 0.011 252);
+	--color-panel: oklch(99.4% 0.003 250);
+	--color-ink: oklch(21% 0.028 262);
+	--color-ink-2: oklch(36% 0.022 260);
+	--color-muted: oklch(50% 0.018 258);
+	--color-rule: oklch(90% 0.009 252);
+	--color-rule-2: oklch(83% 0.012 252);
 
-	/* Sharp brutalist edges */
-	--radius: 0px;
+	/* Graphite: the one dark material, for code, terminals and machine output. */
+	--color-graphite: oklch(21% 0.024 262);
+	--color-graphite-2: oklch(26.5% 0.026 262);
+	--color-graphite-ink: oklch(93% 0.010 250);
+	--color-graphite-muted: oklch(69% 0.022 256);
+
+	/* The one signal. Under 5% of any screen: primary action, focus, selection, live state. */
+	--color-accent: oklch(52% 0.19 258);
+	--color-accent-2: oklch(76% 0.13 254);
+	--color-accent-wash: oklch(95% 0.028 256);
+	--color-accent-ink: oklch(98.6% 0.005 250);
+	--color-accent-deep: oklch(43% 0.2 262);
+	--color-accent-edge: oklch(39% 0.16 260);
+	--color-focus: oklch(52% 0.19 258);
+
+	/* Status: text colours first; the washes exist for one highlighted row, never a filled chip. */
+	--color-error: oklch(52% 0.19 27);
+	--color-error-wash: oklch(96% 0.02 27);
+	--color-success: oklch(50% 0.12 150);
+	--color-success-wash: oklch(96% 0.025 150);
+	--color-warning: oklch(52% 0.12 68);
+	--color-warning-wash: oklch(96.5% 0.03 85);
+
+	/* ASCII field tints, lightest to densest. */
+	--color-glyph-1: oklch(89% 0.025 254);
+	--color-glyph-2: oklch(81% 0.045 255);
+	--color-glyph-3: oklch(70% 0.085 256);
+	--color-glyph-4: oklch(60% 0.13 257);
+	--color-graphite-glyph-1: oklch(33% 0.03 262);
+	--color-graphite-glyph-2: oklch(41% 0.05 260);
+	--color-graphite-glyph-3: oklch(53% 0.1 258);
+
+	/* Keycaps: the only surfaces with a physical edge. */
+	--color-key-face: oklch(99.4% 0.003 250);
+	--color-key-edge: oklch(80% 0.016 254);
+
+	/* Charts: series 1 is the signal; the others stay distinguishable without red/green pairs. */
+	--color-chart-1: oklch(52% 0.19 258);
+	--color-chart-2: oklch(60% 0.11 195);
+	--color-chart-3: oklch(64% 0.13 70);
+
+	/* Faces come from next/font variables set on <html> in layout.tsx. */
+	--font-display: var(--font-familjen), "Familjen Grotesk", system-ui, sans-serif;
+	--font-body: var(--font-plex), "IBM Plex Sans", system-ui, sans-serif;
+	--font-outlier: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+
+	/* Content widths: max-w-page for marketing, max-w-app for the dashboard and admin. */
+	--container-page: 1440px;
+	--container-app: 1200px;
+
+	--radius-card: 8px;
+	--radius-input: 6px;
+	--radius-pill: 999px;
+
+	--shadow-card: 0 1px 2px oklch(21% 0.028 262 / 0.06);
+	--shadow-key: 0 3px 0 0 var(--color-key-edge), 0 6px 8px -4px oklch(21% 0.028 262 / 0.28), inset 0 1px 0 oklch(100% 0 0 / 0.9);
+	--shadow-key-accent: 0 3px 0 0 var(--color-accent-edge), 0 6px 8px -4px oklch(30% 0.12 260 / 0.45), inset 0 1px 0 oklch(100% 0 0 / 0.22);
+	--shadow-key-press: inset 0 1px 2px oklch(21% 0.028 262 / 0.14);
 }
 
+/* Scale and layout tokens. Never --spacing-<name>: Tailwind would resize max-w-* and p-* with it. */
 :root {
-	--background: #f2f1ec;
-	--foreground: #0a0a0a;
-	--ink: #0a0a0a;
-	--surface: #f2f1ec;
-	--card: #ecebe4;
-	--card-hover: #e4e3da;
-	--muted: #8a8a80;
-	--border: #d8d7cf;
-	--grid-line: rgba(10, 10, 10, 0.04);
+	color-scheme: light;
+	--space-3xs: 2px;
+	--space-2xs: 4px;
+	--space-xs: 8px;
+	--space-sm: 12px;
+	--space-md: 16px;
+	--space-lg: 24px;
+	--space-xl: 40px;
+	--space-2xl: 64px;
+	--space-3xl: 96px;
+	--space-4xl: 144px;
+	--dur-micro: 120ms;
+	--dur-short: 220ms;
+	--dur-long: 420ms;
+	--container: var(--container-page);
+	--gutter: 64px;
+	--gap-columns: 32px;
+	--section-gap-s: 120px;
+	--section-gap: 144px;
+	--section-gap-l: 176px;
+	--z-base: 1;
+	--z-raised: 10;
+	--z-dropdown: 100;
+	--z-sticky: 200;
+	--z-sticky-nav: 300;
+	--z-modal: 400;
+	--z-toast: 500;
+	--z-tooltip: 600;
+	--cell-w: 8px;
+	--cell-h: 16px;
+	--cut: 8px;
+	--cut-l: 16px;
+	--rule-hair: 1px;
+	--display-weight: 600;
 }
-
-.dark {
-	--background: #0a0a0a;
-	--foreground: #f2f1ec;
-	--ink: #f2f1ec;
-	--surface: #0a0a0a;
-	--card: #161614;
-	--card-hover: #1f1f1c;
-	--muted: #8f8f86;
-	--border: #2a2a26;
-	--grid-line: rgba(242, 241, 236, 0.05);
+@media (max-width: 60rem) {
+	:root { --gutter: 24px; --section-gap-s: 80px; --section-gap: 96px; --section-gap-l: 120px; }
 }
-
-body {
-	background: var(--background);
-	color: var(--foreground);
-	font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
-	-webkit-font-smoothing: antialiased;
-	-moz-osx-font-smoothing: grayscale;
-}
-
-html {
-	scroll-behavior: smooth;
-}
-
-/* Tight display headings — heavy weight, negative tracking */
-.display {
-	font-weight: 800;
-	letter-spacing: -0.04em;
-	line-height: 0.92;
-	text-transform: uppercase;
-}
-
-/* Oversized stat numbers */
-.stat {
-	font-weight: 800;
-	letter-spacing: -0.04em;
-	line-height: 0.9;
-	font-variant-numeric: tabular-nums;
-}
-
-/* Uppercase mono labels with wide tracking */
-.label-mono {
-	font-family: var(--font-geist-mono), ui-monospace, monospace;
-	text-transform: uppercase;
-	letter-spacing: 0.12em;
-	font-size: 0.8125rem;
-	color: var(--color-muted);
-}
-
-/* Lime highlight behind inline text (e.g. a single word) */
-.text-highlight {
-	background: var(--color-accent);
-	color: var(--color-accent-foreground);
-	padding: 0 0.15em;
-	box-decoration-break: clone;
-	-webkit-box-decoration-break: clone;
-}
-
-/* Faint grid background */
-.bg-grid {
-	background-image:
-		linear-gradient(var(--grid-line) 1px, transparent 1px),
-		linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-	background-size: 64px 64px;
+@media (max-width: 40rem) {
+	:root { --gutter: 16px; --section-gap-s: 56px; --section-gap: 72px; --section-gap-l: 96px; --gap-columns: 16px; }
 }
 
 /*
- * App (dashboard + admin) tokens. The marketing site is brutalist; the app is deliberately
- * calmer: neutral panels, soft borders, lime used only for the primary action.
+ * Operate scope (dashboard, admin): a fixed 1.2 type ratio, no fluid heads, denser gutters.
+ * Set data-scope="app" on the app shell's root; the same utilities then resolve to the app sizes.
+ */
+[data-scope="app"] {
+	--text-xs: 0.75rem;
+	--text-sm: 0.875rem;
+	--text-md: 1rem;
+	--text-lg: 1.2rem;
+	--text-xl: 1.44rem;
+	--text-2xl: 1.728rem;
+	--text-3xl: 2.074rem;
+	--text-display-s: 1.44rem;
+	--text-display: 1.728rem;
+	--text-section: 1.2rem;
+	--text-title: 1rem;
+	--text-lead: 1rem;
+	--gutter: 24px;
+}
+@media (max-width: 40rem) {
+	[data-scope="app"] { --gutter: 16px; }
+}
+
+/*
+ * Dark mode: every token re-derived (paper L16, ink L94, accent chroma down and lightness up),
+ * hue never moves. Elevation is lightness, so shadows turn off and cards sit lighter than canvas.
+ * Toggled by the .dark class the no-FOUC script in layout.tsx sets on <html>.
+ */
+/* Dark values live here as tokens; the .dark block below only swaps them in. */
+:root {
+	--dark-color-paper: oklch(16% 0.012 258);
+	--dark-color-paper-2: oklch(19.5% 0.014 258);
+	--dark-color-paper-3: oklch(23% 0.016 258);
+	--dark-color-panel: oklch(19.5% 0.014 258);
+	--dark-color-ink: oklch(94% 0.008 250);
+	--dark-color-ink-2: oklch(82% 0.014 252);
+	--dark-color-muted: oklch(68% 0.018 256);
+	--dark-color-rule: oklch(29% 0.016 258);
+	--dark-color-rule-2: oklch(37% 0.018 258);
+	--dark-color-graphite: oklch(20% 0.016 262);
+	--dark-color-graphite-2: oklch(24.5% 0.02 262);
+	--dark-color-graphite-ink: oklch(93% 0.010 250);
+	--dark-color-graphite-muted: oklch(69% 0.022 256);
+	--dark-color-accent: oklch(66% 0.16 258);
+	--dark-color-accent-2: oklch(78% 0.12 254);
+	--dark-color-accent-wash: oklch(25% 0.05 258);
+	--dark-color-accent-ink: oklch(16% 0.03 262);
+	--dark-color-accent-deep: oklch(76% 0.12 256);
+	--dark-color-accent-edge: oklch(48% 0.14 260);
+	--dark-color-focus: oklch(68% 0.16 258);
+	--dark-color-error: oklch(70% 0.16 27);
+	--dark-color-error-wash: oklch(25% 0.05 27);
+	--dark-color-success: oklch(72% 0.13 150);
+	--dark-color-success-wash: oklch(24% 0.04 150);
+	--dark-color-warning: oklch(78% 0.12 78);
+	--dark-color-warning-wash: oklch(25% 0.04 78);
+	--dark-color-glyph-1: oklch(24% 0.03 258);
+	--dark-color-glyph-2: oklch(32% 0.05 258);
+	--dark-color-glyph-3: oklch(44% 0.09 258);
+	--dark-color-glyph-4: oklch(56% 0.13 258);
+	--dark-color-key-face: oklch(23% 0.016 258);
+	--dark-color-key-edge: oklch(11% 0.01 258);
+	--dark-color-chart-1: oklch(66% 0.16 258);
+	--dark-color-chart-2: oklch(70% 0.1 195);
+	--dark-color-chart-3: oklch(76% 0.12 70);
+	--dark-shadow-key: 0 2px 0 0 var(--color-key-edge), inset 0 1px 0 oklch(100% 0 0 / 0.06);
+	--dark-shadow-key-accent: 0 2px 0 0 var(--color-accent-edge), inset 0 1px 0 oklch(100% 0 0 / 0.18);
+	--dark-shadow-key-press: inset 0 1px 2px oklch(5% 0.01 258 / 0.5);
+}
+.dark {
+	color-scheme: dark;
+	--color-paper: var(--dark-color-paper);
+	--color-paper-2: var(--dark-color-paper-2);
+	--color-paper-3: var(--dark-color-paper-3);
+	--color-panel: var(--dark-color-panel);
+	--color-ink: var(--dark-color-ink);
+	--color-ink-2: var(--dark-color-ink-2);
+	--color-muted: var(--dark-color-muted);
+	--color-rule: var(--dark-color-rule);
+	--color-rule-2: var(--dark-color-rule-2);
+	--color-graphite: var(--dark-color-graphite);
+	--color-graphite-2: var(--dark-color-graphite-2);
+	--color-graphite-ink: var(--dark-color-graphite-ink);
+	--color-graphite-muted: var(--dark-color-graphite-muted);
+	--color-accent: var(--dark-color-accent);
+	--color-accent-2: var(--dark-color-accent-2);
+	--color-accent-wash: var(--dark-color-accent-wash);
+	--color-accent-ink: var(--dark-color-accent-ink);
+	--color-accent-deep: var(--dark-color-accent-deep);
+	--color-accent-edge: var(--dark-color-accent-edge);
+	--color-focus: var(--dark-color-focus);
+	--color-error: var(--dark-color-error);
+	--color-error-wash: var(--dark-color-error-wash);
+	--color-success: var(--dark-color-success);
+	--color-success-wash: var(--dark-color-success-wash);
+	--color-warning: var(--dark-color-warning);
+	--color-warning-wash: var(--dark-color-warning-wash);
+	--color-glyph-1: var(--dark-color-glyph-1);
+	--color-glyph-2: var(--dark-color-glyph-2);
+	--color-glyph-3: var(--dark-color-glyph-3);
+	--color-glyph-4: var(--dark-color-glyph-4);
+	--color-key-face: var(--dark-color-key-face);
+	--color-key-edge: var(--dark-color-key-edge);
+	--color-chart-1: var(--dark-color-chart-1);
+	--color-chart-2: var(--dark-color-chart-2);
+	--color-chart-3: var(--dark-color-chart-3);
+	--shadow-card: none;
+	--shadow-key: var(--dark-shadow-key);
+	--shadow-key-accent: var(--dark-shadow-key-accent);
+	--shadow-key-press: var(--dark-shadow-key-press);
+}
+
+/* Semantic roles. Components use these names; the raw tokens above stay the source. */
+@theme inline {
+	--color-background: var(--color-paper);
+	--color-foreground: var(--color-ink);
+	--color-surface: var(--color-paper);
+	--color-well: var(--color-paper-2);
+	--color-sunken: var(--color-paper-3);
+	--color-border: var(--color-rule);
+	--color-border-strong: var(--color-rule-2);
+	--color-signal: var(--color-accent);
+	--color-accent-foreground: var(--color-accent-ink);
+	--color-danger: var(--color-error);
+	--color-danger-wash: var(--color-error-wash);
+	--color-code-bg: var(--color-graphite);
+	--color-code-bg-2: var(--color-graphite-2);
+	--color-code-fg: var(--color-graphite-ink);
+	--color-code-muted: var(--color-graphite-muted);
+	--color-code-accent: var(--color-accent-2);
+
+	--font-sans: var(--font-body);
+	--font-mono: var(--font-outlier);
+
+	/* Legacy names kept so unmigrated pages compile; delete after migration. */
+	--color-card: var(--color-paper-2);
+	--color-card-hover: var(--color-paper-3);
+	--color-accent-dark: var(--color-accent-deep);
+}
+
+/* The Floor's base rules, once for the whole product. */
+@layer base {
+	html,
+	body {
+		overflow-x: clip;
+	}
+	html {
+		scrollbar-color: var(--color-muted) var(--color-paper);
+		scroll-padding-top: var(--space-3xl);
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		html {
+			scroll-behavior: smooth;
+		}
+	}
+	body {
+		margin: 0;
+		background: var(--color-background);
+		color: var(--color-foreground);
+		font-family: var(--font-body);
+		font-size: var(--text-md);
+		line-height: 1.55;
+		font-synthesis: none;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+		caret-color: var(--color-accent);
+	}
+	::selection {
+		background: color-mix(in oklab, var(--color-accent) 22%, transparent);
+		color: var(--color-ink);
+	}
+	:focus-visible {
+		outline: 2px solid var(--color-focus);
+		outline-offset: 2px;
+	}
+	a {
+		color: inherit;
+		text-decoration-thickness: 1px;
+		text-underline-offset: 0.16em;
+	}
+	h1,
+	h2,
+	h3 {
+		font-family: var(--font-display);
+		font-weight: var(--display-weight);
+		letter-spacing: var(--tracking-display);
+		line-height: 1.05;
+		overflow-wrap: break-word;
+		min-width: 0;
+		text-wrap: balance;
+	}
+	h3 {
+		font-weight: 500;
+		line-height: 1.2;
+	}
+	p {
+		text-wrap: pretty;
+	}
+	code,
+	kbd,
+	samp,
+	pre {
+		font-family: var(--font-outlier);
+	}
+	button:not(:disabled),
+	[role="button"]:not([aria-disabled="true"]) {
+		cursor: pointer;
+	}
+	.num,
+	td.num {
+		font-variant-numeric: tabular-nums;
+	}
+	.visually-hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		*:not(.keep-motion),
+		*:not(.keep-motion)::before,
+		*:not(.keep-motion)::after {
+			animation-duration: 0.01ms !important;
+			animation-iteration-count: 1 !important;
+			transition-duration: 0.01ms !important;
+			scroll-behavior: auto !important;
+		}
+	}
+}
+
+/*
+ * Material classes for what utilities cannot say cleanly: the keycap (an edge that lifts and
+ * sinks across eight states), the cut-corner panel (corner-shape behind @supports) and the field
+ * (a constant-width border, the ring reserved at rest so focus never shifts layout).
+ * The React primitives in src/components/ui use these; plain markup may too.
+ */
+@layer components {
+	.ui-key {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-xs);
+		min-height: var(--key-h, 40px);
+		padding: 0 var(--key-px, var(--space-md));
+		border: var(--rule-hair) solid var(--color-rule-2);
+		border-radius: var(--radius-input);
+		background: var(--color-key-face);
+		color: var(--color-ink);
+		font: 500 var(--key-fs, var(--text-sm)) / 1 var(--font-display);
+		white-space: nowrap;
+		text-decoration: none;
+		user-select: none;
+		box-shadow: var(--shadow-key);
+		transition:
+			transform var(--dur-micro) var(--ease-out),
+			box-shadow var(--dur-micro) var(--ease-out),
+			background-color var(--dur-short) var(--ease-out);
+	}
+	@media (hover: hover) {
+		.ui-key:hover {
+			transform: translateY(-1px);
+		}
+	}
+	.ui-key:active,
+	.ui-key[aria-pressed="true"],
+	.ui-key[aria-selected="true"] {
+		transform: translateY(2px);
+		box-shadow: var(--shadow-key-press);
+	}
+	.ui-key[aria-pressed="true"],
+	.ui-key[aria-selected="true"] {
+		background: var(--color-paper-3);
+	}
+	.ui-key:focus-visible {
+		outline: 2px solid var(--color-focus);
+		outline-offset: 2px;
+	}
+	.ui-key:disabled,
+	.ui-key[aria-disabled="true"] {
+		opacity: 0.55;
+		cursor: not-allowed;
+		transform: none;
+		box-shadow: var(--shadow-key);
+	}
+	.ui-key[aria-busy="true"] {
+		cursor: progress;
+	}
+	.ui-key--primary {
+		background: var(--color-accent);
+		border-color: var(--color-accent-edge);
+		color: var(--color-accent-ink);
+		box-shadow: var(--shadow-key-accent);
+	}
+	.ui-key--primary:disabled,
+	.ui-key--primary[aria-disabled="true"] {
+		box-shadow: var(--shadow-key-accent);
+	}
+	.ui-key--danger {
+		color: var(--color-error);
+	}
+	.ui-key--ghost {
+		background: transparent;
+		border-color: transparent;
+		box-shadow: none;
+	}
+	@media (hover: hover) {
+		.ui-key--ghost:hover {
+			transform: none;
+			background: var(--color-paper-2);
+		}
+	}
+	.ui-key--ghost:active,
+	.ui-key--ghost[aria-pressed="true"],
+	.ui-key--ghost[aria-selected="true"] {
+		transform: translateY(1px);
+		box-shadow: none;
+		background: var(--color-paper-3);
+	}
+	.ui-key--ghost:disabled,
+	.ui-key--ghost[aria-disabled="true"] {
+		box-shadow: none;
+	}
+	.ui-key--sm {
+		--key-h: 32px;
+		--key-px: var(--space-sm);
+	}
+	/* A 32px key still needs a 44px hit target. */
+	.ui-key--sm::before {
+		content: "";
+		position: absolute;
+		inset: -6px 0;
+	}
+	.ui-key--lg {
+		--key-h: 48px;
+		--key-px: var(--space-lg);
+		--key-fs: var(--text-md);
+	}
+
+	.ui-cut {
+		border: var(--rule-hair) solid var(--color-rule);
+		border-radius: var(--radius-card);
+		background: var(--color-panel);
+	}
+	.ui-cut-sm {
+		border-radius: var(--radius-input);
+	}
+	@supports (corner-shape: bevel) {
+		.ui-cut {
+			border-radius: var(--cut-l) 4px var(--cut-l) 4px;
+			corner-shape: bevel round bevel round;
+		}
+		.ui-cut-sm,
+		.ui-field {
+			border-radius: var(--cut) 3px var(--cut) 3px;
+			corner-shape: bevel round bevel round;
+		}
+	}
+
+	.ui-field {
+		display: block;
+		width: 100%;
+		min-height: var(--field-h, 40px);
+		padding: 0 var(--space-sm);
+		border: 1px solid var(--color-muted);
+		border-radius: var(--radius-input);
+		background: var(--color-panel);
+		color: var(--color-ink);
+		font: 400 var(--text-md) / 1.4 var(--font-body);
+		outline: 2px solid transparent;
+		outline-offset: -3px;
+		transition:
+			background-color var(--dur-short) var(--ease-out),
+			border-color var(--dur-short) var(--ease-out);
+	}
+	.ui-field::placeholder {
+		color: var(--color-muted);
+	}
+	@media (hover: hover) {
+		.ui-field:hover:not(:disabled) {
+			background: var(--color-paper-2);
+		}
+	}
+	.ui-field:focus-visible {
+		outline: 2px solid var(--color-focus);
+		outline-offset: -3px;
+		border-color: var(--color-ink-2);
+	}
+	.ui-field:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
+	}
+	.ui-field[aria-invalid="true"] {
+		border-color: var(--color-error);
+	}
+	.ui-field--lg {
+		--field-h: 48px;
+	}
+	textarea.ui-field {
+		min-height: 6rem;
+		padding-block: var(--space-xs);
+		line-height: 1.5;
+		resize: vertical;
+	}
+	select.ui-field {
+		appearance: none;
+		padding-right: var(--space-xl);
+	}
+}
+
+/*
+ * ---------------------------------------------------------------------------------------------
+ * LEGACY, delete after migration. The retired brutalist utilities and the old dashboard tokens,
+ * re-pointed at Cobalt so unmigrated pages keep rendering while they move to src/components/ui.
+ * Each one is neutralised toward the Floor (no tracked capitals, no highlighted word).
+ * ---------------------------------------------------------------------------------------------
  */
 :root {
-	--app-bg: #f7f7f5;
-	--app-panel: #ffffff;
-	--app-subtle: #f1f1ee;
-	--app-border: #e6e5e0;
-	--app-text: #111110;
-	--app-muted: #6f6e69;
-	--app-ok: #15803d;
-	--app-ok-bg: #ecfdf3;
-	--app-warn: #a16207;
-	--app-warn-bg: #fefce8;
-	--app-bad: #b91c1c;
-	--app-bad-bg: #fef2f2;
+	--app-bg: var(--color-paper);
+	--app-panel: var(--color-panel);
+	--app-subtle: var(--color-paper-2);
+	--app-border: var(--color-rule);
+	--app-text: var(--color-ink);
+	--app-muted: var(--color-muted);
+	--app-ok: var(--color-success);
+	--app-ok-bg: var(--color-success-wash);
+	--app-warn: var(--color-warning);
+	--app-warn-bg: var(--color-warning-wash);
+	--app-bad: var(--color-error);
+	--app-bad-bg: var(--color-error-wash);
+	--chart-1: var(--color-chart-1);
+	--chart-2: var(--color-chart-2);
+	--chart-3: var(--color-chart-3);
+	--grid-line: var(--color-glyph-1);
+	--background: var(--color-paper);
+	--foreground: var(--color-ink);
 }
-
-.dark {
-	--app-bg: #0b0b0a;
-	--app-panel: #141413;
-	--app-subtle: #1b1b19;
-	--app-border: #2a2a27;
-	--app-text: #f2f1ec;
-	--app-muted: #9a9991;
-	--app-ok: #4ade80;
-	--app-ok-bg: rgba(74, 222, 128, 0.1);
-	--app-warn: #facc15;
-	--app-warn-bg: rgba(250, 204, 21, 0.1);
-	--app-bad: #f87171;
-	--app-bad-bg: rgba(248, 113, 113, 0.1);
+.display {
+	font-family: var(--font-display);
+	font-weight: var(--display-weight);
+	letter-spacing: var(--tracking-display);
+	line-height: var(--leading-display);
 }
-
-/* Dataviz palette tokens for single-series and category charts. */
-:root {
-	--chart-1: #3b6fd8;
-	--chart-2: #10b981;
-	--chart-3: #8b5cf6;
+.stat {
+	font-family: var(--font-display);
+	font-weight: var(--display-weight);
+	letter-spacing: var(--tracking-display);
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
 }
-.dark {
-	--chart-1: #5585e6;
-	--chart-2: #34d399;
-	--chart-3: #a78bfa;
+.label-mono {
+	font-family: var(--font-body);
+	font-size: var(--text-sm);
+	text-transform: none;
+	letter-spacing: normal;
+	color: var(--color-muted);
+}
+.text-highlight {
+	color: inherit;
+	background: none;
+}
+.bg-grid {
+	background-image: radial-gradient(var(--color-glyph-1) 1px, transparent 1px);
+	background-size: var(--cell-w) var(--cell-h);
 }

@@ -1,18 +1,31 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Familjen_Grotesk, IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { StackProvider, StackTheme } from "@stackframe/stack";
 import { stack } from "@/stack";
 import { PageViewTracker } from "@/components/app/PageViewTracker";
+import { stackCobaltTheme } from "@/components/ui/stack-theme";
 
-const geistSans = Geist({
-	variable: "--font-geist-sans",
+// Cobalt faces (DESIGN.md): the variables are read by the font tokens in globals.css, so they sit on <html>.
+const familjen = Familjen_Grotesk({
+	variable: "--font-familjen",
 	subsets: ["latin"],
+	weight: ["500", "600"],
+	display: "swap",
 });
 
-const geistMono = Geist_Mono({
-	variable: "--font-geist-mono",
+const plex = IBM_Plex_Sans({
+	variable: "--font-plex",
 	subsets: ["latin"],
+	weight: ["400", "500"],
+	display: "swap",
+});
+
+const jetbrains = JetBrains_Mono({
+	variable: "--font-jetbrains",
+	subsets: ["latin"],
+	weight: ["400", "500"],
+	display: "swap",
 });
 
 const SITE_URL = "https://indexfast.co";
@@ -101,7 +114,7 @@ export default function RootLayout({
 	children: React.ReactNode;
 }>) {
 	return (
-		<html lang="en" suppressHydrationWarning>
+		<html lang="en" suppressHydrationWarning className={[familjen.variable, plex.variable, jetbrains.variable].join(" ")}>
 			<head>
 				<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 				<script
@@ -112,9 +125,9 @@ export default function RootLayout({
 				<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} />
 				<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }} />
 			</head>
-			<body className={[geistSans.variable, geistMono.variable, "antialiased"].join(" ")}>
+			<body className="bg-background text-foreground font-sans antialiased">
 				<StackProvider app={stack}>
-					<StackTheme>{children}</StackTheme>
+					<StackTheme theme={stackCobaltTheme}>{children}</StackTheme>
 					<PageViewTracker />
 				</StackProvider>
 			</body>

@@ -1,0 +1,25 @@
+[
+ {
+  "scope": "app",
+  "shape": "app screen",
+  "theme": "cobalt",
+  "axes": "light/grotesk-sans/cool",
+  "hero": "n/a (system only)",
+  "nav": "kept",
+  "footer": "kept",
+  "imagery": "none",
+  "photos": [],
+  "entry": "src/app/globals.css",
+  "fingerprint": "design-system-lock",
+  "sections": [
+   "tokens",
+   "primitives",
+   "DESIGN.md"
+  ],
+  "signature": "the submission queue, every URL and what each engine answered",
+  "waived": [],
+  "prompt": "one centralized Cobalt design system for IndexFast marketing and app",
+  "date": "2026-10-31",
+  "mode": "build"
+ }
+]
