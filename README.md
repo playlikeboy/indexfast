@@ -130,64 +130,21 @@ This project uses:
 
 - **Next.js App Router**
 - **TypeScript**
-- **Tailwind CSS**
-- **Cloudflare Workers**
-- **OpenNext for Cloudflare**
-- **PostgreSQL / Neon**
-- **Drizzle or Prisma**
-- **Queue system for background jobs**
-- **Google Search Console integration**
-- **IndexNow API**
-- **Bing Webmaster workflows**
+- **Tailwind CSS v4** with the Cobalt design system (`DESIGN.md`, primitives in `src/components/ui`)
+- **Cloudflare Workers** via **OpenNext for Cloudflare**, hourly cron in `worker.ts`
+- **PostgreSQL / Neon** with **Drizzle ORM**
+- **Stack Auth** for accounts, **Razorpay** for prepaid plans
+- **Postgres-backed submission queue** drained by the cron
+- **IndexNow**, **Bing Webmaster API**, **Yandex**, **Baidu**
+- **Google Search Console** (URL inspection, sitemap submit) and the **Google Indexing API** for job and livestream pages only
+
+Contributor and agent guide: `AGENTS.md`.
 
 ---
 
-## Recommended Project Structure
+## Project Structure
 
-```txt
-.
-├── app
-│   ├── page.tsx
-│   ├── layout.tsx
-│   ├── pricing
-│   │   └── page.tsx
-│   ├── tools
-│   │   └── page.tsx
-│   ├── blog
-│   │   └── page.tsx
-│   ├── dashboard
-│   │   └── page.tsx
-│   └── api
-│       └── ...
-├── components
-│   ├── marketing
-│   │   ├── Navbar.tsx
-│   │   ├── Hero.tsx
-│   │   ├── ProblemSection.tsx
-│   │   ├── SolutionSection.tsx
-│   │   ├── FeaturesSection.tsx
-│   │   ├── UseCasesSection.tsx
-│   │   ├── ToolsSection.tsx
-│   │   ├── ComparisonSection.tsx
-│   │   ├── PricingPreview.tsx
-│   │   ├── FAQSection.tsx
-│   │   └── FinalCTA.tsx
-│   ├── dashboard
-│   └── ui
-├── lib
-│   ├── seo.ts
-│   ├── jsonld.ts
-│   ├── indexnow.ts
-│   ├── sitemap.ts
-│   └── checks.ts
-├── db
-│   ├── schema.ts
-│   └── client.ts
-├── public
-├── wrangler.toml
-├── open-next.config.ts
-└── README.md
-````
+The real layout, with what each folder is for, is in `AGENTS.md` section 4.
 
 ---
 
@@ -310,25 +267,27 @@ Recommended JSON-LD:
 Install dependencies:
 
 ```bash
-npm install
+bun install
 ```
 
 Run locally:
 
 ```bash
-npm run dev
+bun run dev
 ```
 
-Build:
+Lint, typecheck, test:
 
 ```bash
-npm run build
+bun run lint
+bunx tsc --noEmit -p .
+bun run test
 ```
 
-Lint:
+Apply database migrations (`src/db/migrate.ts`):
 
 ```bash
-npm run lint
+bun run db:migrate
 ```
 
 ---
@@ -337,46 +296,37 @@ npm run lint
 
 This project is intended to run on Cloudflare Workers using OpenNext.
 
-Typical commands:
-
 ```bash
-npm run build
+bun run db:migrate   # before deploying code that reads new columns
+bun run deploy       # opennextjs-cloudflare build && wrangler deploy
 ```
 
-```bash
-npx opennextjs-cloudflare build
-```
-
-```bash
-npx wrangler deploy
-```
-
-Depending on your setup, the deployment scripts may already be configured in `package.json`.
+Secrets are set with `wrangler secret put`. See `docs/deployment.md`.
 
 ---
 
 ## Environment Variables
 
-Create a `.env.local` file:
+Copy `.env.example` to `.env`. The main variables:
 
 ```env
 DATABASE_URL=""
-
-NEXT_PUBLIC_APP_URL="https://indexfast.co"
-
+NEXT_PUBLIC_STACK_PROJECT_ID=""
+NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY=""
+STACK_SECRET_SERVER_KEY=""
+RAZORPAY_KEY_ID=""
+RAZORPAY_KEY_SECRET=""
+RAZORPAY_WEBHOOK_SECRET=""
+NEXT_PUBLIC_RAZORPAY_KEY_ID=""
+ADMIN_EMAILS=""
+NEXT_PUBLIC_SITE_URL="https://indexfast.co"
 GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
-
-INDEXNOW_KEY=""
-
-BING_API_KEY=""
-
-AUTH_SECRET=""
-
-PAYMENT_PROVIDER_SECRET=""
+GOOGLE_REDIRECT_URI=""   # optional
 ```
 
-Never commit `.env.local`.
+IndexNow keys and Bing, Yandex, Baidu and Google credentials are per user or per site and stored
+encrypted in the database, not in env vars. Never commit `.env`. Full list: `AGENTS.md` section 10.
 
 ---
 
@@ -385,11 +335,7 @@ Never commit `.env.local`.
 Before shipping, verify:
 
 ```bash
-npm run build
-```
-
-```bash
-npm run lint
+bun run lint && bun run test
 ```
 
 Check rendered HTML:

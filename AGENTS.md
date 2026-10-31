@@ -19,20 +19,23 @@ and a Cloudflare Worker cron job that runs automation in the background.
 | Surface | Route | Purpose |
 |---|---|---|
 | Marketing site | `/`, `/about`, `/pricing`, `/contact`, `/privacy`, `/terms` | Public landing + blog + free tools + agent-first copy |
-| Free SEO tools | `/tools/*` (12 tools) | No-signup utilities — index checkers, sitemap extractor, IndexNow key generator, llms.txt generator, AI crawler checker, etc. |
+| Free SEO tools | `/tools/*` (11 tools) | No-signup utilities — index checkers, sitemap extractor, IndexNow key generator, llms.txt generator, AI crawler checker, etc. |
 | Resources | `/resources`, `/resources/directories`, `/resources/tools`, `/resources/skill`, `/resources/google-indexing-api`, `/resources/search-engines` | Free SEO resources, 100+ prioritized directories, third-party tools, downloadable SKILL.md, Google API guardrails, search engine API specs |
 | Auth (Stack Auth) | `/handler/[...stack]`, `/login`, `/signup` | Sign-in / sign-up / account screens |
 | Dashboard | `/dashboard`, `/dashboard/sites/[siteId]?view=overview\|urls\|queue\|sitemaps\|settings`, `/dashboard/connect`, `/dashboard/billing` | Protected app for vibe coders: add a site by domain, install one key file, everything else is automatic. See `docs/dashboard.md` |
 | Admin | `/admin` | Verified `ADMIN_EMAILS` only (404 otherwise): revenue, MRR, users, traffic analytics, cron health, plan grants. See `docs/admin.md` |
-| REST API | `/api/v1/*` | Bearer API-key interface for sites, verify, sitemaps, URLs, submissions, diagnostics, and resources |
+| REST API | `/api/v1/*` | Bearer API-key interface for sites, verify, sitemaps, URLs, submissions, queue, diagnostics, engines (`bing`, `yandex`, `baidu`, `gsc`, `inspect`) and resources |
+| Google OAuth | `/api/integrations/google/start`, `/api/integrations/google/callback` | Connects a user's Google account for Search Console inspection/sitemap submit and the gated Google Indexing API |
 | MCP | `/api/mcp` | Authenticated JSON-RPC MCP server for AI IDEs (all plans). See `docs/mcp.md` |
-| Billing | `/api/webhooks/razorpay` (+ server actions) | Razorpay prepaid 30-day plans. Dodo routes (`/api/checkout`, `/api/customer-portal`, `/api/webhooks/dodo`) are legacy and hidden. See `docs/billing.md` |
+| Billing | `/api/webhooks/razorpay` (+ server actions) | Razorpay prepaid 30-day plans. Only the legacy Dodo webhook (`/api/webhooks/dodo`) remains; the Dodo checkout and customer portal routes were removed. See `docs/billing.md` |
 | Analytics | `/api/track` | Cookie-less first-party page view beacon feeding `/admin` |
-| Automation cron | `worker.ts` → `runScheduledAutomation()` | Hourly: expire plans, sync due sitemaps, drain submission queue, log `cron_runs`. See `docs/automation.md` |
+| Automation cron | `worker.ts` → `runScheduledAutomation()` | Hourly: expire plans, sync due sitemaps, drain submission queue, Search Console inspections, prune usage/quota rows, log `cron_runs`. See `docs/automation.md` |
 
-The platform uses IndexNow (Bing + others) and optional Bing Webmaster API for
-normal indexing operations. Google's Indexing API is gated to eligible
-JobPosting and livestream BroadcastEvent pages only.
+The platform uses IndexNow (Bing + others) on every plan. Paid plans add the Bing
+Webmaster API, Yandex recrawl, Baidu push and Google Search Console (URL inspection,
+sitemap submit; Free gets a small daily inspection allowance). Google's Indexing API is
+gated to eligible JobPosting and livestream BroadcastEvent pages only. Engine clients live
+in `src/lib/engines/` (IndexNow/Bing stay in `src/lib/automation/search-engines.ts`).
 
 ---
 
@@ -43,10 +46,11 @@ JobPosting and livestream BroadcastEvent pages only.
 - **Build/deploy:** OpenNext for Cloudflare (`opennextjs-cloudflare build && deploy`)
 - **Package manager / scripts:** Bun
 - **Type system:** TypeScript 5.7, strict mode, `@/*` → `./src/*` alias
-- **Styles:** Tailwind CSS v4 with `@theme` (no `tailwind.config.ts`); custom CSS vars in `globals.css`
-- **Database:** Neon serverless PostgreSQL (HTTP driver) + Drizzle ORM
+- **Styles:** Tailwind CSS v4 with `@theme` (no `tailwind.config.ts`); every token in `src/app/globals.css`
+- **Design system:** Cobalt. Rules in `DESIGN.md` (read it before any UI work); primitives in `src/components/ui` (import from `@/components/ui`)
+- **Database:** Neon serverless PostgreSQL (HTTP driver at runtime, WebSocket driver for migrations) + Drizzle ORM
 - **Auth:** Stack Auth (`@stackframe/stack`) — `StackProvider` wraps the app, `stack` singleton in `src/stack.ts`
-- **Billing:** DodoPayments Next.js adapter (`@dodopayments/nextjs`)
+- **Billing:** Razorpay Orders (prepaid). DodoPayments remains only as a legacy webhook
 - **Tests:** Vitest (node environment), tests colocated in `__tests__/` folders
 - **Linting:** ESLint flat config via `next/core-web-vitals` + `next/typescript`
 - **Icons:** `lucide-react`
@@ -59,17 +63,17 @@ JobPosting and livestream BroadcastEvent pages only.
 ```bash
 # local
 bun run dev                # next dev (OpenNext CF bindings auto-wired in next.config.ts)
-bun run build              # next build (also used inside opennextjs-cloudflare build)
+bun run build              # prep .open-next stub + next build (do not run while `bun run dev` holds .next)
 bun run lint               # ESLint flat config
 bun run test               # Vitest, runs ./src/**/*.test.ts
 bun run cf-typegen         # wrangler types → ./cloudflare-env.d.ts
 bun run db:generate        # drizzle-kit generate (reads src/db/schema.ts)
-bun run db:migrate         # drizzle-kit migrate (apply ./drizzle/*.sql)
-bun run db:push            # drizzle-kit push (dev only)
+bun run db:migrate         # bun run src/db/migrate.ts: applies ./drizzle/*.sql in one transaction
+                           # (there is no db:push; always generate a migration)
 bun run cron:dev           # wrangler dev --test-scheduled (run scheduled handler locally)
 
 # deploy (Cloudflare)
-bun run deploy             # opennextjs-cloudflare build && deploy
+bun run deploy             # opennextjs-cloudflare build && wrangler deploy
 bun run upload             # build + upload source map (no deploy)
 bun run preview            # build + wrangler preview
 ```
@@ -84,6 +88,8 @@ bun run preview            # build + wrangler preview
 ```
 .
 ├── AGENTS.md                   # ← you are here
+├── DESIGN.md                   # Cobalt design system rules (tokens, roles, primitives)
+├── PRODUCT.md                  # product positioning and copy rules
 ├── README.md                   # user-facing project readme
 ├── plan.md / spec.md / todo.md # planning artifacts (do not edit casually)
 ├── docs/                       # extended agent context: billing, automation, mcp, dashboard, admin, deployment
@@ -99,7 +105,11 @@ bun run preview            # build + wrangler preview
 │   ├── 0002_add_automation_tables.sql
 │   ├── 0003_cold_thundra.sql
 │   ├── 0004_reverify_sites.sql
-│   └── 0005_razorpay_admin_analytics.sql
+│   ├── 0005_razorpay_admin_analytics.sql
+│   ├── 0006_short_raza.sql             # job priority, http_status, retry_after_at
+│   ├── 0007_queue_health.sql           # submission_jobs.throttle_count + claim/prune indexes
+│   └── 0008_engine_integrations.sql    # engine_quota_usage
+├── scripts/requeue-throttled-jobs.ts  # one-off: requeue jobs failed by old 429 handling (dry run, then --apply)
 ├── cloudflare-env.d.ts         # generated by `bun run cf-typegen`
 ├── eslint.config.mjs           # flat config
 ├── postcss.config.mjs          # Tailwind v4 PostCSS plugin
@@ -112,19 +122,18 @@ bun run preview            # build + wrangler preview
     │   ├── layout.tsx          # root: fonts, StackProvider, JSON-LD (Org + SoftwareApplication), PageViewTracker
     │   ├── page.tsx            # marketing landing (composes Hero, Problem, Solution, ...)
     │   ├── actions.ts          # "use server" — all auth-gated mutating actions
-    │   ├── globals.css         # Tailwind v4 + theme tokens
+    │   ├── globals.css         # Tailwind v4 + every Cobalt token (the only place colours/sizes are defined)
     │   ├── sitemap.ts          # MetadataRoute.Sitemap (static + tools + blog + resources)
     │   ├── robots.ts           # disallows /dashboard, /api/, /login, /signup
     │   ├── about | contact | pricing | privacy | terms | login | signup /page.tsx
     │   ├── handler/[...stack]/page.tsx  # StackHandler mount point
-    │   ├── blog/               # 5 long-form posts (data in lib/marketing-data.ts)
-    │   ├── tools/              # 12 free tools (data in lib/marketing-data.ts)
+    │   ├── blog/               # 8 long-form posts (data in lib/marketing-data.ts)
+    │   ├── tools/              # 11 free tools (data in lib/marketing-data.ts; server actions in tool-actions.ts)
     │   ├── resources/          # directories, third-party tools, SKILL, Google API guardrails
     │   ├── api/
     │   │   ├── v1/             # REST API routes authenticated by hashed API keys
     │   │   ├── mcp/            # JSON-RPC MCP endpoint
-    │   │   ├── checkout/       # (legacy, hidden) DodoPayments checkout adapter
-    │   │   ├── customer-portal/# (legacy, hidden) DodoPayments customer portal
+    │   │   ├── integrations/google/  # OAuth start + callback
     │   │   ├── track/          # first-party page view beacon (admin analytics)
     │   │   └── webhooks/       # razorpay/ (active), dodo/ (legacy)
     │   ├── admin/              # layout.tsx (requireAdmin) + page.tsx (analytics, revenue, cron, grants)
@@ -136,12 +145,17 @@ bun run preview            # build + wrangler preview
     │       ├── billing/page.tsx         # Razorpay plans, expiry, history
     │       ├── loading.tsx / error.tsx
     ├── components/
-    │   ├── marketing/          # landing components; Pricing reads VISIBLE_PLANS
-    │   └── app/                # dashboard/admin: ui.tsx, client.tsx, AppShell, AppNav,
-    │                           # AddSiteForm, McpSetup, RazorpayCheckout, BarChart, PageViewTracker
+    │   ├── ui/                 # Cobalt primitives: Button, Field, Panel, Status/Badge, Table, Tabs,
+    │   │                       # CodeBlock, Keycap, Container/Stack/Section, EmptyState, Stat, stack-theme
+    │   ├── marketing/          # landing: Hero, Solution (#features), SearchEnginesShowcase, FAQ,
+    │   │                       # HomePricing, FinalCTA (#cta), Footer, Navbar, landing/ (#agents); Pricing reads VISIBLE_PLANS
+    │   ├── tools/              # ToolPage, ToolRunner, ToolResult, tool-leads
+    │   └── app/                # dashboard/admin: ui.tsx (adapter over @/components/ui), client.tsx, toast,
+    │                           # AppShell (data-scope="app"), AppNav, views/ (Home, Site, Connect, Billing, Admin)
     ├── db/
     │   ├── schema.ts           # Drizzle schema (see §6)
     │   ├── index.ts            # neon() + drizzle() HTTP client
+    │   ├── migrate.ts          # `bun run db:migrate` (WebSocket driver, transactional)
     │   ├── app-queries.ts      # dashboard read queries (user scoped)
     │   └── admin-queries.ts    # admin aggregates (platform wide)
     └── lib/
@@ -152,13 +166,16 @@ bun run preview            # build + wrangler preview
         ├── platform/           # plans.ts (pricing + expiry policy), entitlements.ts, razorpay*.ts,
         │                       # api-keys, http, operations (REST/MCP), legacy billing.ts/dodo.ts
         ├── resources/          # 100+ submission directories + third-party SEO tool data
+        ├── engines/            # Google OAuth + Search Console (gsc.ts), Google Indexing API service,
+        │                       # Yandex, Baidu, extra-engine wiring, quota windows; __tests__/
         └── automation/
             ├── service.ts      # core engine: site settings, sitemap sync, IndexNow/Bing, queue runner
             ├── search-engines.ts  # IndexNow + Bing HTTP clients, key gen, payload builders
             ├── sitemaps.ts     # parseSitemapXml, fetchSitemapTree (BFS), discoverSitemapUrls
             ├── credentials.ts  # AES-GCM encrypt/decrypt, maskCredential
-            ├── constants.ts    # AUTOMATION_LIMITS + endpoints
-            └── __tests__/      # vitest suites: credentials, sitemaps, search-engines, url-utils
+            ├── diagnostics.ts  # evaluateUrlDiagnostics (checks rows with checkType 'diagnostics')
+            ├── constants.ts    # AUTOMATION_LIMITS, GOOGLE_LIMITS, ENGINE_BATCH_SIZE, ENGINE_LABELS, endpoints
+            └── __tests__/      # vitest suites (see §12)
 ```
 
 ---
@@ -183,9 +200,15 @@ background entry point. It:
 
 1. Downgrades users whose paid period ended more than 3 days ago (`downgradeExpiredPlans`).
 2. Finds sitemap sources due under the owner's plan interval (Free 24h, paid 1h),
-   skipping paused sites; syncs up to `maxSitesPerRun` (40) within a 10 min budget.
-3. Calls `processSubmissionQueue()` to drain up to 2000 jobs.
-4. Records the run in `cron_runs` (shown in `/admin`).
+   skipping paused sites. Loads at most `maxDueSitesScanned` (1000) due sites and keeps
+   syncing until the 6 minute `syncTimeBudgetMs` runs out.
+3. Calls `processSubmissionQueue()` to drain up to 2000 jobs inside the 10 minute `cronTimeBudgetMs`.
+4. Runs Search Console URL inspections (`runScheduledGscInspections`), bounded by
+   `GOOGLE_LIMITS` (per-run count, per-property daily/minute quota, 2 minute budget, sites in random order).
+5. Prunes `api_usage_events` older than 90 days and `engine_quota_usage` rows older than 3 days.
+6. Records the run in `cron_runs` (shown in `/admin`); `summary` includes `sitesDue`, queue counts
+   (`skippedCount`, `deferredCount`), `gscInspection`, `prunedUsageEvents`, `prunedQuotaRows`.
+   A `running` row older than 20 minutes is closed as failed by the next run.
 
 ---
 
@@ -203,20 +226,21 @@ to `random()`.
 | `cron_runs` | Cron heartbeat | `status`, `summary` (jsonb), `errorMessage`, `startedAt`, `finishedAt` |
 | `sites` | Connected web properties | `domain`, `indexingHost` (preserves `www`), `verified`, `automationEnabled`, `verificationToken`, `sitemapUrl` (primary), unique `(userId, domain)` |
 | `site_sitemaps` | Configured sitemap sources per site | `url`, `isPrimary`, `status` (`active`/`disabled`/`failed`), `lastSyncAt`, `lastErrorAt`, `lastErrorMessage`, unique `(siteId, url)` |
-| `site_integrations` | Per-site provider integrations | `provider` (`indexnow` only today), `status` (`pending`/`verified`/`failed`/`disabled`), `encryptedSecret`, `publicConfig` (jsonb: host, keyLocation, submitNewUrls, submitChangedUrls), `automationEnabled` |
-| `user_integrations` | Per-user provider credentials | `provider` (`bing` only today), `encryptedSecret`, `publicConfig` (lastValidationStatus, siteUrl) |
+| `site_integrations` | Per-site provider integrations | `provider` (`indexnow`, `bing` (per-site auto-submit), `gsc` (matched property), `google_indexing_api`, `yandex` (host id), `baidu` (encrypted token)), `status` (`pending`/`verified`/`failed`/`disabled`), `encryptedSecret`, `publicConfig` (jsonb: host, keyLocation, submitNewUrls, submitChangedUrls), `automationEnabled` |
+| `user_integrations` | Per-user provider credentials | `provider` (`bing`, `google` (OAuth refresh token), `yandex` (OAuth token)), `encryptedSecret`, `publicConfig` (lastValidationStatus, siteUrl) |
 | `sitemaps` | Sync history log (per source sync) | `status` (`pending`/`syncing`/`success`/`failed`), `lastSyncTime`, `errorMessage`, `urlCount`, `newCount`, `changedCount` |
 | `urls` | Discovered / submitted URLs | `loc`, `priority`, `lastmod`, `changefreq`, `indexingStatus` (`indexed`/`not_indexed`/`unknown`/`blockers`), `gscStatus`, `httpStatus`, `lastCheckedAt`, `lastSeenInSitemapAt`, `lastSubmittedAt`, `lastSubmissionStatus`, `lastSubmittedEngine`, unique `(siteId, loc)` |
-| `checks` | Diagnostic results | `checkType` (`diagnostics` from `checkUrlDiagnostics`), `status` (`pass`/`warn`/`fail`), `details` (jsonb) |
-| `submission_jobs` | Submission queue | `urlId?`, `loc`, `engine` (`indexnow`/`bing`), `reason` (`new`/`changed`/`manual`), `status` (`queued`/`processing`/`success`/`failed`), `priority`, `attempts`, `httpStatus`, `retryAfterAt`, `nextRunAt`, `lockedAt`, `lastErrorMessage` |
-| `submissions` | Submission log | `engine` (`indexnow`/`google_indexing_api`/`bing`), `status` (`submitted`/`success`/`failed`), `responseMessage`, `attempt` |
+| `checks` | Diagnostic results | `checkType` (`diagnostics` from `evaluateUrlDiagnostics`, `gsc_inspection` from Search Console), `status` (`pass`/`warn`/`fail`), `details` (jsonb) |
+| `submission_jobs` | Submission queue | `urlId?`, `loc`, `engine` (`indexnow`/`bing`/`google_indexing_api`/`yandex`/`baidu`), `reason` (`new`/`changed`/`manual`), `status` (`queued`/`processing`/`success`/`failed`/`skipped` = engine off, not on plan or refused by the Google guardrail; never sent), `priority`, `attempts`, `throttleCount`, `httpStatus`, `retryAfterAt`, `nextRunAt`, `lockedAt`, `lastErrorMessage` |
+| `submissions` | Submission log | `engine` (`indexnow`/`google_indexing_api`/`bing`/`yandex`/`baidu`), `status` (`submitted`/`success`/`failed`), `responseMessage`, `attempt` |
 | `alerts` | Operator alerts | `alertType` (`indexing_drop`/`error_detected`/`sitemap_failure`), `resolved` |
 | `api_keys` | Hashed IndexFast API keys | `keyPrefix`, `keyHash`, `scopes`, `status`, `lastUsedAt`, `expiresAt`, unique `keyHash` |
 | `api_usage_events` | API/MCP usage log | `apiKeyId`, `userId`, `method`, `route`, `statusCode`, `metadata` |
 | `billing_customers` | Dodo customer mapping | `userId`, `dodoCustomerId`, `email` |
 | `subscriptions` | Dodo subscription state | `dodoSubscriptionId`, `dodoProductId`, `plan`, `status`, current period, cancel flag |
-| `billing_events` | Dodo webhook audit log | `eventId`, `eventType`, `payload`, `processedAt` |
-| `google_integrations` | Google Indexing API gate/config | `siteId`, `status`, `eligibleContentTypes`, `publicConfig`, `lastValidationAt` |
+| `engine_quota_usage` | Counters for quotas engines do not report (GSC inspection per property, Google Indexing API per project) | `quotaKey`, `window` (day or UTC minute), `used`; unique `(quotaKey, window)`; atomic reserve |
+| `billing_events` | Webhook audit log (Dodo and `razorpay.*`) | `eventId`, `eventType`, `payload`, `processedAt` |
+| `google_integrations` | Unused (service-account era); Google now uses `user_integrations` provider `google`. Can be dropped in a later migration | |
 
 Indexes worth knowing: partial unique `submission_jobs_open_unique_idx`
 `(siteId, loc, engine) WHERE status IN ('queued','processing')` (queue dedup),
@@ -246,8 +270,11 @@ Both use parallel `Promise.all` to keep page latency low.
   quota. Notifications return 202. Details: `docs/mcp.md`.
 - Plans (single source of truth `src/lib/platform/plans.ts`): Free, Pro $19, Unlimited $99,
   each paid plan a prepaid 30-day period. Legacy tiers are hidden, never removed.
-- Payments: Razorpay only in the UI (`docs/billing.md`). DodoPayments code stays for
-  legacy subscribers but must not be linked from any page.
+- Payments: Razorpay only in the UI (`docs/billing.md`). Only the Dodo webhook stays for
+  legacy subscribers; the Dodo checkout and customer portal routes were removed.
+- MCP tools include engine management: `list_engines`, `get_google_connection`, `inspect_url`,
+  `submit_sitemap_to_gsc`, `set_yandex_token`, `set_baidu_token`, `set_engine_auto_submit`,
+  `remove_engine`, plus the Bing tools. `remove_bing_api_key` deletes the user's key (all sites).
 - Expiry policy: active -> 3-day grace -> Free limits, extra sites paused, nothing
   deleted. Enforced at read time (`resolveEntitlement`) and by the cron.
 - The downloadable agent skill is served from `/resources/skill` and
@@ -274,6 +301,11 @@ Full detail in `docs/automation.md`. Summary:
   cooldown is persisted (checked by `getActiveThrottle` before each send); rate limits never fail a job, backoff
   1h doubling to 24h. Network/5xx errors get 3 attempts (5 min base). Exponential backoff with +/-20% jitter,
   Retry-After parsing, de-duplicated alerts.
+- Request-driven queue runs (dashboard "Process now", MCP, API) stop after 25 s
+  (`inlineQueueTimeBudgetMs`). A Baidu test send no longer parks the rest of the backlog until midnight.
+- Optional engines (Bing API, Yandex, Baidu, Google Indexing API) need a paid plan and are opt-in
+  per site; Free/expired plans or paused sites make the setters throw (actions turn that into
+  `ActionResult`). Google Indexing API jobs that fail the JobPosting/livestream guardrail become `skipped`.
 - Sync bulk-upserts in chunks of 500; never loop one query per URL.
 - Runtime bounds: `src/lib/automation/constants.ts`. Plan limits: `plans.ts`.
 
@@ -329,7 +361,16 @@ RAZORPAY_WEBHOOK_SECRET=            # webhook: https://indexfast.co/api/webhooks
 NEXT_PUBLIC_RAZORPAY_KEY_ID=
 RAZORPAY_CURRENCY=                  # optional, default USD
 ADMIN_EMAILS=sh20raj@gmail.com      # comma separated, must be verified in Stack Auth
+CREDENTIAL_ENCRYPTION_KEY=          # optional, falls back to STACK_SECRET_SERVER_KEY
+NEXT_PUBLIC_SITE_URL=https://indexfast.co
+GOOGLE_CLIENT_ID=                   # Google OAuth "Web application" client
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=                # optional; default <NEXT_PUBLIC_SITE_URL>/api/integrations/google/callback
 ```
+
+Google setup: register the callback URL (and the localhost one for dev) as an authorized
+redirect URI, enable the Search Console API and the Web Search Indexing API. The webmasters and
+indexing scopes are sensitive, so until Google verifies the app only listed test users can connect.
 
 All runtime secrets are also set with `wrangler secret put` and mirrored with
 `gh secret set`. See `docs/deployment.md`.
@@ -345,7 +386,7 @@ DATABASE_URL=                       # scheduled handler reads it from bindings
 credentials, account must match `wrangler.jsonc` `account_id`) and `R2_*`.
 Production Worker secrets are set with `wrangler secret put` (see `docs/deployment.md`).
 
-> Credentials (IndexNow keys, Bing API keys) are stored AES-GCM encrypted
+> Credentials (IndexNow keys, Bing API keys, Google refresh tokens, Yandex and Baidu tokens) are stored AES-GCM encrypted
 > (`enc:v1:` prefix, `credentials.ts`). The key derives from
 > `CREDENTIAL_ENCRYPTION_KEY`, falling back to `STACK_SECRET_SERVER_KEY`.
 > Rotating either secret makes existing credentials unreadable. Legacy plaintext
@@ -365,14 +406,15 @@ Production Worker secrets are set with `wrangler secret put` (see `docs/deployme
 ## 11. Conventions & gotchas
 
 ### Coding style
-- **Use `bg-[var(--bg)]`-style CSS variables for theming** (see
-  `globals.css` / `index.html` data attribute pattern). Tailwind v4 has no
-  config file — all tokens live in `@theme inline {}`.
+- **Use Cobalt tokens through Tailwind utilities** (`bg-background`, `bg-panel`, `text-ink`,
+  `text-muted`, `border-rule`, `rounded-card`, `font-display`) and primitives from
+  `@/components/ui`. No literal colours or hex in `className`. `DESIGN.md` is the rule book;
+  `src/app/globals.css` holds every token. The retired brutalist utilities (`label-mono`,
+  `display`, `stat`, `text-highlight`, `bg-grid`, `--app-*`, `--chart-*`) are deleted; do not re-add them.
 - **Server Actions** go in `src/app/actions.ts`; never call Drizzle directly
   from a client component.
-- **No raw SQL** in app code. Drizzle query builder only. (The single
-  `cast(count(...) as int)` aggregation in `db/dashboard.ts` is a Drizzle
-  `sql` template, not raw SQL.)
+- **No raw SQL** in app code. Drizzle query builder only (Drizzle `sql` templates for
+  aggregates such as `cast(count(...) as int)` are fine).
 - **Always validate `userId` ownership** before reading/writing `sites`,
   `urls`, etc. Use the `*ForUser` helpers in `service.ts`.
 - **Always `revalidatePath`** the affected dashboard routes after a write.
@@ -409,7 +451,7 @@ Production Worker secrets are set with `wrangler secret put` (see `docs/deployme
   Sites already hosting an IndexNow key can reuse it (`adoptExistingIndexNowKeyForUser`).
 - **Serverless HTTP DB.** Drizzle uses `@neondatabase/serverless` over HTTP.
   Each query is a fetch — prefer `Promise.all` for parallel reads (as
-  `dashboard.ts` does).
+  `app-queries.ts` does).
 - **OpenNext dev bindings** are enabled via `initOpenNextCloudflareForDev()`
   in `next.config.ts`. Without it, `getCloudflareContext()` will throw in
   `next dev`.
@@ -425,7 +467,9 @@ Production Worker secrets are set with `wrangler secret put` (see `docs/deployme
 ### Tailwind v4 specifics
 - Use `@import "tailwindcss";` and `@custom-variant dark (&:where(.dark, .dark *));`
   at the top of `globals.css`.
-- Define theme tokens inside `@theme inline { ... }`, **not** a config file.
+- Define theme tokens inside `@theme static { ... }` / `@theme inline { ... }`, **not** a config file.
+- `data-scope="app"` on the app shell root (`AppShell.tsx`) switches to the fixed 1.2 app type
+  scale and gutter; wrap app content in `<Container width="app">`.
 - To switch themes we toggle the `dark` class on `<html>` from a tiny
   inline script in `<head>` (no FOUC) plus a `ThemeToggle` component.
 
@@ -443,23 +487,17 @@ Production Worker secrets are set with `wrangler secret put` (see `docs/deployme
 
 `vitest` with `node` environment and the `@` alias mirrored from `tsconfig`.
 
-Current coverage (`src/lib/automation/__tests__/`):
-- `platform/__tests__/plans.test.ts` — visible plans, expiry/grace/legacy policy,
-  period stacking, paused-site selection
-- `platform/__tests__/razorpay.test.ts` — HMAC vectors, checkout + webhook signatures
-- `mcp/__tests__/mcp.test.ts` — protocol negotiation, notifications, tool listing/errors
-- `credentials.test.ts` — round-trip encrypt/decrypt + `maskCredential`
-- `sitemaps.test.ts` — `parseSitemapXml` (urlsets, sitemap indexes, host
-  filtering, lastmod, CDATA/entities)
-- `url-utils.test.ts` — `normalizeHost` keeps `www`, `normalizeSitemapUrl` /
-  `normalizeUrlForHost` require exact host match, `canonicalizeUrl` dedup rules
-- `search-engines.test.ts` — payload builders + `getIndexNowKeyLocation`
-- `platform/__tests__/api-key-utils.test.ts` — API key generation, prefixing,
-  hashing, and masking
-- `platform/__tests__/google-indexing.test.ts` — Google Indexing API
-  eligibility guardrails and payload builders
-- `resources/__tests__/directories.test.ts` — 100+ directory catalog and
-  priority ordering
+Suites live in `__tests__/` next to the code (30 files). Highlights:
+- `lib/automation/__tests__/` — credentials, sitemaps + sitemap-tree, url-utils, search-engines,
+  submission-queue, requeue, bing-automation, diagnostics
+- `lib/engines/__tests__/` — engines (eligibility/wiring), google-oauth, gsc, yandex-baidu
+- `lib/platform/__tests__/` — plans (expiry/grace/legacy, paused sites), razorpay + razorpay-billing,
+  billing (Dodo), api-key-utils, auth, http, google-indexing guardrail
+- `lib/mcp/__tests__/mcp.test.ts` — protocol negotiation, notifications, tool listing/errors
+- `lib/resources/__tests__/` — directory catalog and search-engine specs
+- `app/tools/__tests__/` — tool-actions (free tool server actions, `ToolResult` shape), robots-rules
+- `app/admin/__tests__/admin-queries.test.ts`, `app/blog/__tests__/content-index.test.ts`,
+  `app/dashboard/sites/[siteId]/__tests__/params.test.ts`, `components/app/views/site/__tests__/google-tone.test.ts`
 
 Add new tests next to the file under test. Keep them focused on
 pure functions; the DB/Worker code is exercised by hand via `bun run dev`
@@ -470,7 +508,7 @@ and `bun run cron:dev`.
 ## 13. Marketing data & SEO
 
 - `src/lib/marketing-data.ts` is the single source of truth for `tools[]`
-  (12 entries) and `blogPosts[]` (5 entries). Update there and the
+  (11 entries) and `blogPosts[]` (8 entries). Update there and the
   `/tools`, `/blog`, and `/sitemap.xml` pages update automatically.
 - `src/app/sitemap.ts` enumerates static routes, tool routes, and blog
   routes plus resources routes. `src/app/robots.ts` disallows `/dashboard`,
@@ -484,10 +522,16 @@ and `bun run cron:dev`.
   `components/marketing/FAQ.tsx` so markup always matches the visible FAQ. Keep the FAQ claims honest —
   the platform explicitly does **not** guarantee Google indexing and uses
   Google's Indexing API only for eligible JobPosting/livestream pages.
-- The marketing design is brutalist: acid-lime accent (`#ccff00`), Geist
-  + Geist Mono, uppercase mono labels, zero border-radius. Match the
-  existing `label-mono`, `display`, `stat`, `text-highlight`, `bg-grid`
-  utility classes where possible.
+- Design: Cobalt (see `DESIGN.md`). Cool paper, hairline rules, Familjen Grotesk heads over IBM
+  Plex Sans, code on graphite, keycap buttons, one cobalt accent. Build from `@/components/ui`.
+  The brutalist acid-lime look (`#ccff00`, Geist, zero radius, uppercase tracked labels) is
+  retired; never bring it back. Sentence case for labels and headings.
+- Landing sections: Hero, Solution (`#features`), SearchEnginesShowcase, `#agents` (MCP, CLI,
+  REST, SKILL.md snippets), HomePricing (`#pricing`), FAQ, FinalCTA (`#cta`,
+  `components/marketing/FinalCTA.tsx`, re-exported from Footer.tsx and also used on /pricing and /about).
+- Engine claims on the landing page and in `plans.ts` features (Bing API, Yandex, Baidu, Google
+  Indexing API on paid plans; Search Console inspection once connected) must match the code in
+  `src/lib/engines` and `service.ts`. Trim the copy if any of that wiring is removed.
 
 ---
 
@@ -506,8 +550,10 @@ and `bun run cron:dev`.
 | Google Indexing API page rejected | Confirm JSON-LD contains `JobPosting` or `BroadcastEvent` inside `VideoObject`; otherwise use sitemap/GSC workflows. |
 | Hourly cron is silent | Check the Cron card in `/admin` (`cron_runs`). Confirm `wrangler.jsonc` cron is still `0 * * * *`, `DATABASE_URL` is set as a Worker secret, and `worker.ts.scheduled` is not throwing. The throw is intentional — failed binding surfaces immediately. |
 | Local dev can't reach DB | Ensure `DATABASE_URL` is in `.env`. The DB module throws on import if it's missing. |
-| Want to add a new submission engine | Extend `EngineSubmissionResult` consumers, add a new `site_integrations` / `user_integrations` provider string, add a payload builder in `search-engines.ts`, and update `getEligibleEngines` + `submitEngineBatch`. |
-| Want to add a new diagnostic check | Insert a row in `checks` with the desired `checkType`, set `urls.indexingStatus` accordingly, and consider whether to add an alert dedupe key (see `checkUrlDiagnostics`). |
+| Want to add a new submission engine | Add a client in `src/lib/engines/`, a provider string for `site_integrations` / `user_integrations`, `ENGINE_BATCH_SIZE` + `ENGINE_LABELS` in `constants.ts`, an `ENGINE_CATALOG` row in `db/admin-queries.ts`, wire it in `extra-engines.ts` (`resolveExtraEngines`) and the queue sender in `service.ts`, and gate it on a `PlanLimits` flag. |
+| Google connection fails | Check `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, that the redirect URI matches exactly, the APIs are enabled, and (before app verification) that the user is a listed test user. |
+| GSC inspections stop | `cron_runs.summary.gscInspection.quotaStops` / `errors[]`; per-property counters in `engine_quota_usage`. |
+| Want to add a new diagnostic check | Insert a row in `checks` with the desired `checkType`, set `urls.indexingStatus` accordingly, and consider whether to add an alert dedupe key (see `evaluateUrlDiagnostics` in `diagnostics.ts` and `runDiagnosticsForUser` in `operations.ts`). |
 | Want to add a new free tool | Add a `ToolDefinition` to `tools` in `lib/marketing-data.ts` and create `src/app/tools/<slug>/page.tsx`. The index/listing/sitemap pick it up automatically. |
 | Want to add a new blog post | Add a `BlogPost` to `blogPosts` in `lib/marketing-data.ts` and create `src/app/blog/<slug>/page.tsx`. |
 
@@ -515,8 +561,8 @@ and `bun run cron:dev`.
 
 ## 15. Things explicitly out of scope
 
-- **Google Search Console ingestion** — `urls.gscStatus` exists but no GSC
-  sync code. Live SERP-based indexing checks (the free tools) are separate.
+- **Full Search Console data ingestion** (performance reports, coverage exports). Only URL
+  inspection and sitemap submit are wired. Live SERP-based checks (the free tools) are separate.
 - **Backlink / off-page data** — not in product.
 - **Black-hat / grey-hat techniques** — explicitly disavowed in the FAQ.
 - **General-purpose Google Indexing API submissions** — not allowed. Google
@@ -546,11 +592,12 @@ and `bun run cron:dev`.
 - **IndexFast API key** — plaintext starts with `idxf_`, shown once, stored as
   SHA-256 hash in `api_keys`.
 - **Razorpay** — the billing provider shown to users (prepaid Orders).
-- **DodoPayments** — legacy billing provider, hidden; kept for existing subscribers.
+- **DodoPayments** — legacy billing provider; only its webhook remains, for existing subscribers.
+- **Cobalt** — the design system (`DESIGN.md`, tokens in `globals.css`, primitives in `src/components/ui`).
 - **Google Indexing API guardrail** — helper that only allows JobPosting or
   livestream BroadcastEvent-in-VideoObject pages to be queued.
 
 ---
 
-*Last reviewed 2026-10-15 after the dashboard rebuild, Razorpay billing, admin panel and
-automation rewrite. Keep this file and docs/ in sync with schema and pipeline changes.*
+*Last reviewed 2026-11-01 after the Cobalt redesign, the Google/Yandex/Baidu engines, queue health
+work and removal of the Dodo checkout/portal routes. Keep this file and docs/ in sync with schema and pipeline changes.*
