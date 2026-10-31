@@ -10,6 +10,9 @@ export const AUTOMATION_LIMITS = {
 	maxSubmissionJobsPerRun: 2_000, // Queue jobs drained per cron tick
 	maxManualJobsInline: 200, // Jobs processed synchronously after a dashboard/MCP submit
 	maxDrainJobsInline: 1_000, // Upper bound for an on-demand "Process now" queue drain
+	// Request-driven drains stop sending after this; one-URL engines (Google, Yandex) would
+	// otherwise hold the request for minutes and outlive the 15 min stale-lock recovery.
+	inlineQueueTimeBudgetMs: 25_000,
 	// The Worker cron wall limit is 15 min. A run killed mid-way leaves cron_runs at
 	// 'running' and claimed jobs at 'processing', so each phase stops well before it.
 	syncTimeBudgetMs: 6 * 60 * 1000, // Stop starting sitemap files/sources after this

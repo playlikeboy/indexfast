@@ -38,11 +38,11 @@ import {
 import { removeEngineForUser, setBaiduTokenForUser, setEngineAutoSubmitForUser, setYandexTokenForUser } from "@/lib/engines/extra-engines";
 import { disconnectGoogleForUser, inspectUrlForUser, matchGscPropertiesForUser, submitSitemapsToGscForUser } from "@/lib/engines/google-service";
 import { createApiKeyForUser, revokeApiKeyForUser } from "@/lib/platform/api-keys";
-import { DEFAULT_API_SCOPES, PLAN_PERIOD_DAYS, isPaidPlan, normalizeBillingTier } from "@/lib/platform/plans";
+import { DEFAULT_API_SCOPES, PLAN_PERIOD_DAYS, isPaidPlan } from "@/lib/platform/plans";
 import { runDiagnosticsForUser } from "@/lib/platform/operations";
 import { activatePaidOrder, createCheckoutOrder } from "@/lib/platform/razorpay-billing";
 import { getRazorpayConfig, verifyCheckoutSignature } from "@/lib/platform/razorpay";
-import { getErrorMessage } from "@/lib/url-utils";
+import { publicErrorMessage } from "@/lib/platform/http";
 
 export type ActionResult = { ok: boolean; message?: string; error?: string; data?: Record<string, unknown> } | null;
 
@@ -61,7 +61,8 @@ async function run(work: () => Promise<string | { message: string; data?: Record
 		const result = await work();
 		return typeof result === "string" ? { ok: true, message: result } : { ok: true, ...result };
 	} catch (error) {
-		return { ok: false, error: getErrorMessage(error) };
+		// DB/runtime errors carry SQL and internals; only deliberate domain errors reach the user.
+		return { ok: false, error: publicErrorMessage(error) };
 	}
 }
 
@@ -162,6 +163,8 @@ export async function drainQueueAction(siteId: string): Promise<ActionResult> {
 		const parts = [`${result.successCount} submitted`];
 		if (result.retryCount > 0) parts.push(`${result.retryCount} scheduled for retry`);
 		if (result.failedCount > 0) parts.push(`${result.failedCount} failed`);
+		if (result.skippedCount > 0) parts.push(`${result.skippedCount} skipped (engine off or not on your plan)`);
+		if (result.deferredCount > 0) parts.push(`${result.deferredCount} put back for later`);
 		return `Processed ${result.processedCount}: ${parts.join(", ")}.${throttleNote(result.throttledUntil)}`;
 	});
 }
@@ -262,7 +265,7 @@ export async function toggleBingAutoSubmitAction(siteId: string, enabled: boolea
 
 export async function removeBingKeyAction(siteId: string): Promise<ActionResult> {
 	return run(async () => {
-		await removeBingApiKeyForUser(await sessionUserId(), siteId);
+		await removeBingApiKeyForUser(await sessionUserId());
 		revalidateSite(siteId);
 		return "Bing key removed.";
 	});
@@ -352,17 +355,21 @@ export async function adminGrantPlanAction(_prev: ActionResult, formData: FormDa
 	return run(async () => {
 		if (!isAdmin(await getSessionUser())) throw new Error("Not allowed");
 		const email = text(formData, "email").toLowerCase();
-		const plan = normalizeBillingTier(text(formData, "plan"));
-		const days = Number(text(formData, "days")) || PLAN_PERIOD_DAYS;
-		const expiresAt = plan === "free" ? null : new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-		const updated = await db
-			.update(users)
-			.set({ billingTier: plan, planExpiresAt: expiresAt, updatedAt: new Date() })
-			.where(eq(users.email, email))
-			.returning({ id: users.id });
-		if (updated.length === 0) throw new Error(`No user with email ${email}`);
+		const rawPlan = text(formData, "plan");
+		// Only the current plans can be granted; hidden legacy tiers stay reachable through billing history only.
+		if (rawPlan !== "free" && !isPaidPlan(rawPlan)) throw new Error("Choose Free, Pro or Unlimited.");
+		const days = Math.min(3650, Math.max(1, Math.floor(Number(text(formData, "days")) || PLAN_PERIOD_DAYS)));
+		const matches = await db.select({ id: users.id, billingTier: users.billingTier, planExpiresAt: users.planExpiresAt }).from(users).where(eq(users.email, email)).limit(2);
+		if (matches.length === 0) throw new Error(`No user with email ${email}`);
+		if (matches.length > 1) throw new Error(`More than one user has ${email}; grant from the database by user id.`);
+		const [target] = matches;
+		const now = new Date();
+		// Same plan with time left: extend it, so a grant never shortens a period the user paid for.
+		const start = target.billingTier === rawPlan && target.planExpiresAt && target.planExpiresAt > now ? target.planExpiresAt : now;
+		const expiresAt = rawPlan === "free" ? null : new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
+		await db.update(users).set({ billingTier: rawPlan, planExpiresAt: expiresAt, updatedAt: now }).where(eq(users.id, target.id));
 		revalidatePath("/admin");
-		return plan === "free" ? `${email} set to Free.` : `${email} on ${plan} until ${expiresAt?.toDateString()}.`;
+		return rawPlan === "free" ? `${email} set to Free.` : `${email} on ${rawPlan} until ${expiresAt?.toDateString()}.`;
 	});
 }
 

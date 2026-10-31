@@ -104,7 +104,8 @@ describe("discoverSitemapUrls", () => {
 		const found = await discoverSitemapUrls(HOST);
 		expect(found).toHaveLength(AUTOMATION_LIMITS.maxSitemapSourcesPerSite);
 		expect(peak).toBeLessThanOrEqual(AUTOMATION_LIMITS.discoveryProbeConcurrency);
-	});
+		// Builds 1MB+ bodies: about 2s alone, slower when the full suite runs in parallel.
+	}, 20_000);
 });
 
 describe("mapWithConcurrency", () => {

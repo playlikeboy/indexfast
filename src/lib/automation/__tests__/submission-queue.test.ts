@@ -6,6 +6,7 @@ import {
 	isRetryable,
 	isThrottled,
 	resolveEligibleEngines,
+	splitByEngineBudget,
 	type SiteQueueState,
 } from "../service";
 import { parseRetryAfterHeader } from "../search-engines";
@@ -205,5 +206,23 @@ describe("classifyClaimedJob", () => {
 
 	it("skips jobs whose site no longer exists", () => {
 		expect(classifyClaimedJob({ engine: "indexnow", reason: "new" }, undefined)).toBe("skip");
+	});
+});
+
+describe("splitByEngineBudget", () => {
+	const group = ["a", "b", "c", "d"];
+
+	it("sends everything when there is no known limit or the limit covers the group", () => {
+		expect(splitByEngineBudget(group, null)).toEqual({ sendable: group, defer: [], release: [] });
+		expect(splitByEngineBudget(group, { limit: 10, probe: false })).toEqual({ sendable: group, defer: [], release: [] });
+	});
+
+	it("defers the rest to the engine's midnight only when the remaining quota is known", () => {
+		expect(splitByEngineBudget(group, { limit: 1, probe: false })).toEqual({ sendable: ["a"], defer: ["b", "c", "d"], release: [] });
+		expect(splitByEngineBudget(group, { limit: 0, probe: false })).toEqual({ sendable: [], defer: group, release: [] });
+	});
+
+	it("releases the rest behind a 1-URL probe so the backlog does not drain at 1 URL per day", () => {
+		expect(splitByEngineBudget(group, { limit: 1, probe: true })).toEqual({ sendable: ["a"], defer: [], release: ["b", "c", "d"] });
 	});
 });

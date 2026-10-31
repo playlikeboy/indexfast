@@ -409,7 +409,7 @@ export async function setBingAutomationForApi(userId: string, siteRef: string, e
 
 export async function removeBingApiKeyForApi(userId: string, siteRef: string) {
 	const site = await resolveSiteForUser(userId, siteRef);
-	await removeBingApiKeyForUser(userId, site.id);
+	await removeBingApiKeyForUser(userId);
 	return {
 		site: { id: site.id, domain: site.domain, host: getSiteHost(site) },
 		message: "Bing API key removed.",

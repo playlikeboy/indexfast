@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { handleMcpRequest, SUPPORTED_PROTOCOL_VERSIONS } from "@/lib/mcp/server";
 import type { AuthenticatedApiKey } from "@/lib/platform/api-keys";
+import { PLANS } from "@/lib/platform/plans";
 
 const mockAuth: AuthenticatedApiKey = {
 	apiKeyId: "test-key-id",
@@ -8,6 +9,8 @@ const mockAuth: AuthenticatedApiKey = {
 	name: "Test Key",
 	scopes: ["sites:read", "sites:write", "submissions:write", "diagnostics:write", "resources:read", "mcp:use"],
 	billingTier: "pro",
+	monthlyQuota: PLANS.pro.limits.monthlyApiRequests,
+	planName: PLANS.pro.name,
 };
 
 async function call(method: string, params?: Record<string, unknown>, id: number | undefined = 1) {

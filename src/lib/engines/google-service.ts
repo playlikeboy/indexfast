@@ -365,7 +365,9 @@ export async function runScheduledGscInspections(deadline: number) {
 		.innerJoin(users, eq(sites.userId, users.id))
 		.innerJoin(userIntegrations, and(eq(userIntegrations.userId, sites.userId), eq(userIntegrations.provider, "google"), eq(userIntegrations.status, "verified")))
 		.where(and(eq(siteIntegrations.provider, "gsc"), eq(siteIntegrations.status, "verified")))
-		// shortcut: no fairness ordering past 1000 connected sites; rotate by last inspection when that is reached.
+		// Random order so the same few large sites cannot use the whole per-run budget every hour.
+		// shortcut: random rotation, not oldest-inspection-first; switch when fairness must be exact.
+		.orderBy(sql`random()`)
 		.limit(1000);
 
 	const entitlements = new Map<string, Entitlement>();

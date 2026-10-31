@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveExtraEngines } from "../extra-engines";
+import { baiduRunBudget, resolveExtraEngines } from "../extra-engines";
 import { quotaDay, quotaMinute, secondsUntilMidnight } from "../quota-windows";
 
 describe("resolveExtraEngines", () => {
@@ -32,5 +32,19 @@ describe("quota windows", () => {
 	it("counts down to local midnight", () => {
 		expect(secondsUntilMidnight("UTC", new Date("2026-11-01T23:00:00Z"))).toBe(3600);
 		expect(secondsUntilMidnight("UTC", new Date("2026-11-01T23:59:30Z"))).toBe(60);
+	});
+});
+
+describe("baiduRunBudget", () => {
+	const now = new Date("2026-11-01T06:00:00Z");
+	const today = quotaDay(now, "Asia/Shanghai");
+
+	it("uses today's stored remain count as a known limit", () => {
+		expect(baiduRunBudget({ remain: 2_999, remainDay: today }, now)).toEqual({ limit: 2_999, probe: false });
+	});
+
+	it("probes with one URL when the remain count is from an earlier day or missing", () => {
+		expect(baiduRunBudget({ remain: 3_000, remainDay: "2026-10-31" }, now)).toEqual({ limit: 1, probe: true });
+		expect(baiduRunBudget({}, now)).toEqual({ limit: 1, probe: true });
 	});
 });

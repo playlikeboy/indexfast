@@ -51,12 +51,12 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 		id: "bing",
 		name: "Microsoft Bing",
 		company: "Microsoft",
-		marketShare: "Global: ~3.5% | US Desktop: ~13% | Powering Yahoo, DuckDuckGo, Ecosia",
+		marketShare: "Global. Its index also powers Yahoo, DuckDuckGo and Ecosia results.",
 		regions: ["Global", "North America", "Europe", "Asia-Pacific"],
 		supportLevel: "native",
 		supportedInIndexFast: true,
 		summary:
-			"Microsoft Bing provides both the open IndexNow protocol for instant push and a dedicated Webmaster API for direct quota-based batch submissions. Discovery on Bing also feeds DuckDuckGo, Yahoo Search, and Ecosia.",
+			"Microsoft Bing provides both the open IndexNow protocol for immediate push and a dedicated Webmaster API for direct quota-based batch submissions. Discovery on Bing also feeds DuckDuckGo, Yahoo Search, and Ecosia.",
 		methods: [
 			{
 				name: "IndexNow Protocol",
@@ -66,7 +66,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 				authMethod: "indexnow_key",
 				batchSize: 10000,
 				dailyQuota: "10,000+ URLs/day",
-				latency: "Instant (minutes to crawl)",
+				latency: "Notifies immediately; crawl timing is up to the engine",
 				contentRestrictions: "None (any valid page hosted on the verified domain).",
 				documentationUrl: "https://www.bing.com/indexnow/getstarted",
 				curlExample: `curl -X POST "https://api.indexnow.org/indexnow" \\
@@ -90,7 +90,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 				httpMethod: "POST",
 				authMethod: "api_key",
 				batchSize: 500,
-				dailyQuota: "10,000 - 100,000 URLs/day (based on site authority)",
+				dailyQuota: "10,000 URLs/day for most sites (check GetUrlSubmissionQuota)",
 				latency: "Fast (direct push to Bing indexing queue)",
 				contentRestrictions: "Site must be registered and verified in Bing Webmaster Tools.",
 				documentationUrl: "https://learn.microsoft.com/en-us/bingwebmaster/getting-started/webmaster-api",
@@ -111,7 +111,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 			title: "How to connect Bing in IndexFast",
 			steps: [
 				"Add your site to IndexFast by entering your domain.",
-				"Deploy the generated IndexNow key file to your root (e.g. /public/<key>.txt) and click Verify.",
+				"Deploy the generated IndexNow key file to your root (e.g. /public/<key>.txt) and choose Verify and turn on auto-submit.",
 				"In Bing Webmaster Tools (bing.com/webmasters), verify your domain ownership.",
 				"Go to Bing Webmaster Tools > Settings (gear icon) > API Access > API Key, copy your key.",
 				"Paste the API key into your IndexFast site Settings under 'Bing Webmaster API' with auto-submit enabled.",
@@ -127,7 +127,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 		id: "google",
 		name: "Google",
 		company: "Alphabet",
-		marketShare: "Global: ~90% | Mobile: ~94%",
+		marketShare: "Global. The largest search engine on desktop and mobile.",
 		regions: ["Global"],
 		supportLevel: "restricted",
 		supportedInIndexFast: true,
@@ -142,7 +142,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 				authMethod: "oauth2",
 				batchSize: 100,
 				dailyQuota: "200 quota units/day default (JobPosting/BroadcastEvent only)",
-				latency: "Fast (crawls within minutes for eligible types)",
+				latency: "Notifies immediately; Google decides crawl timing",
 				contentRestrictions: "CRITICAL: Strictly permitted ONLY for pages containing JobPosting or BroadcastEvent structured data. Submitting standard pages violates Google policies.",
 				documentationUrl: "https://developers.google.com/search/apis/indexing-api/v3/quickstart",
 				curlExample: `curl -X POST "https://indexing.googleapis.com/v3/urlNotifications:publish" \\
@@ -197,7 +197,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 		id: "yandex",
 		name: "Yandex",
 		company: "Yandex",
-		marketShare: "Russia & CIS: ~65% | Central Asia: ~30-50%",
+		marketShare: "The leading engine in Russia, with wide use across the CIS.",
 		regions: ["Russia", "Eastern Europe", "Central Asia"],
 		supportLevel: "indexnow",
 		supportedInIndexFast: true,
@@ -212,7 +212,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 				authMethod: "indexnow_key",
 				batchSize: 10000,
 				dailyQuota: "10,000 URLs/day",
-				latency: "Very fast (crawls within minutes)",
+				latency: "Notifies immediately; crawl timing is up to the engine",
 				contentRestrictions: "None.",
 				documentationUrl: "https://yandex.com/support/webmaster/indexnow/indexnow.html",
 				curlExample: `curl -X POST "https://yandex.com/indexnow" \\
@@ -256,14 +256,14 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 		},
 		developerTips: [
 			"IndexNow is the official recommendation by Yandex for rapid content indexing.",
-			"Yandex strongly penalizes slow mobile pages; ensure mobile TTFB is under 400ms.",
+			"Keep mobile pages fast; Yandex crawls and ranks with mobile performance in mind.",
 		],
 	},
 	{
 		id: "baidu",
 		name: "Baidu",
 		company: "Baidu, Inc.",
-		marketShare: "China: ~65-70% | Global Chinese diaspora",
+		marketShare: "The leading engine in mainland China.",
 		regions: ["China", "East Asia"],
 		supportLevel: "planned",
 		supportedInIndexFast: false,
@@ -307,12 +307,12 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 		id: "naver",
 		name: "Naver",
 		company: "Naver Corporation",
-		marketShare: "South Korea: ~20-30%",
+		marketShare: "A major engine in South Korea.",
 		regions: ["South Korea", "East Asia"],
 		supportLevel: "indexnow",
 		supportedInIndexFast: true,
 		summary:
-			"Naver is South Korea's premier search engine and portal. In 2022, Naver Search Advisor officially partnered with IndexNow to enable instant notification and crawling of new and updated Korean web pages.",
+			"Naver is South Korea's premier search engine and portal. In 2022, Naver Search Advisor officially partnered with IndexNow to notify it immediately of new and updated Korean web pages.",
 		methods: [
 			{
 				name: "IndexNow (Federated Partner)",
@@ -354,7 +354,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 		id: "seznam",
 		name: "Seznam.cz",
 		company: "Seznam.cz, a.s.",
-		marketShare: "Czech Republic: ~10-15%",
+		marketShare: "A local engine in the Czech Republic.",
 		regions: ["Czech Republic", "Central Europe"],
 		supportLevel: "indexnow",
 		supportedInIndexFast: true,
@@ -399,7 +399,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 		id: "syndicated",
 		name: "DuckDuckGo, Yahoo & Ecosia",
 		company: "Syndicated Search Engines",
-		marketShare: "Combined Global: ~5% | Privacy-focused users",
+		marketShare: "Global, including privacy-focused audiences.",
 		regions: ["Global", "Privacy-conscious audience"],
 		supportLevel: "syndicated",
 		supportedInIndexFast: true,
@@ -415,7 +415,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 				batchSize: 10000,
 				dailyQuota: "Covered by Bing / IndexNow quota",
 				latency: "Indexed when Bing updates its index",
-				contentRestrictions: "Inherits Bing policies.",
+				contentRestrictions: "None (inherits Bing policies).",
 				documentationUrl: "https://help.duckduckgo.com/duckduckgo-help-pages/results/sources/",
 				curlExample: `# Submitting to IndexNow or Bing automatically covers DuckDuckGo, Yahoo, and Ecosia:
 curl -X POST "https://api.indexnow.org/indexnow" \\

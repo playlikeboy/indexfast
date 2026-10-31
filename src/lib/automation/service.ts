@@ -36,6 +36,7 @@ import { formatLimit, PLAN_GRACE_DAYS, PLANS, resolveEntitlement, VISIBLE_PLANS,
 import { AUTOMATION_LIMITS, ENGINE_BATCH_SIZE, ENGINE_LABELS, GOOGLE_LIMITS, type SubmissionEngine } from "./constants";
 import {
 	getEngineRunBudget,
+	type EngineRunBudget,
 	isExtraEngine,
 	loadExtraEngineState,
 	quotaResetAt,
@@ -414,7 +415,7 @@ export async function verifySiteForUser(userId: string, siteId: string) {
 		.where(and(eq(urls.siteId, site.id), isNull(urls.lastSubmittedAt)))
 		.limit(Math.min(entitlement.limits.urlsPerSite, AUTOMATION_LIMITS.maxUrlsPerSitemap));
 	const queued = await enqueueUrlRows(verifiedSite, backlog, "new", entitlement, true);
-	const processed = queued > 0 ? await processSubmissionQueue({ siteId: site.id, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline }) : null;
+	const processed = queued > 0 ? await processSubmissionQueue({ siteId: site.id, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline, deadline: Date.now() + AUTOMATION_LIMITS.inlineQueueTimeBudgetMs }) : null;
 
 	return { ok: true, message: "Verified. Automation is on.", queued, submitted: processed?.successCount ?? 0 };
 }
@@ -598,17 +599,11 @@ export async function setBingAutomationForSite(userId: string, siteId: string, e
 }
 
 /**
- * With a siteId: remove Bing from that one site (ownership checked first; the user's key is
- * kept for their other sites). Without: delete the user's Bing key itself.
+ * Delete the user's Bing key. The key is per user, so this stops Bing for every site. There is
+ * no per-site removal: deleting a site's bing row would fall back to auto-submit on (see
+ * resolveEligibleEngines), so per-site control is setBingAutomationForSite instead.
  */
-export async function removeBingApiKeyForUser(userId: string, siteId?: string) {
-	if (siteId) {
-		const site = await requireSite(userId, siteId);
-		await db
-			.delete(siteIntegrations)
-			.where(and(eq(siteIntegrations.siteId, site.id), eq(siteIntegrations.provider, "bing")));
-		return;
-	}
+export async function removeBingApiKeyForUser(userId: string) {
 	await db.delete(userIntegrations).where(and(eq(userIntegrations.userId, userId), eq(userIntegrations.provider, "bing")));
 }
 
@@ -978,7 +973,7 @@ export async function syncSitemapsForUser(userId: string, siteId: string, source
 	const entitlement = await assertSiteActive(userId, siteId);
 	const result = await syncActiveSitemaps(site, entitlement, { sourceId });
 	const processed =
-		result.queuedCount > 0 ? await processSubmissionQueue({ siteId, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline }) : null;
+		result.queuedCount > 0 ? await processSubmissionQueue({ siteId, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline, deadline: Date.now() + AUTOMATION_LIMITS.inlineQueueTimeBudgetMs }) : null;
 	return { ...result, submitted: processed?.successCount ?? 0 };
 }
 
@@ -1127,7 +1122,7 @@ export async function submitUrlsForUser(userId: string, siteId: string, rawUrls:
 			.set({ priority: 1, updatedAt: new Date() })
 			.where(and(eq(submissionJobs.siteId, siteId), eq(submissionJobs.status, "queued"), inArray(submissionJobs.loc, locs)));
 	}
-	const processed = await processSubmissionQueue({ siteId, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline });
+	const processed = await processSubmissionQueue({ siteId, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline, deadline: Date.now() + AUTOMATION_LIMITS.inlineQueueTimeBudgetMs });
 	return { accepted: valid.size, rejected, queued, ...processed };
 }
 
@@ -1150,7 +1145,7 @@ export async function retryFailedForUser(userId: string, siteId: string) {
 	if (queued === 0 && (await getEligibleEngines(site, entitlement, true)).length === 0) {
 		throw new Error(NO_ENGINE_MESSAGE);
 	}
-	const processed = await processSubmissionQueue({ siteId, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline });
+	const processed = await processSubmissionQueue({ siteId, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline, deadline: Date.now() + AUTOMATION_LIMITS.inlineQueueTimeBudgetMs });
 	return { queued, submitted: processed.successCount, throttledUntil: processed.throttledUntil };
 }
 
@@ -1167,7 +1162,7 @@ export async function submitPendingForUser(userId: string, siteId: string) {
 	if (queued === 0 && pending.length > 0 && (await getEligibleEngines(site, entitlement, true)).length === 0) {
 		throw new Error(NO_ENGINE_MESSAGE);
 	}
-	const processed = queued > 0 ? await processSubmissionQueue({ siteId, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline }) : null;
+	const processed = queued > 0 ? await processSubmissionQueue({ siteId, maxJobs: AUTOMATION_LIMITS.maxManualJobsInline, deadline: Date.now() + AUTOMATION_LIMITS.inlineQueueTimeBudgetMs }) : null;
 	return { queued, submitted: processed?.successCount ?? 0, throttledUntil: processed?.throttledUntil ?? null };
 }
 
@@ -1482,6 +1477,18 @@ async function sendClaimedBatch(site: SiteRow, engine: string, batch: ClaimedJob
 }
 
 /**
+ * Split a claimed group by the engine's run budget. Only a known remaining quota defers the
+ * rest to the engine's midnight; behind a 1-URL probe the rest is released unchanged, so the
+ * next run uses the remain count the probe just stored instead of 1 URL per day.
+ */
+export function splitByEngineBudget<T>(group: T[], budget: EngineRunBudget | null) {
+	if (budget === null || budget.limit >= group.length) return { sendable: group, defer: [] as T[], release: [] as T[] };
+	const sendable = group.slice(0, Math.max(0, budget.limit));
+	const rest = group.slice(sendable.length);
+	return budget.probe ? { sendable, defer: [] as T[], release: rest } : { sendable, defer: rest, release: [] as T[] };
+}
+
+/**
  * Drain the queue: recover orphaned locks, atomically claim due jobs (manual first), drop
  * what must not be sent (paused site, disabled engine, key awaiting re-check), then submit
  * per site+engine in engine-sized batches. Transient failures (network/5xx) retry with
@@ -1595,10 +1602,12 @@ export async function processSubmissionQueue(options: { siteId?: string; maxJobs
 		let sendable = group;
 		if (isExtraEngine(engine) && !throttledEngines.has(engineKey)) {
 			const budget = await getEngineRunBudget(site, engine).catch(() => null);
-			if (budget !== null && budget < group.length) {
-				sendable = group.slice(0, Math.max(0, budget));
+			const split = splitByEngineBudget(group, budget);
+			sendable = split.sendable;
+			releaseIds.push(...split.release.map((job) => job.id));
+			if (split.defer.length > 0) {
 				const resumeAt = quotaResetAt(engine);
-				const overIds = group.slice(sendable.length).map((job) => job.id);
+				const overIds = split.defer.map((job) => job.id);
 				await Promise.all(
 					chunk(overIds, 1000).map((ids) =>
 						requeueClaimed(ids, now, { nextRunAt: resumeAt, lastErrorMessage: `${ENGINE_LABELS[engine]} daily quota is used up; resumes after ${resumeAt.toISOString()}.` }),
@@ -1995,5 +2004,5 @@ export async function drainSiteQueueForUser(userId: string, siteId: string, maxJ
 	}
 	await assertSiteActive(userId, siteId);
 	const limit = Math.min(AUTOMATION_LIMITS.maxDrainJobsInline, Math.max(1, Math.floor(Number(maxJobs) || 1)));
-	return processSubmissionQueue({ siteId, maxJobs: limit });
+	return processSubmissionQueue({ siteId, maxJobs: limit, deadline: Date.now() + AUTOMATION_LIMITS.inlineQueueTimeBudgetMs });
 }

@@ -106,22 +106,31 @@ export function quotaResetAt(engine: ExtraEngine, now = new Date()) {
 	return new Date(now.getTime() + secondsUntilMidnight(zone, now) * 1000);
 }
 
+/** A per-run send limit; `probe` means the limit is a 1-URL probe, not a known remaining quota. */
+export type EngineRunBudget = { limit: number; probe: boolean };
+
+/** Baidu's budget from its stored remain count, which is only valid on the day it was read. */
+export function baiduRunBudget(config: BaiduSiteConfig, now = new Date()): EngineRunBudget {
+	return config.remainDay === quotaDay(now, BAIDU_TIME_ZONE) && typeof config.remain === "number"
+		? { limit: config.remain, probe: false }
+		: { limit: 1, probe: true };
+}
+
 /**
  * How many URLs this run may send to the engine for the site, or null for "no known limit"
  * (the engine's own 429 then parks the rest). Baidu has no quota endpoint: until today's
  * remain count is known, one URL is sent as a probe and its answer sets the budget.
  */
-export async function getEngineRunBudget(site: SiteRow, engine: string): Promise<number | null> {
+export async function getEngineRunBudget(site: SiteRow, engine: string): Promise<EngineRunBudget | null> {
 	if (engine === "yandex") {
 		const setup = await loadYandexCredentials(site);
 		if (!setup) return null;
 		const quota = await getYandexRecrawlQuota(setup.token, setup.yandexUserId, setup.hostId).catch(() => null);
-		return quota?.ok && typeof quota.remainder === "number" ? quota.remainder : null;
+		return quota?.ok && typeof quota.remainder === "number" ? { limit: quota.remainder, probe: false } : null;
 	}
 	if (engine === "baidu") {
 		const row = await getSiteRow(site.id, "baidu");
-		const config = readConfig<BaiduSiteConfig>(row?.publicConfig);
-		return config.remainDay === quotaDay(new Date(), BAIDU_TIME_ZONE) && typeof config.remain === "number" ? config.remain : 1;
+		return baiduRunBudget(readConfig<BaiduSiteConfig>(row?.publicConfig));
 	}
 	return null;
 }

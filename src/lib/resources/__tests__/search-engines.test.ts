@@ -65,6 +65,17 @@ describe("search engines research catalog", () => {
 		expect(notes.some((n) => /guarantee(s|d)? (google )?index/i.test(n) && !/nothing guarantees|does not|never/i.test(n))).toBe(false);
 	});
 
+	it("states no unsourced market-share percentages or crawl-time promises", () => {
+		const engines = getAllSearchEngines();
+		expect(engines.some((e) => /%/.test(e.marketShare))).toBe(false);
+		expect(engines.some((e) => e.methods.some((m) => /instant|within minutes/i.test(m.latency)))).toBe(false);
+	});
+
+	it("keeps the Bing Webmaster quota consistent with the Bing guide", () => {
+		const webmasterApi = getSearchEngineById("bing")?.methods.find((m) => m.name.includes("Webmaster API"));
+		expect(webmasterApi?.dailyQuota).toMatch(/^10,000 URLs\/day/);
+	});
+
 	it("returns only supported search engines when filtered", () => {
 		const supported = getSupportedSearchEngines();
 		expect(supported.every((e) => e.supportedInIndexFast)).toBe(true);

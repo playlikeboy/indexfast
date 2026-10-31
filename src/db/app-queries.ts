@@ -5,14 +5,18 @@
  */
 import { and, asc, desc, eq, ilike, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { alerts, apiKeys, apiUsageEvents, siteSitemaps, sites, submissionJobs, submissions, urls } from "@/db/schema";
+import { alerts, apiKeys, apiUsageEvents, siteIntegrations, siteSitemaps, sites, submissionJobs, submissions, urls, userIntegrations } from "@/db/schema";
 import { getIndexNowSetup, getBingStatusForUser, getSiteForUser, getSiteQueueSummary } from "@/lib/automation/service";
 import { getUserAccess } from "@/lib/platform/entitlements";
 import { maskApiKeyPrefix } from "@/lib/platform/api-key-utils";
 import { listEnginesForUser } from "@/lib/engines/extra-engines";
 import { getGoogleConnectionStatus } from "@/lib/engines/google-service";
 
-export type SiteStatus = "live" | "setup" | "paused" | "error";
+/**
+ * live: verified and auto-submitting. off: verified but the user turned auto-submit off (a
+ * choice, not a problem, so it never counts as needing attention). setup: ownership not proven.
+ */
+export type SiteStatus = "live" | "off" | "setup" | "paused" | "error";
 
 const urlStats = {
 	total: sql<number>`cast(count(*) as int)`,
@@ -59,7 +63,7 @@ export async function getDashboardHome(userId: string) {
 		sites: siteRows.map((site) => {
 			const source = sourcesBySite.get(site.id);
 			const paused = access.pausedSiteIds.has(site.id);
-			let status: SiteStatus = site.verified && site.automationEnabled ? "live" : "setup";
+			let status: SiteStatus = !site.verified ? "setup" : site.automationEnabled ? "live" : "off";
 			if (source?.failed) status = "error";
 			if (paused) status = "paused";
 			return {
@@ -204,7 +208,7 @@ export type DashboardHomeData = Awaited<ReturnType<typeof getDashboardHome>>;
 
 export async function getConnectPage(userId: string) {
 	const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
-	const [access, keys, [usage], siteRows, google] = await Promise.all([
+	const [access, keys, [usage], siteRows, google, yandexRows, [yandexUser]] = await Promise.all([
 		getUserAccess(userId),
 		db
 			.select({ id: apiKeys.id, name: apiKeys.name, keyPrefix: apiKeys.keyPrefix, lastUsedAt: apiKeys.lastUsedAt, createdAt: apiKeys.createdAt })
@@ -215,15 +219,41 @@ export async function getConnectPage(userId: string) {
 			.select({ count: sql<number>`cast(count(*) as int)` })
 			.from(apiUsageEvents)
 			.where(and(eq(apiUsageEvents.userId, userId), sql`${apiUsageEvents.createdAt} >= ${monthStart}`)),
-		db.select({ domain: sites.domain }).from(sites).where(eq(sites.userId, userId)).limit(1),
+		db.select({ id: sites.id, domain: sites.domain, indexingHost: sites.indexingHost, verified: sites.verified }).from(sites).where(eq(sites.userId, userId)).orderBy(sites.createdAt),
 		getGoogleConnectionStatus(userId),
+		// Yandex rows are per site, joined to sites so only this user's rows are ever read.
+		db
+			.select({ siteId: siteIntegrations.siteId, status: siteIntegrations.status, automationEnabled: siteIntegrations.automationEnabled, lastErrorMessage: siteIntegrations.lastErrorMessage })
+			.from(siteIntegrations)
+			.innerJoin(sites, eq(sites.id, siteIntegrations.siteId))
+			.where(and(eq(sites.userId, userId), eq(siteIntegrations.provider, "yandex"))),
+		db
+			.select({ status: userIntegrations.status })
+			.from(userIntegrations)
+			.where(and(eq(userIntegrations.userId, userId), eq(userIntegrations.provider, "yandex")))
+			.limit(1),
 	]);
+	const yandexBySite = new Map(yandexRows.map((row) => [row.siteId, row]));
 	return {
 		entitlement: access.entitlement,
 		keys: keys.map((key) => ({ ...key, masked: maskApiKeyPrefix(key.keyPrefix) })),
 		usage: usage?.count ?? 0,
 		exampleDomain: siteRows[0]?.domain ?? null,
 		google,
+		yandex: {
+			tokenSaved: yandexUser?.status === "verified",
+			sites: siteRows.map((site) => {
+				const row = yandexBySite.get(site.id);
+				return {
+					siteId: site.id,
+					host: site.indexingHost || site.domain,
+					verified: site.verified,
+					status: row?.status ?? "not_connected",
+					autoSubmit: row?.automationEnabled ?? false,
+					lastError: row?.lastErrorMessage ?? null,
+				};
+			}),
+		},
 	};
 }
 

@@ -107,8 +107,8 @@ only open with the fallback key are re-encrypted with the primary key when read.
 
 Engines: IndexNow (needs a verified key) on every plan; Bing only on plans with `limits.bing` (Pro/Unlimited) with a
 verified per-user key. `saveBingApiKeyForUser` and enabling `setBingAutomationForSite` refuse other plans.
-`removeBingApiKeyForUser(userId, siteId)` removes Bing from that one owned site; without `siteId` it deletes the
-user's key.
+`removeBingApiKeyForUser(userId)` deletes the user's key, which stops Bing on every site. Per-site control is
+`setBingAutomationForSite`; deleting a site's bing row would fall back to auto-submit on.
 
 ### Recovering jobs failed by old 429 handling
 

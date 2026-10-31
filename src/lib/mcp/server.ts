@@ -7,6 +7,7 @@
  * every `site` argument accepts a site id OR a domain, and tool results are JSON text.
  */
 import type { AuthenticatedApiKey } from "@/lib/platform/api-keys";
+import { publicErrorMessage } from "@/lib/platform/http";
 import {
 	addSitemapForApi,
 	bulkSubmitUrlsForApi,
@@ -528,7 +529,7 @@ export async function handleMcpRequest(auth: AuthenticatedApiKey, request: JsonR
 					const value = await callTool(auth, asString(params.name), (params.arguments as Record<string, unknown>) || {});
 					return jsonRpcResult(request.id, textContent(value));
 				} catch (error) {
-					return jsonRpcResult(request.id, textContent(error instanceof Error ? error.message : "Tool failed", true));
+					return jsonRpcResult(request.id, textContent(publicErrorMessage(error), true));
 				}
 			}
 			case "resources/list":
@@ -563,6 +564,6 @@ export async function handleMcpRequest(auth: AuthenticatedApiKey, request: JsonR
 				return jsonRpcError(request.id, -32601, `Method not found: ${method}`);
 		}
 	} catch (error) {
-		return jsonRpcError(request.id, -32000, error instanceof Error ? error.message : "Unknown MCP error");
+		return jsonRpcError(request.id, -32000, publicErrorMessage(error));
 	}
 }
