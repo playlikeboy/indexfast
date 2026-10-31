@@ -1,86 +1,91 @@
 /**
- * Minimal server-safe UI kit for the dashboard and admin panel. Keep this small: if a page
- * needs something bespoke, build it in the page. Interactive pieces live in client.tsx.
+ * Server-safe dashboard and admin kit, now a thin adapter over the Cobalt primitives in
+ * @/components/ui. The exported names and props are the old ones on purpose: SiteView,
+ * AdminView and other app screens import them, and they keep compiling while each screen moves
+ * to @/components/ui directly. New code should import from @/components/ui.
+ * Rules carried over from DESIGN.md: state is text plus an icon (Status), names are quiet tags
+ * (Badge), one cut Panel per region, no colour outside the tokens.
  */
 import Link from "next/link";
 import type { ReactNode } from "react";
+import {
+	Badge as UiBadge,
+	EmptyState as UiEmptyState,
+	Panel,
+	Stat as UiStat,
+	Status,
+	buttonClass as uiButtonClass,
+	cn,
+	type ButtonVariant,
+	type StatusTone,
+} from "@/components/ui";
 
-export function cn(...classes: Array<string | false | null | undefined>) {
-	return classes.filter(Boolean).join(" ");
-}
+export { cn };
 
 export function Card({ children, className, title, action, description }: { children?: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; description?: ReactNode }) {
+	// Callers pad their own content (tables and lists run edge to edge), so the Panel is unpadded.
 	return (
-		<section className={cn("rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)]", className)}>
-			{title || action ? (
-				<header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--app-border)] px-5 py-4">
-					<div className="min-w-0">
-						<h2 className="text-[15px] font-semibold">{title}</h2>
-						{description ? <p className="mt-0.5 text-sm text-[var(--app-muted)]">{description}</p> : null}
-					</div>
-					{action ? <div className="flex flex-wrap items-center gap-2">{action}</div> : null}
-				</header>
-			) : null}
+		<Panel title={title} description={description} action={action} padded={false} className={className}>
 			{children}
-		</section>
+		</Panel>
 	);
 }
 
-type Tone = "neutral" | "ok" | "warn" | "bad" | "accent";
+export type Tone = "neutral" | "ok" | "warn" | "bad" | "accent";
 
-const toneClass: Record<Tone, string> = {
-	neutral: "bg-[var(--app-subtle)] text-[var(--app-muted)]",
-	ok: "bg-[var(--app-ok-bg)] text-[var(--app-ok)]",
-	warn: "bg-[var(--app-warn-bg)] text-[var(--app-warn)]",
-	bad: "bg-[var(--app-bad-bg)] text-[var(--app-bad)]",
-	accent: "bg-accent text-accent-foreground",
+const statusTone: Record<Exclude<Tone, "neutral" | "accent">, StatusTone> = {
+	ok: "success",
+	warn: "warning",
+	bad: "danger",
 };
 
+/**
+ * Legacy Badge. A tone that carries state (ok, warn, bad) renders as Status so meaning never
+ * depends on a filled colour; neutral and accent are names or categories and stay quiet tags.
+ */
 export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
-	return <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap", toneClass[tone])}>{children}</span>;
+	if (tone === "neutral" || tone === "accent") return <UiBadge>{children}</UiBadge>;
+	return <Status tone={statusTone[tone]}>{children}</Status>;
 }
 
 export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
-	return (
-		<div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3">
-			<div className="text-xs font-medium text-[var(--app-muted)]">{label}</div>
-			<div className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{value}</div>
-			{hint ? <div className="mt-0.5 text-xs text-[var(--app-muted)]">{hint}</div> : null}
-		</div>
-	);
+	return <UiStat label={label} value={value} hint={hint} />;
 }
 
 export function PageHeader({ title, description, action }: { title: ReactNode; description?: ReactNode; action?: ReactNode }) {
 	return (
 		<div className="mb-6 flex flex-wrap items-end justify-between gap-4">
 			<div className="min-w-0">
-				<h1 className="truncate text-2xl font-semibold tracking-tight">{title}</h1>
-				{description ? <p className="mt-1 text-sm text-[var(--app-muted)]">{description}</p> : null}
+				<h1 className="truncate text-2xl font-semibold">{title}</h1>
+				{description ? <p className="mt-1 max-w-[75ch] text-sm text-muted">{description}</p> : null}
 			</div>
 			{action ? <div className="flex flex-wrap items-center gap-2">{action}</div> : null}
 		</div>
 	);
 }
 
-// Shared focus ring: keyboard users must always see where they are.
-const focusRing = "outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-text)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-bg)]";
-
-export const buttonClass = {
-	primary: `inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground transition hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`,
-	secondary: `inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3.5 py-2 text-sm font-medium transition hover:bg-[var(--app-subtle)] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`,
-	ghost: `inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--app-muted)] transition hover:bg-[var(--app-subtle)] hover:text-[var(--app-text)] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`,
-	danger: `inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-[var(--app-bad)]/30 px-3.5 py-2 text-sm font-medium text-[var(--app-bad)] transition hover:bg-[var(--app-bad-bg)] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`,
+/**
+ * Class strings per variant for code that dresses its own element. Ghost is the 32px key used
+ * in rows and toolbars; the rest are the 40px app key.
+ */
+export const buttonClass: Record<ButtonVariant, string> = {
+	primary: uiButtonClass({ variant: "primary" }),
+	secondary: uiButtonClass({ variant: "secondary" }),
+	ghost: uiButtonClass({ variant: "ghost", size: "sm" }),
+	danger: uiButtonClass({ variant: "danger" }),
 };
 
-export const inputClass =
-	"w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-sm shadow-sm outline-none transition placeholder:text-[var(--app-muted)] focus:border-[var(--app-text)] focus:ring-2 focus:ring-[var(--app-text)]/10";
+export const inputClass = "ui-field";
 
-/** Inline code chip for file names and paths inside prose. */
+/** For a Table placed edge to edge in an unpadded Panel: align outer cells with the Panel header, drop the last rule. */
+export const tableInPanel = "[&_td:first-child]:pl-5 [&_th:first-child]:pl-5 [&_td:last-child]:pr-5 [&_th:last-child]:pr-5 [&_tbody_tr:last-child_td]:border-b-0";
+
+/** Inline code for file names and paths inside prose. */
 export function Code({ children }: { children: ReactNode }) {
-	return <code className="rounded bg-[var(--app-subtle)] px-1 py-0.5 font-mono text-[0.85em]">{children}</code>;
+	return <code className="rounded-[4px] bg-well px-1 py-0.5 font-mono text-[0.875em] break-all">{children}</code>;
 }
 
-export function ButtonLink({ href, children, variant = "secondary", external }: { href: string; children: ReactNode; variant?: keyof typeof buttonClass; external?: boolean }) {
+export function ButtonLink({ href, children, variant = "secondary", external }: { href: string; children: ReactNode; variant?: ButtonVariant; external?: boolean }) {
 	return external ? (
 		<a href={href} target="_blank" rel="noreferrer" className={buttonClass[variant]}>
 			{children}
@@ -96,33 +101,27 @@ export function ButtonLink({ href, children, variant = "secondary", external }: 
 export function SiteAvatar({ host, size = "md" }: { host: string; size?: "md" | "lg" }) {
 	const letter = host.replace(/^www\./, "").charAt(0).toUpperCase() || "?";
 	return (
-		<span
-			aria-hidden
-			className={cn(
-				"grid shrink-0 place-items-center rounded-lg border border-[var(--app-border)] bg-[var(--app-subtle)] font-semibold text-[var(--app-text)]",
-				size === "lg" ? "h-10 w-10 text-base" : "h-9 w-9 text-sm",
-			)}
-		>
+		<span aria-hidden="true" className={cn("ui-cut ui-cut-sm grid shrink-0 place-items-center bg-well font-display font-semibold text-ink-2", size === "lg" ? "size-10 text-md" : "size-9 text-sm")}>
 			{letter}
 		</span>
 	);
 }
 
-/** Thin progress bar (submitted / tracked). Neutral ink, not lime: lime is reserved for actions. */
+/** Thin progress bar (submitted / tracked). Ink, not cobalt: cobalt is kept for the one primary action. */
 export function Progress({ value, max, label }: { value: number; max: number; label: string }) {
 	const percent = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
 	return (
-		<div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--app-subtle)]" role="progressbar" aria-label={label} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
-			<div className="h-full rounded-full bg-[var(--app-ok)]" style={{ width: `${percent}%` }} />
+		<div className="h-1.5 w-full overflow-hidden rounded-full bg-sunken" role="progressbar" aria-label={label} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+			<div className="h-full rounded-full bg-ink-2" style={{ width: `${percent}%` }} />
 		</div>
 	);
 }
 
-export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
+/** Legacy EmptyState: inset inside an unpadded Card so the well never touches the panel edge. */
+export function EmptyState({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
 	return (
-		<div className="px-5 py-10 text-center">
-			<p className="text-sm font-medium">{title}</p>
-			{children ? <div className="mt-1 text-sm text-[var(--app-muted)]">{children}</div> : null}
+		<div className="p-4">
+			<UiEmptyState title={title} description={children} action={action} />
 		</div>
 	);
 }
@@ -131,6 +130,10 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
 export function statusLabel(status: string) {
 	return status ? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ") : status;
 }
+
+// Days before a paid period ends that the plan banner starts reminding; Billing quotes the same number.
+// shortcut: lives here because plans.ts is outside this screen set; move it there with the other plan policy.
+export const RENEW_REMINDER_DAYS = 5;
 
 export function formatDate(value: Date | string | null | undefined) {
 	if (!value) return "Never";

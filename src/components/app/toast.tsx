@@ -41,19 +41,19 @@ export function Toaster() {
 				<div
 					key={toast.id}
 					role="status"
-					className="pointer-events-auto flex w-full max-w-sm items-start gap-2.5 rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3 text-sm text-[var(--app-text)] shadow-lg"
+					className="pointer-events-auto flex w-full max-w-sm items-start gap-2.5 rounded-card border border-rule bg-panel px-4 py-3 text-sm text-ink shadow-card"
 				>
 					{toast.ok ? (
-						<CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--app-ok)]" aria-hidden />
+						<CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden />
 					) : (
-						<XCircle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--app-bad)]" aria-hidden />
+						<XCircle className="mt-0.5 h-4 w-4 shrink-0 text-error" aria-hidden />
 					)}
 					<span className="min-w-0 flex-1 break-words">{toast.text}</span>
 					<button
 						type="button"
 						aria-label="Dismiss"
 						onClick={() => setToasts((current) => current.filter((item) => item.id !== toast.id))}
-						className="text-[var(--app-muted)] hover:text-[var(--app-text)]"
+						className="text-muted hover:text-ink"
 					>
 						<X className="h-4 w-4" />
 					</button>

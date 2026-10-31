@@ -1,3 +1,7 @@
+/**
+ * Dashboard layout: the auth guard for every /dashboard route, the users mirror row, and the
+ * entitlement the shell needs for the plan badge and the expiry banner.
+ */
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { eq } from "drizzle-orm";

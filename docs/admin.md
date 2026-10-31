@@ -12,7 +12,11 @@ Check lives in `src/lib/auth.ts` (`isAdmin`, `requireAdmin`); server actions re-
   devices. Range 7/30/90 days.
 - **Product**: sites (live/verified), URLs tracked and found this week, submissions (7d,
   success rate), queue depth, API calls (7d).
-- **Health**: last 12 `cron_runs`, failing sitemaps.
+- **Health**: last 12 `cron_runs`, failing sitemaps, and the engine health table
+  (`app/admin/_components/EngineHealthPanel.tsx`: setups per engine, sends in range, waiting jobs,
+  recent integration errors). `cron_runs.summary` also carries `sitesDue`, queue `skippedCount` /
+  `deferredCount`, `gscInspection` {sites, inspected, failed, quotaStops, errors[]},
+  `prunedUsageEvents` and `prunedQuotaRows`.
 - **Payments**: recent Razorpay payments.
 - **Users**: newest 50 with plan, expiry, site and URL counts.
 - **Grant a plan**: support tool (`adminGrantPlanAction`).

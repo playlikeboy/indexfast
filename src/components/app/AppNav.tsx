@@ -1,15 +1,19 @@
 "use client";
 
+/**
+ * Top navigation for the app. Four destinations only; anything else belongs inside them.
+ * Links, not tabs: each destination is a route, so the current one is aria-current="page"
+ * and carries the cobalt underline (accent marks current selection, per DESIGN.md).
+ */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "./ui";
+import { cn } from "@/components/ui";
 
-/** Top navigation for the app. Four destinations only; anything else belongs inside them. */
 export function AppNav({ isAdmin }: { isAdmin: boolean }) {
 	const pathname = usePathname();
 	const items = [
 		{ href: "/dashboard", label: "Websites", active: pathname === "/dashboard" || pathname.startsWith("/dashboard/sites") },
-		{ href: "/dashboard/connect", label: "Connect AI", active: pathname.startsWith("/dashboard/connect") },
+		{ href: "/dashboard/connect", label: "Connect", active: pathname.startsWith("/dashboard/connect") },
 		{ href: "/dashboard/billing", label: "Billing", active: pathname.startsWith("/dashboard/billing") },
 		...(isAdmin ? [{ href: "/admin", label: "Admin", active: pathname.startsWith("/admin") }] : []),
 	];
@@ -22,8 +26,8 @@ export function AppNav({ isAdmin }: { isAdmin: boolean }) {
 					href={item.href}
 					aria-current={item.active ? "page" : undefined}
 					className={cn(
-						"whitespace-nowrap border-b-2 px-3 pb-2.5 pt-1 text-sm transition",
-						item.active ? "border-[var(--app-text)] font-medium text-[var(--app-text)]" : "border-transparent text-[var(--app-muted)] hover:text-[var(--app-text)]",
+						"border-b-2 px-3 pt-1 pb-2.5 text-sm whitespace-nowrap transition-colors duration-(--dur-short)",
+						item.active ? "border-signal font-medium text-ink" : "border-transparent text-muted hover:text-ink",
 					)}
 				>
 					{item.label}

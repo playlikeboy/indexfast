@@ -1,44 +1,50 @@
 "use client";
 
 /**
- * Client primitives for the dashboard. Every mutation goes through ActionForm/ActionButton so
- * pending state and the ActionResult message are shown consistently next to the control.
+ * Client primitives for the dashboard, built on @/components/ui. Every mutation goes through
+ * ActionForm or ActionButton so pending state and the ActionResult message look the same on
+ * every screen. Exported names and props are kept stable: other app screens import them.
+ *
+ * Forms dispatch by hand inside a transition instead of using <form action>. React 19 resets a
+ * form after an action submit even when the action returned an error, which wiped what the user
+ * typed; here the form is reset only after a successful result.
  */
-import { useActionState, useEffect, useState, type ReactNode } from "react";
-import { useFormStatus } from "react-dom";
-import { Check, Copy, Loader2 } from "lucide-react";
+import { startTransition, useActionState, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Check, CircleCheck, CircleX, Copy } from "lucide-react";
 import type { ActionResult } from "@/app/actions";
+import { Button, CodeBlock as UiCodeBlock, Tabs as UiTabs, cn, type ButtonSize, type ButtonVariant } from "@/components/ui";
 import { showToast } from "./toast";
-import { buttonClass, cn } from "./ui";
 
 type FormAction = (prev: ActionResult, formData: FormData) => Promise<ActionResult>;
 
-export function ResultMessage({ result }: { result: ActionResult }) {
+const COPY_RESET_MS = 1500;
+
+/** Ghost keys sit in rows and toolbars at 32px; every other variant is the 40px app key. */
+function defaultSize(variant: ButtonVariant): ButtonSize {
+	return variant === "ghost" ? "sm" : "md";
+}
+
+export function ResultMessage({ result, className }: { result: ActionResult; className?: string }) {
 	if (!result) return null;
+	const text = result.ok ? result.message : result.error;
+	if (!text) return null;
+	const Icon = result.ok ? CircleCheck : CircleX;
 	return (
-		<p role="status" className={cn("text-sm", result.ok ? "text-[var(--app-ok)]" : "text-[var(--app-bad)]")}>
-			{result.ok ? result.message : result.error}
+		<p role={result.ok ? "status" : "alert"} className={cn("flex min-w-0 items-start gap-1.5 text-sm", result.ok ? "text-success" : "text-danger", className)}>
+			<Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+			<span className="min-w-0 break-words">{text}</span>
 		</p>
 	);
 }
 
-function SubmitButton({ children, variant, pendingLabel }: { children: ReactNode; variant: keyof typeof buttonClass; pendingLabel?: string }) {
-	const { pending } = useFormStatus();
-	return (
-		<button type="submit" disabled={pending} className={buttonClass[variant]}>
-			{pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-			{pending && pendingLabel ? pendingLabel : children}
-		</button>
-	);
-}
-
-/** Form with inputs (children) + submit button + inline result. */
+/** Form with inputs (children) + submit key + inline result. */
 export function ActionForm({
 	action,
 	children,
 	submitLabel,
 	pendingLabel,
 	variant = "primary",
+	size,
 	className,
 	inline,
 	onDone,
@@ -48,37 +54,54 @@ export function ActionForm({
 	children?: ReactNode;
 	submitLabel: ReactNode;
 	pendingLabel?: string;
-	variant?: keyof typeof buttonClass;
+	variant?: ButtonVariant;
+	size?: ButtonSize;
 	className?: string;
 	inline?: boolean;
 	onDone?: (result: ActionResult) => ReactNode;
 	footer?: ReactNode;
 }) {
-	const [result, formAction] = useActionState(action, null);
+	const formRef = useRef<HTMLFormElement>(null);
+	const [result, dispatch, isPending] = useActionState(action, null);
+
+	useEffect(() => {
+		// Clear the inputs only once the server accepted them; an error keeps them for a fix.
+		if (result?.ok) formRef.current?.reset();
+	}, [result]);
+
+	function onSubmit(event: FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		const formData = new FormData(event.currentTarget);
+		startTransition(() => dispatch(formData));
+	}
+
+	const done = Boolean(onDone && result?.ok);
+
 	return (
-		<form action={formAction} className={cn("flex gap-2", inline ? "flex-wrap items-center" : "flex-col items-stretch", className)}>
+		<form ref={formRef} onSubmit={onSubmit} aria-busy={isPending || undefined} className={cn("flex gap-2", inline ? "flex-wrap items-start" : "flex-col items-stretch", className)}>
 			{children}
 			<div className={cn(inline ? "contents" : "flex flex-wrap items-center gap-3")}>
-				<SubmitButton variant={variant} pendingLabel={pendingLabel}>
-					{submitLabel}
-				</SubmitButton>
-				{onDone && result?.ok ? null : <ResultMessage result={result} />}
+				<Button type="submit" variant={variant} size={size ?? defaultSize(variant)} loading={isPending}>
+					{isPending && pendingLabel ? pendingLabel : submitLabel}
+				</Button>
+				{done ? null : <ResultMessage result={result} className={inline ? "basis-full" : undefined} />}
 			</div>
 			{footer}
-			{onDone && result?.ok ? onDone(result) : null}
+			{done && onDone ? onDone(result) : null}
 		</form>
 	);
 }
 
 /**
  * One-click mutation (bound server action) with optional confirm. The result is shown as a
- * toast so buttons in headers and table rows never reflow their container.
+ * toast so keys in headers and table rows never reflow their container.
  */
 export function ActionButton({
 	action,
 	children,
 	pendingLabel,
 	variant = "secondary",
+	size,
 	confirm,
 	showResult = true,
 	className,
@@ -86,93 +109,66 @@ export function ActionButton({
 	action: () => Promise<ActionResult>;
 	children: ReactNode;
 	pendingLabel?: string;
-	variant?: keyof typeof buttonClass;
+	variant?: ButtonVariant;
+	size?: ButtonSize;
 	confirm?: string;
 	showResult?: boolean;
 	className?: string;
 }) {
-	const [result, formAction] = useActionState(async () => action(), null);
+	const [result, dispatch, isPending] = useActionState(async () => action(), null);
 
 	useEffect(() => {
-		if (result && (showResult || !result.ok)) {
-			showToast(result.ok, (result.ok ? result.message : result.error) || "");
-		}
+		// Errors always surface: they usually carry the instruction needed to fix them.
+		if (result && (showResult || !result.ok)) showToast(result.ok, (result.ok ? result.message : result.error) || "");
 	}, [result, showResult]);
 
+	function run() {
+		if (confirm && !window.confirm(confirm)) return;
+		startTransition(() => dispatch());
+	}
+
 	return (
-		<form
-			action={formAction}
-			onSubmit={(event) => {
-				if (confirm && !window.confirm(confirm)) event.preventDefault();
-			}}
-			className={cn("inline-flex", className)}
-		>
-			<SubmitButton variant={variant} pendingLabel={pendingLabel}>
-				{children}
-			</SubmitButton>
-		</form>
+		<span className={cn("inline-flex", className)}>
+			<Button variant={variant} size={size ?? defaultSize(variant)} loading={isPending} onClick={run}>
+				{isPending && pendingLabel ? pendingLabel : children}
+			</Button>
+		</span>
 	);
 }
 
 export function CopyButton({ value, label = "Copy", className }: { value: string; label?: string; className?: string }) {
-	const [copied, setCopied] = useState(false);
+	const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+
+	useEffect(() => {
+		if (state === "idle") return;
+		const timer = setTimeout(() => setState("idle"), COPY_RESET_MS);
+		return () => clearTimeout(timer);
+	}, [state]);
+
+	async function copy() {
+		try {
+			await navigator.clipboard.writeText(value);
+			setState("copied");
+		} catch {
+			// Clipboard can be blocked (insecure origin, permissions); the value is visible to select.
+			setState("failed");
+		}
+	}
+
 	return (
-		<button
-			type="button"
-			className={cn(buttonClass.ghost, "shrink-0", className)}
-			onClick={async () => {
-				try {
-					await navigator.clipboard.writeText(value);
-					setCopied(true);
-					setTimeout(() => setCopied(false), 1500);
-				} catch {
-					// Clipboard can be blocked; the value is visible to copy by hand.
-				}
-			}}
-		>
-			{copied ? <Check className="h-3.5 w-3.5" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
-			{copied ? "Copied" : label}
-		</button>
+		<Button variant="ghost" size="sm" onClick={copy} className={cn("shrink-0", className)}>
+			{state === "copied" ? <Check aria-hidden="true" className="size-4" /> : <Copy aria-hidden="true" className="size-4" />}
+			<span aria-live="polite">{state === "copied" ? "Copied" : state === "failed" ? "Copy failed, select the text" : label}</span>
+		</Button>
 	);
 }
 
-/** wrap: soft-wrap prose-like content (AI prompts); commands keep horizontal scroll. */
+/** wrap: soft-wrap prose-like content (AI prompts, key values); commands keep horizontal scroll. */
 export function CodeBlock({ code, label, wrap }: { code: string; label?: string; wrap?: boolean }) {
-	return (
-		<div className="min-w-0 overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-subtle)]">
-			<div className="flex items-center justify-between gap-2 border-b border-[var(--app-border)] py-0.5 pl-3 pr-1">
-				<span className="truncate text-xs font-medium text-[var(--app-muted)]">{label}</span>
-				<CopyButton value={code} className="min-h-7 py-1 text-xs" />
-			</div>
-			<pre className={cn("px-3 py-2.5 font-mono text-xs leading-relaxed", wrap ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "overflow-x-auto whitespace-pre")}>
-				<code>{code}</code>
-			</pre>
-		</div>
-	);
+	return <UiCodeBlock code={code} title={label} className={wrap ? "[&_pre]:whitespace-pre-wrap [&_pre]:[overflow-wrap:anywhere]" : undefined} />;
 }
 
-export function Tabs({ tabs }: { tabs: Array<{ id: string; label: string; content: ReactNode }> }) {
-	const [active, setActive] = useState(tabs[0]?.id);
-	return (
-		<div>
-			<div role="tablist" className="mb-3 flex gap-1 overflow-x-auto border-b border-[var(--app-border)]">
-				{tabs.map((tab) => (
-					<button
-						key={tab.id}
-						type="button"
-						role="tab"
-						aria-selected={active === tab.id}
-						onClick={() => setActive(tab.id)}
-						className={cn(
-							"-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm transition",
-							active === tab.id ? "border-[var(--app-text)] font-medium" : "border-transparent text-[var(--app-muted)] hover:text-[var(--app-text)]",
-						)}
-					>
-						{tab.label}
-					</button>
-				))}
-			</div>
-			{tabs.find((tab) => tab.id === active)?.content}
-		</div>
-	);
+/** In-screen view switcher; arrow keys, Home/End and aria-controls come from the Cobalt Tabs. */
+export function Tabs({ tabs, label = "Views" }: { tabs: Array<{ id: string; label: string; content: ReactNode }>; label?: string }) {
+	return <UiTabs items={tabs} label={label} />;
 }
