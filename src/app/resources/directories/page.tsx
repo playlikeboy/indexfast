@@ -10,12 +10,15 @@ import { Footer } from "@/components/marketing/Footer";
 import { Badge, Container, Stat, Table, Td, Th, cn } from "@/components/ui";
 import { getDirectoriesByPriority, getDirectoryStats, type DirectoryPriority } from "@/lib/resources/directories";
 import { ResourceHeader } from "../_components/ResourceHeader";
+import type { Metadata } from "next";
+import { SITE_URL, withPageSeo } from "@/lib/seo";
+import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/resources/directories", {
 	title: "100+ Startup, SaaS, AI, and SEO Submission Directories",
 	description:
 		"A prioritized list of startup directories, SaaS review sites, AI tool catalogs, developer channels, and SEO resources for launch distribution.",
-};
+});
 
 function isPriority(value: string | undefined): value is DirectoryPriority {
 	return value === "P0" || value === "P1" || value === "P2" || value === "P3";
@@ -32,6 +35,7 @@ export default async function DirectoriesPage({ searchParams }: { searchParams: 
 		<>
 			<Navbar />
 			<main>
+				<BreadcrumbJsonLd items={[{ name: "Home", url: SITE_URL }, { name: "Resources", url: `${SITE_URL}/resources` }, { name: "Submission directories", url: `${SITE_URL}/resources/directories` }]} />
 				<ResourceHeader
 					title="100+ launch directories, ranked"
 					lede="Ranked by authority, relevance, traffic and access. Track them manually; never spam-submit."

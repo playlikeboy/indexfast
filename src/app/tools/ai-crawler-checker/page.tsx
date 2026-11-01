@@ -1,6 +1,8 @@
 import { GuideTerms, GuideTopic, ToolPage } from "@/components/tools/ToolPage";
 import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -26,6 +28,7 @@ const toolJsonLd = {
 	},
 };
 
+// The FAQ rows below are rendered from this same object: FAQPage markup must match visible text.
 const faqJsonLd = {
 	"@context": "https://schema.org",
 	"@type": "FAQPage",
@@ -49,14 +52,14 @@ const faqJsonLd = {
 	],
 };
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/tools/ai-crawler-checker", {
 	title: "Free AI Crawler Checker | See Which AI Bots Your robots.txt Allows",
 	description: "See which AI crawlers your robots.txt allows at the site root, and which group decides. Free AI crawler checker.",
 	keywords: ["ai crawler checker", "ai bot checker", "gptbot checker", "google extended checker", "ai crawler access tool"],
 	alternates: {
 		canonical: `${SITE_URL}/tools/ai-crawler-checker`,
 	},
-};
+});
 
 export default function AiCrawlerCheckerPage() {
 	return (
@@ -96,6 +99,11 @@ export default function AiCrawlerCheckerPage() {
 					content strategy.
 				</p>
 			</GuideTopic>
+			{faqJsonLd.mainEntity.map((item) => (
+				<GuideTopic key={item.name} title={item.name}>
+					<p>{item.acceptedAnswer.text}</p>
+				</GuideTopic>
+			))}
 		</ToolPage>
 	);
 }

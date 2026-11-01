@@ -10,12 +10,15 @@ import { Container } from "@/components/ui";
 import { getDirectoryStats } from "@/lib/resources/directories";
 import { seoTools } from "@/lib/resources/tools";
 import { ResourceHeader } from "./_components/ResourceHeader";
+import type { Metadata } from "next";
+import { SITE_URL, withPageSeo } from "@/lib/seo";
+import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/resources", {
 	title: "Free SEO Resources, Directories, and Agent Tools",
 	description:
 		"Use IndexFast's free SEO resource hub for prioritized startup directories, third-party SEO tools, MCP setup, CLI workflows, and agent-ready indexing operations.",
-};
+});
 
 export default function ResourcesPage() {
 	const stats = getDirectoryStats();
@@ -46,6 +49,11 @@ export default function ResourcesPage() {
 			desc: "When Google's Indexing API is eligible, and when sitemap and GSC workflows are the safer path.",
 		},
 		{
+			href: "/compare",
+			title: "IndexFast comparisons",
+			desc: "How IndexFast differs from Rank Math Instant Indexing, the IndexNow plugin, IndexMeNow, Omega Indexer and Search Console.",
+		},
+		{
 			href: "/dashboard/connect",
 			title: "MCP setup",
 			desc: "Connect IndexFast to Cursor, Codex, Claude Desktop, and agentic SEO harnesses.",
@@ -56,6 +64,7 @@ export default function ResourcesPage() {
 		<>
 			<Navbar />
 			<main>
+				<BreadcrumbJsonLd items={[{ name: "Home", url: SITE_URL }, { name: "Resources", url: `${SITE_URL}/resources` }]} />
 				<ResourceHeader
 					title="Free SEO and indexing resources"
 					lede="Prioritize launch submissions and wire IndexFast into AI IDEs and CLIs."

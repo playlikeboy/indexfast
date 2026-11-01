@@ -9,7 +9,7 @@
  * Signature convention: (boundArgs..., prevState, formData) so actions plug straight into
  * useActionState via `.bind(null, ...)`.
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
@@ -359,7 +359,8 @@ export async function adminGrantPlanAction(_prev: ActionResult, formData: FormDa
 		// Only the current plans can be granted; hidden legacy tiers stay reachable through billing history only.
 		if (rawPlan !== "free" && !isPaidPlan(rawPlan)) throw new Error("Choose Free, Pro or Unlimited.");
 		const days = Math.min(3650, Math.max(1, Math.floor(Number(text(formData, "days")) || PLAN_PERIOD_DAYS)));
-		const matches = await db.select({ id: users.id, billingTier: users.billingTier, planExpiresAt: users.planExpiresAt }).from(users).where(eq(users.email, email)).limit(2);
+		// Stack Auth keeps the address as typed (mixed case), so match case-insensitively.
+		const matches = await db.select({ id: users.id, billingTier: users.billingTier, planExpiresAt: users.planExpiresAt }).from(users).where(sql`lower(${users.email}) = ${email}`).limit(2);
 		if (matches.length === 0) throw new Error(`No user with email ${email}`);
 		if (matches.length > 1) throw new Error(`More than one user has ${email}; grant from the database by user id.`);
 		const [target] = matches;

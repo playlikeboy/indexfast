@@ -1947,8 +1947,9 @@ export async function getSiteQueueJobs(
 	const site = await getSiteForUser(siteId, userId);
 	if (!site) return null;
 
-	const page = Math.max(1, options.page ?? 1);
-	const limit = Math.min(100, Math.max(1, options.limit ?? 50));
+	// Integers only: a fractional or NaN page/limit (MCP args are free-form) is invalid SQL.
+	const page = Math.max(1, Math.trunc(options.page ?? 1) || 1);
+	const limit = Math.min(100, Math.max(1, Math.trunc(options.limit ?? 50) || 50));
 	const offset = (page - 1) * limit;
 
 	const filters: SQL[] = [eq(submissionJobs.siteId, siteId)];

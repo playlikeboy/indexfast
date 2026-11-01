@@ -1,6 +1,8 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
 import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -29,6 +31,7 @@ const toolJsonLd = {
 	},
 };
 
+// The FAQ rows below are rendered from this same object: FAQPage markup must match visible text.
 const faqJsonLd = {
 	"@context": "https://schema.org",
 	"@type": "FAQPage",
@@ -52,7 +55,7 @@ const faqJsonLd = {
 	],
 };
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/tools/bing-indexnow-submitter", {
 	title: "Free Bing IndexNow Submitter | Submit URLs to Bing IndexNow API",
 	description:
 		"Send up to 100 changed URLs per request through IndexNow to Bing and other participating engines. Free, no signup.",
@@ -60,7 +63,7 @@ export const metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/tools/bing-indexnow-submitter`,
 	},
-};
+});
 
 export default function BingIndexNowSubmitterPage() {
 	return (
@@ -86,6 +89,11 @@ export default function BingIndexNowSubmitterPage() {
 					</li>
 				</ul>
 			</GuideTopic>
+			{faqJsonLd.mainEntity.map((item) => (
+				<GuideTopic key={item.name} title={item.name}>
+					<p>{item.acceptedAnswer.text}</p>
+				</GuideTopic>
+			))}
 		</ToolPage>
 	);
 }

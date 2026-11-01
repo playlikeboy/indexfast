@@ -4,6 +4,8 @@ import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import { PostShell } from "../_components/PostShell";
+import { PostFaq, type FaqItem } from "../_components/PostFaq";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -33,60 +35,37 @@ const articleJsonLd = {
 		url: SITE_URL,
 		logo: {
 			"@type": "ImageObject",
-			url: `${SITE_URL}/favicon.svg`,
+			url: `${SITE_URL}/logo.png`,
 		},
 	},
 	mainEntityOfPage: `${SITE_URL}/blog/indexnow-key-setup`,
 };
 
-const faqJsonLd = {
-	"@context": "https://schema.org",
-	"@type": "FAQPage",
-	mainEntity: [
-		{
-			"@type": "Question",
-			name: "What is an IndexNow key?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "An IndexNow key is a unique 8-128 character hexadecimal or alphanumeric string that proves ownership of your domain. You generate it and host it as a text file at the root of your site.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "Where should the IndexNow key file be hosted?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "It must be hosted in the root directory of your website's host (e.g., https://example.com/your-key.txt). The file must return a 200 OK status code and contain the key string inside it.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "How does IndexNow communicate URL submissions across multiple search engines?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "IndexNow uses a shared notification model. When you submit a list of updated URLs to any participating search engine's endpoint (e.g., Bing), that search engine automatically broadcasts the request to all other participating search engines.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "Can I use IndexNow with subdomains?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "Yes. However, the key file must be hosted at the root of the specific subdomain you are submitting URLs for. For example, if you submit blog.example.com URLs, the key file must be at https://blog.example.com/your-key.txt.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "Does IndexNow work if my site is behind a CDN like Cloudflare?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "Yes. However, you must ensure that your CDN or firewall does not block HTTP GET requests from search engine user-agents trying to read your key verification file, and that it does not redirect the request.",
-			},
-		},
-	],
-};
+// Rendered as the visible FAQ and its FAQPage markup by PostFaq, so the two never diverge.
+const faqs: FaqItem[] = [
+	{
+		question: "Can I use the same IndexNow key for multiple websites?",
+		answer:
+			"Yes, you can reuse one key across domains, but each website must host its own copy of the key file at its root. If domainA.com and domainB.com share the key abc123xyz, both must serve abc123xyz.txt.",
+	},
+	{
+		question: "Why does my key verification fail if I am using Cloudflare?",
+		answer:
+			"Cloudflare and other CDNs can block verification requests through bot protection rules, or wrap the file in an HTML challenge page. Check your WAF logs and confirm that requests for the key file return a clean 200 OK with the key as plain text and no redirect.",
+	},
+	{
+		question: "How do I manage IndexNow for subdomains?",
+		answer:
+			"IndexNow treats each subdomain as a separate host. If you publish URLs on blog.example.com and shop.example.com, host a key file at the root of each one, for example blog.example.com/key.txt and shop.example.com/key.txt.",
+	},
+	{
+		question: "Does Google support IndexNow?",
+		answer:
+			"No. Google has said it was testing IndexNow but does not use it in production. For Google, keep a clean XML sitemap and use Search Console (sitemap submission and URL Inspection).",
+	},
+];
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withPageSeo("/blog/indexnow-key-setup", {
 	title: "How to Set Up and Verify an IndexNow Key",
 	description:
 		"Learn how to generate, host, and verify your IndexNow API key so you can notify Bing and other search engines as soon as URLs change.",
@@ -114,7 +93,7 @@ export const metadata: Metadata = {
 		description:
 			"An exhaustive guide to the IndexNow protocol, explaining why instant URL submissions are necessary, who supports it, and how to verify your domain key.",
 	},
-};
+});
 
 export default function IndexNowKeyPost() {
 	return (
@@ -125,10 +104,6 @@ export default function IndexNowKeyPost() {
 				<script
 					type="application/ld+json"
 					dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
-				/>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
 				/>
 				<PostShell
 					slug="indexnow-key-setup"
@@ -220,28 +195,7 @@ export default function IndexNowKeyPost() {
 						IndexFast generates the key for you when you add your site. Deploy the file it shows, then open your site in the IndexFast dashboard and choose <strong>Verify and turn on auto-submit</strong>. IndexFast fetches the file live. Once verified, sitemap updates trigger automatic pushes. If you already host a key, choose <strong>Use my key and verify</strong> instead.
 					</p>
 
-					{/* FAQ */}
-					<h2 id="faq">Frequently asked questions</h2>
-					
-					<h3>Q1: Can I use the same IndexNow key for multiple websites?</h3>
-					<p>
-						Yes, you can use the same key across multiple domains. However, you must host a separate copy of the key text file at the root of <em>each</em> website. For example, if you manage <code>domainA.com</code> and <code>domainB.com</code> with the same key <code>abc123xyz</code>, you must upload the file <code>abc123xyz.txt</code> to the root of both websites.
-					</p>
-
-					<h3>Q2: Why does my key verification fail if I am using Cloudflare?</h3>
-					<p>
-						Cloudflare and other CDNs can sometimes block verification requests if they trigger bot protection rules, or if they inject HTML wrappers. Check your Cloudflare WAF logs to verify that crawler requests (e.g. from Bingbot or IndexNow) to your key file URL return a clean 200 OK.
-					</p>
-
-					<h3>Q3: How do I manage IndexNow for subdomains?</h3>
-					<p>
-						IndexNow treats subdomains as distinct hosts. If your site has URLs on <code>blog.example.com</code> and <code>shop.example.com</code>, you must generate and verify keys for both subdomains, hosting the key files at <code>blog.example.com/key.txt</code> and <code>shop.example.com/key.txt</code> respectively.
-					</p>
-
-					<h3>Q4: Does Google support IndexNow?</h3>
-					<p>
-						Google is currently investigating the IndexNow standard and has run trials. However, Google's main production crawler does not support IndexNow. For Google, you should continue using optimized XML sitemaps or Google Search Console inspection tools.
-					</p>
+					<PostFaq items={faqs} />
 
 					{/* CITATIONS */}
 					<h2 id="citations">References and official citations</h2>

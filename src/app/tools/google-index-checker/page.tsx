@@ -1,6 +1,8 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
 import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -30,6 +32,7 @@ const toolJsonLd = {
 	},
 };
 
+// The FAQ rows below are rendered from this same object: FAQPage markup must match visible text.
 const faqJsonLd = {
 	"@context": "https://schema.org",
 	"@type": "FAQPage",
@@ -61,7 +64,7 @@ const faqJsonLd = {
 	],
 };
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/tools/google-index-checker", {
 	title: "Free Google Index Checker | Find What Blocks Indexing",
 	description:
 		"Check whether Google can index a URL: HTTP status, noindex tags and canonical, with a direct link to URL Inspection in Search Console. Free, no signup required.",
@@ -77,7 +80,7 @@ export const metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/tools/google-index-checker`,
 	},
-};
+});
 
 export default function GoogleIndexCheckerPage() {
 	return (
@@ -116,6 +119,11 @@ export default function GoogleIndexCheckerPage() {
 					to confirm nothing technical stops important pages from being indexed.
 				</p>
 			</GuideTopic>
+			{faqJsonLd.mainEntity.map((item) => (
+				<GuideTopic key={item.name} title={item.name}>
+					<p>{item.acceptedAnswer.text}</p>
+				</GuideTopic>
+			))}
 		</ToolPage>
 	);
 }

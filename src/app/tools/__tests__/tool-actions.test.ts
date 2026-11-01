@@ -25,6 +25,13 @@ describe("free tool actions", () => {
 		expect(res.llmsTxt).not.toContain("llms-full.txt");
 	});
 
+	it("keeps a multi-line description inside one blockquote line", async () => {
+		const res = await generateLlmsTxtTool({ domain: "mybrand.com", title: "My\nBrand", description: "Fast\n\nindexing  for teams" });
+		if (!res.success) throw new Error(res.error);
+		expect(res.llmsTxt).toContain("# My Brand\n");
+		expect(res.llmsTxt).toContain("> Fast indexing for teams\n");
+	});
+
 	it("rejects malformed IndexNow keys and off-host key files before sending", async () => {
 		const base = { host: "example.com", urlList: "https://example.com/" };
 		const badKey = await submitIndexNowTool({ ...base, key: "abc" });

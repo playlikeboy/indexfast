@@ -2,6 +2,9 @@ import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import { PostShell } from "../_components/PostShell";
+import { PostFaq, type FaqItem } from "../_components/PostFaq";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -31,44 +34,32 @@ const articleJsonLd = {
 		url: SITE_URL,
 		logo: {
 			"@type": "ImageObject",
-			url: `${SITE_URL}/favicon.svg`,
+			url: `${SITE_URL}/logo.png`,
 		},
 	},
 	mainEntityOfPage: `${SITE_URL}/blog/indexnow-vs-indexing-api`,
 };
 
-const faqJsonLd = {
-	"@context": "https://schema.org",
-	"@type": "FAQPage",
-	mainEntity: [
-		{
-			"@type": "Question",
-			name: "Is IndexNow better than Google's Indexing API?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "For most content types, yes. Google's Indexing API is limited to job postings, livestream videos, and events. IndexNow supports any URL and works with Bing, Yandex, and other engines. Use IndexNow for general content and GSC for monitoring.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "Does IndexNow guarantee faster indexing?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "IndexNow notifies search engines that content has changed, which can speed up discovery. However, whether and how quickly a page is indexed still depends on the engine's quality signals, crawl budget, and algorithmic decisions.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "Can I use both IndexNow and Google Search Console?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "Yes. Using both together is the best approach. Use IndexNow for fast discovery signals to Bing and supported engines, and use Google Search Console for indexing requests, monitoring, and GSC-specific visibility data.",
-			},
-		},
-	],
-};
+// Rendered as the visible FAQ and its FAQPage markup by PostFaq, so the two never diverge.
+const faqs: FaqItem[] = [
+	{
+		question: "Is IndexNow better than Google's Indexing API?",
+		answer:
+			"For most content types, yes. Google's Indexing API is limited to job postings, livestream videos, and events. IndexNow supports any URL and works with Bing, Yandex, and other engines. Use IndexNow for general content and GSC for monitoring.",
+	},
+	{
+		question: "Does IndexNow guarantee faster indexing?",
+		answer:
+			"IndexNow notifies search engines that content has changed, which can speed up discovery. However, whether and how quickly a page is indexed still depends on the engine's quality signals, crawl budget, and algorithmic decisions.",
+	},
+	{
+		question: "Can I use both IndexNow and Google Search Console?",
+		answer:
+			"Yes. Using both together is the best approach. Use IndexNow for fast discovery signals to Bing and supported engines, and use Google Search Console for indexing requests, monitoring, and GSC-specific visibility data.",
+	},
+];
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/blog/indexnow-vs-indexing-api", {
 	title: "IndexNow vs. Google's Indexing API: What Actually Works in 2026",
 	description:
 		"Comparing IndexNow, Bing Webmaster, and Google's limited Indexing API for modern SEO teams. Find out which submission method actually drives results.",
@@ -84,7 +75,7 @@ export const metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/blog/indexnow-vs-indexing-api`,
 	},
-};
+});
 
 export default function IndexNowVsIndexingApiPost() {
 	return (
@@ -95,10 +86,6 @@ export default function IndexNowVsIndexingApiPost() {
 				<script
 					type="application/ld+json"
 					dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
-				/>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
 				/>
 				<PostShell
 					slug="indexnow-vs-indexing-api"
@@ -265,6 +252,7 @@ export default function IndexNowVsIndexingApiPost() {
 						Google-specific monitoring, and never rely on either as a substitute for good
 						technical SEO fundamentals.
 					</p>
+					<PostFaq items={faqs} />
 				</PostShell>
 			</main>
 			<Footer />

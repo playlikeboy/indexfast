@@ -1,6 +1,8 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
 import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -29,6 +31,7 @@ const toolJsonLd = {
 	},
 };
 
+// The FAQ rows below are rendered from this same object: FAQPage markup must match visible text.
 const faqJsonLd = {
 	"@context": "https://schema.org",
 	"@type": "FAQPage",
@@ -52,7 +55,7 @@ const faqJsonLd = {
 	],
 };
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/tools/indexnow-key-generator", {
 	title: "Free IndexNow Key Generator | Generate Secure IndexNow API Keys",
 	description:
 		"Generate a secure random IndexNow API key for Bing, Yandex, and other supported search engines. Free key generator for indexing automation.",
@@ -60,7 +63,7 @@ export const metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/tools/indexnow-key-generator`,
 	},
-};
+});
 
 export default function IndexNowKeyGeneratorPage() {
 	return (
@@ -93,6 +96,11 @@ export default function IndexNowKeyGeneratorPage() {
 					can submit changes whenever you publish or update pages.
 				</p>
 			</GuideTopic>
+			{faqJsonLd.mainEntity.map((item) => (
+				<GuideTopic key={item.name} title={item.name}>
+					<p>{item.acceptedAnswer.text}</p>
+				</GuideTopic>
+			))}
 		</ToolPage>
 	);
 }

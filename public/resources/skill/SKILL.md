@@ -49,20 +49,22 @@ Use this skill when a user wants to improve search visibility, audit indexing pr
 
 ```bash
 npx indexfast login --api-key "$INDEXFAST_API_KEY"
-npx indexfast site add example.com --name "Example"
-npx indexfast sitemap discover --site SITE_ID
-npx indexfast sitemap sync --site SITE_ID
-npx indexfast submit --site SITE_ID https://example.com/page
-npx indexfast diagnose --site SITE_ID https://example.com/page
-npx indexfast resources directories --priority P0
-npx indexfast mcp install
+npx indexfast sites
+npx indexfast sites:create example.com --name "Example"
+npx indexfast sitemaps:discover SITE_ID
+npx indexfast sitemaps:sync SITE_ID
+npx indexfast submit SITE_ID https://example.com/page
+npx indexfast diagnostics SITE_ID --url https://example.com/page
+npx indexfast resources:directories --priority P0
 ```
+
+For MCP, create a key at `https://indexfast.co/dashboard/connect` and paste the config block it shows into your AI IDE.
 
 ### CI/CD Integration
 
 You can use the CLI in GitHub Actions or Vercel deployments:
 1. Export `INDEXFAST_API_KEY` as a secret.
-2. Run `npx indexfast sitemap sync --site <ID>` post-build to guarantee up-to-date sitemaps.
+2. Run `npx indexfast sitemaps:sync <SITE_ID>` post-build so new pages are picked up right away.
 
 ## MCP Tools
 

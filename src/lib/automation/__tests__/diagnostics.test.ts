@@ -71,4 +71,24 @@ describe("evaluateUrlDiagnostics", () => {
 			globalThis.fetch = originalFetch;
 		}
 	});
+
+	it("fails a URL that robots.txt disallows for Googlebot", async () => {
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = vi.fn().mockImplementation((input: string | URL | Request) => {
+			const url = String(input instanceof Request ? input.url : input);
+			const body = url.endsWith("/robots.txt") ? "User-agent: *\nDisallow: /private/\n" : "<html><head><title>Hi</title></head></html>";
+			return Promise.resolve({ status: 200, headers: new Headers({ "content-type": "text/plain" }), text: () => Promise.resolve(body) });
+		}) as unknown as typeof fetch;
+
+		try {
+			const blocked = await evaluateUrlDiagnostics("https://example.com/private/page");
+			expect(blocked.robotsBlocked).toBe(true);
+			expect(blocked.status).toBe("fail");
+			const open = await evaluateUrlDiagnostics("https://example.com/public/page");
+			expect(open.robotsBlocked).toBe(false);
+			expect(open.redirected).toBe(false);
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
 });

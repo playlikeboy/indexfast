@@ -8,17 +8,18 @@ import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import { LegalDocument } from "@/app/privacy/LegalDocument";
 import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withPageSeo("/terms", {
 	title: "Terms of Service",
 	description:
 		"Read the IndexFast terms of service to understand user guidelines, payment and billing terms, fair use limits, and liability policies.",
 	alternates: {
 		canonical: `${SITE_URL}/terms`,
 	},
-};
+});
 
 const breadcrumbs = [
 	{ name: "Home", url: SITE_URL },

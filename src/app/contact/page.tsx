@@ -10,10 +10,11 @@ import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import { Container } from "@/components/ui";
 import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withPageSeo("/contact", {
 	title: "Contact IndexFast Team",
 	description:
 		"Get in touch with the IndexFast team for product support, enterprise api sales, security responsible disclosure, or agency billing workspaces queries.",
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/contact`,
 	},
-};
+});
 
 const contactPaths = [
 	{

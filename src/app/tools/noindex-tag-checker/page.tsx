@@ -1,6 +1,8 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
 import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -26,6 +28,7 @@ const toolJsonLd = {
 	},
 };
 
+// The FAQ rows below are rendered from this same object: FAQPage markup must match visible text.
 const faqJsonLd = {
 	"@context": "https://schema.org",
 	"@type": "FAQPage",
@@ -43,13 +46,13 @@ const faqJsonLd = {
 			name: "Can a page be indexed if it has a noindex tag?",
 			acceptedAnswer: {
 				"@type": "Answer",
-				text: "Search engines usually respect noindex and will not index the page. In rare cases, a page may still appear in results if Google believes the noindex was added accidentally or too recently.",
+				text: "No. Google and Bing drop a page with noindex once they recrawl it and see the directive. It can stay in results until that recrawl happens, and the directive only works if robots.txt lets crawlers fetch the page.",
 			},
 		},
 	],
 };
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/tools/noindex-tag-checker", {
 	title: "Free Noindex Tag Checker | Detect Noindex Meta Tags and X-Robots Headers",
 	description: "Check if a URL uses noindex meta tags or X-Robots-Tag headers. Free noindex tag checker for diagnosing indexing blockers.",
 	keywords: [
@@ -63,7 +66,7 @@ export const metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/tools/noindex-tag-checker`,
 	},
-};
+});
 
 export default function NoindexTagCheckerPage() {
 	return (
@@ -91,6 +94,11 @@ export default function NoindexTagCheckerPage() {
 					causes of missing pages after a site launch or migration.
 				</p>
 			</GuideTopic>
+			{faqJsonLd.mainEntity.map((item) => (
+				<GuideTopic key={item.name} title={item.name}>
+					<p>{item.acceptedAnswer.text}</p>
+				</GuideTopic>
+			))}
 		</ToolPage>
 	);
 }

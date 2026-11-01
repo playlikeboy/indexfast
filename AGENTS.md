@@ -19,8 +19,10 @@ and a Cloudflare Worker cron job that runs automation in the background.
 | Surface | Route | Purpose |
 |---|---|---|
 | Marketing site | `/`, `/about`, `/pricing`, `/contact`, `/privacy`, `/terms` | Public landing + blog + free tools + agent-first copy |
+| Comparisons | `/compare`, `/compare/[slug]` | "IndexFast vs X" pages from `comparisons` in `marketing-data.ts` (dated, sourced, no competitor prices) |
+| AI briefs | `/llms.txt`, `/llms-full.txt` | Route handlers built by `src/lib/llms.ts` from plans.ts and the content data (no static file in `public/`) |
 | Free SEO tools | `/tools/*` (11 tools) | No-signup utilities — index checkers, sitemap extractor, IndexNow key generator, llms.txt generator, AI crawler checker, etc. |
-| Resources | `/resources`, `/resources/directories`, `/resources/tools`, `/resources/skill`, `/resources/google-indexing-api`, `/resources/search-engines` | Free SEO resources, 100+ prioritized directories, third-party tools, downloadable SKILL.md, Google API guardrails, search engine API specs |
+| Resources | `/resources`, `/resources/directories`, `/resources/tools`, `/resources/skill`, `/resources/google-indexing-api`, `/resources/search-engines`, `/resources/search-engines/[engine]` (one guide per engine in `search-engines.ts`) | Free SEO resources, 100+ prioritized directories, third-party tools, downloadable SKILL.md, Google API guardrails, search engine API specs |
 | Auth (Stack Auth) | `/handler/[...stack]`, `/login`, `/signup` | Sign-in / sign-up / account screens |
 | Dashboard | `/dashboard`, `/dashboard/sites/[siteId]?view=overview\|urls\|queue\|sitemaps\|settings`, `/dashboard/connect`, `/dashboard/billing` | Protected app for vibe coders: add a site by domain, install one key file, everything else is automatic. See `docs/dashboard.md` |
 | Admin | `/admin` | Verified `ADMIN_EMAILS` only (404 otherwise): revenue, MRR, users, traffic analytics, cron health, plan grants. See `docs/admin.md` |
@@ -124,10 +126,12 @@ bun run preview            # build + wrangler preview
     │   ├── actions.ts          # "use server" — all auth-gated mutating actions
     │   ├── globals.css         # Tailwind v4 + every Cobalt token (the only place colours/sizes are defined)
     │   ├── sitemap.ts          # MetadataRoute.Sitemap (static + tools + blog + resources)
-    │   ├── robots.ts           # disallows /dashboard, /api/, /login, /signup
+    │   ├── robots.ts           # disallows /dashboard, /admin, /api/, /login, /signup, /handler/; names AI crawlers explicitly
     │   ├── about | contact | pricing | privacy | terms | login | signup /page.tsx
     │   ├── handler/[...stack]/page.tsx  # StackHandler mount point
-    │   ├── blog/               # 8 long-form posts (data in lib/marketing-data.ts)
+    │   ├── blog/               # 11 long-form posts (data in lib/marketing-data.ts); _components/PostShell + PostFaq
+    │   ├── compare/            # comparison hub + [slug] pages (data: comparisons in marketing-data.ts)
+    │   ├── llms.txt/ llms-full.txt/  # route handlers -> src/lib/llms.ts
     │   ├── tools/              # 11 free tools (data in lib/marketing-data.ts; server actions in tool-actions.ts)
     │   ├── resources/          # directories, third-party tools, SKILL, Google API guardrails
     │   ├── api/
@@ -160,7 +164,9 @@ bun run preview            # build + wrangler preview
     │   └── admin-queries.ts    # admin aggregates (platform wide)
     └── lib/
         ├── url-utils.ts        # normalizeHost / normalizeSitemapUrl / normalizeUrlForHost / getErrorMessage / getSiteHost
-        ├── marketing-data.ts   # tools[] + blogPosts[] (data, no JSX)
+        ├── marketing-data.ts   # tools[] + blogPosts[] + comparisons[] (data, no JSX)
+        ├── seo.ts              # withPageSeo (canonical/OG per page), SoftwareApplication offers from plans.ts, articleJsonLd
+        ├── llms.ts             # builds /llms.txt and /llms-full.txt
         ├── mcp/server.ts       # MCP method/tool/resource/prompt implementation
         ├── auth.ts             # session helpers, ensureUserRow, admin gate
         ├── platform/           # plans.ts (pricing + expiry policy), entitlements.ts, razorpay*.ts,
@@ -460,6 +466,9 @@ Production Worker secrets are set with `wrangler secret put` (see `docs/deployme
 - ~128 MB memory, ~10 ms CPU per request budget on HTTP. The cron handler
   is allowed more time but still bounded.
 - `crypto.subtle` is available; `Buffer` is available via Node compat.
+- No OpenNext incremental cache is configured, so never set `dynamicParams = false` on a dynamic
+  route: prerendered params are not served from the Worker and every page 404s. Validate the
+  param and call `notFound()` instead (see `src/app/compare/[slug]/page.tsx`).
 - `process.env` is empty inside Workers — `worker.ts` mirrors
   `DATABASE_URL` from `env` into `process.env` before calling
   `runScheduledAutomation`.
@@ -508,11 +517,18 @@ and `bun run cron:dev`.
 ## 13. Marketing data & SEO
 
 - `src/lib/marketing-data.ts` is the single source of truth for `tools[]`
-  (11 entries) and `blogPosts[]` (8 entries). Update there and the
+  (11 entries), `blogPosts[]` (11 entries) and `comparisons[]` (5 entries). Update there and the
   `/tools`, `/blog`, and `/sitemap.xml` pages update automatically.
-- `src/app/sitemap.ts` enumerates static routes, tool routes, and blog
-  routes plus resources routes. `src/app/robots.ts` disallows `/dashboard`,
-  `/api/`, `/login`, `/signup`.
+- `src/app/sitemap.ts` enumerates static routes, tool routes, blog routes, resources routes,
+  comparison routes and per-engine guides. `src/app/robots.ts` disallows `/dashboard`, `/admin`,
+  `/api/`, `/login`, `/signup`, `/handler/`, and repeats that for a named group of AI crawlers
+  (GPTBot, ClaudeBot, PerplexityBot, Google-Extended, ...) so they are explicitly allowed elsewhere.
+  Cloudflare's managed robots.txt (AI Crawl Control) prepends a block list at the edge; keep it off.
+- Every public page builds its metadata with `withPageSeo(path, {...})` (`src/lib/seo.ts`): self
+  canonical, og:url/title/image, Twitter card, `article` type for posts. The root layout sets no
+  canonical on purpose (it would leak to every child). Titles are bare; the template adds "| IndexFast".
+- FAQPage JSON-LD only where the FAQ is visible: blog posts use `PostFaq`, tool pages render their
+  `faqJsonLd` items as `GuideTopic` rows, comparison pages render `faqs`.
 - `src/lib/resources/directories.ts` stores the 100+ prioritized directory
   catalog. Do not auto-submit to third-party directories unless an official
   API supports it; provide deep links, checklists, and tracking instead.

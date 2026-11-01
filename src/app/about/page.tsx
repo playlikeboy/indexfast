@@ -9,14 +9,15 @@ import { Navbar } from "@/components/marketing/Navbar";
 import { FinalCTA, Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import { Container, buttonClass } from "@/components/ui";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
-export const metadata: Metadata = {
-	title: "About | IndexFast",
+export const metadata: Metadata = withPageSeo("/about", {
+	title: "About IndexFast",
 	description:
 		"IndexFast is built for programmatic SEO teams. We turn invisible pages into actionable signals for indexing health and visibility.",
-};
+});
 
 const breadcrumbs = [
 	{ name: "Home", url: SITE_URL },

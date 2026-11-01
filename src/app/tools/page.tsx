@@ -12,10 +12,11 @@ import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import { Container } from "@/components/ui";
 import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { tools, type ToolDefinition } from "@/lib/marketing-data";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withPageSeo("/tools", {
 	title: "Free SEO Indexing & Diagnostics Tools",
 	description:
 		"Diagnose search index status, extract XML sitemaps, verify robots.txt, audit canonical tags, and check HTTP status codes. Free, no signup required.",
@@ -30,7 +31,7 @@ export const metadata: Metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/tools`,
 	},
-};
+});
 
 const breadcrumbs = [
 	{ name: "Home", url: SITE_URL },

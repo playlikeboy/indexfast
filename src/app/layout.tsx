@@ -5,6 +5,7 @@ import { StackProvider, StackTheme } from "@stackframe/stack";
 import { stack } from "@/stack";
 import { PageViewTracker } from "@/components/app/PageViewTracker";
 import { stackCobaltTheme } from "@/components/ui/stack-theme";
+import { SITE_URL, OG_IMAGE, LOGO_URL, softwareApplicationJsonLd } from "@/lib/seo";
 
 // Cobalt faces (DESIGN.md): the variables are read by the font tokens in globals.css, so they sit on <html>.
 const familjen = Familjen_Grotesk({
@@ -28,13 +29,15 @@ const jetbrains = JetBrains_Mono({
 	display: "swap",
 });
 
-const SITE_URL = "https://indexfast.co";
-const siteDescription = "Monitor sitemaps, find indexing blockers, and submit URL updates through IndexNow and Bing. SEO operations for teams and AI workflows.";
+// Site-wide defaults only. Canonical and og:url are deliberately absent here: Next merges metadata
+// shallowly, so a root canonical would mark every page without its own as a duplicate of "/".
+// Each public page sets them through withPageSeo (src/lib/seo.ts).
+const siteDescription = "IndexFast finds pages search engines have not picked up, diagnoses indexing blockers, and submits new and changed URLs through IndexNow, Bing, Yandex, Baidu and Search Console. Built for builders and AI agents (MCP, REST API, CLI).";
 
 export const metadata: Metadata = {
 	metadataBase: new URL(SITE_URL),
 	title: {
-		default: "IndexFast — SEO Indexing Automation & Diagnostics",
+		default: "IndexFast: Automatic Indexing for IndexNow, Bing and Search Console",
 		template: "%s | IndexFast",
 	},
 	description: siteDescription,
@@ -65,20 +68,18 @@ export const metadata: Metadata = {
 	openGraph: {
 		type: "website",
 		locale: "en_US",
-		url: SITE_URL,
 		siteName: "IndexFast",
-		title: "IndexFast — SEO Indexing Automation & Diagnostics",
+		title: "IndexFast: Automatic Indexing for IndexNow, Bing and Search Console",
 		description: siteDescription,
-		images: [{ url: SITE_URL + "/og-image.png", width: 1200, height: 630, alt: "IndexFast SEO indexing tools" }],
+		images: [OG_IMAGE],
 	},
 	twitter: {
 		card: "summary_large_image",
-		title: "IndexFast — SEO Indexing Automation",
+		title: "IndexFast: Automatic Indexing for IndexNow, Bing and Search Console",
 		description: siteDescription,
-		images: [SITE_URL + "/og-image.png"],
+		images: [OG_IMAGE.url],
 	},
-	alternates: { canonical: SITE_URL },
-	icons: { icon: "/logo.png" },
+	icons: { icon: "/logo.png", apple: "/logo.png" },
 };
 
 const organizationJsonLd = {
@@ -86,26 +87,22 @@ const organizationJsonLd = {
 	"@type": "Organization",
 	name: "IndexFast",
 	url: SITE_URL,
-	logo: SITE_URL + "/favicon.svg",
+	// /favicon.svg does not exist (404); the logo must be a real, crawlable image.
+	logo: LOGO_URL,
+	description: siteDescription,
 	sameAs: [],
 };
 
-const softwareJsonLd = {
+const websiteJsonLd = {
 	"@context": "https://schema.org",
-	"@type": "SoftwareApplication",
+	"@type": "WebSite",
 	name: "IndexFast",
-	applicationCategory: "BusinessApplication",
-	operatingSystem: "Web",
 	url: SITE_URL,
-	description: siteDescription,
-	offers: {
-		"@type": "AggregateOffer",
-		lowPrice: "0",
-		highPrice: "99",
-		priceCurrency: "USD",
-		offerCount: "3",
-	},
+	publisher: { "@type": "Organization", name: "IndexFast", url: SITE_URL },
 };
+
+// Offers are generated from plans.ts so prices in structured data never drift from /pricing.
+const softwareJsonLd = softwareApplicationJsonLd(siteDescription);
 
 
 export default function RootLayout({
@@ -116,13 +113,13 @@ export default function RootLayout({
 	return (
 		<html lang="en" suppressHydrationWarning className={[familjen.variable, plex.variable, jetbrains.variable].join(" ")}>
 			<head>
-				<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 				<script
 					dangerouslySetInnerHTML={{
 						__html: "(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();",
 					}}
 				/>
 				<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} />
+				<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }} />
 				<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }} />
 			</head>
 			<body className="bg-background text-foreground font-sans antialiased">

@@ -416,8 +416,9 @@ async function callTool(auth: AuthenticatedApiKey, rawName: string, args: Record
 			return submitPendingForApi(auth.userId, siteRef);
 		case "get_submission_queue":
 			return getSiteQueueForApi(auth.userId, siteRef, {
-				page: asNumber(args.page),
-				limit: asNumber(args.limit),
+				// Explicit fallbacks: the generic default (100) would silently open page 100 (empty).
+				page: asNumber(args.page, 1),
+				limit: asNumber(args.limit, 50),
 				status: asString(args.status) || undefined,
 				engine: asString(args.engine) || undefined,
 			});

@@ -2,6 +2,9 @@ import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import { PostShell } from "../_components/PostShell";
+import { PostFaq, type FaqItem } from "../_components/PostFaq";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -31,44 +34,32 @@ const articleJsonLd = {
 		url: SITE_URL,
 		logo: {
 			"@type": "ImageObject",
-			url: `${SITE_URL}/favicon.svg`,
+			url: `${SITE_URL}/logo.png`,
 		},
 	},
 	mainEntityOfPage: `${SITE_URL}/blog/sitemap-monitoring-best-practices`,
 };
 
-const faqJsonLd = {
-	"@context": "https://schema.org",
-	"@type": "FAQPage",
-	mainEntity: [
-		{
-			"@type": "Question",
-			name: "How often should I update my sitemap?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "For dynamic sites, update the sitemap whenever new pages are published or existing pages are changed. Automated sitemaps regenerate in real time. For static sites, regenerate on every deploy or at least daily.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "What is sitemap coverage in Google Search Console?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "Sitemap coverage in GSC shows how many URLs from your sitemap were discovered, crawled, and indexed — and which ones were excluded and why. Use it to spot indexing gaps quickly.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "Can a bad sitemap hurt my rankings?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "Yes. A sitemap with many 404s, redirects, or noindex URLs wastes crawl budget and signals low quality to search engines. Keep your sitemap clean and accurate.",
-			},
-		},
-	],
-};
+// Rendered as the visible FAQ and its FAQPage markup by PostFaq, so the two never diverge.
+const faqs: FaqItem[] = [
+	{
+		question: "How often should I update my sitemap?",
+		answer:
+			"For dynamic sites, update the sitemap whenever new pages are published or existing pages are changed. Automated sitemaps regenerate in real time. For static sites, regenerate on every deploy or at least daily.",
+	},
+	{
+		question: "What is sitemap coverage in Google Search Console?",
+		answer:
+			"Sitemap coverage in GSC shows how many URLs from your sitemap were discovered, crawled, and indexed \u2014 and which ones were excluded and why. Use it to spot indexing gaps quickly.",
+	},
+	{
+		question: "Can a bad sitemap hurt my rankings?",
+		answer:
+			"Yes. A sitemap with many 404s, redirects, or noindex URLs wastes crawl budget and signals low quality to search engines. Keep your sitemap clean and accurate.",
+	},
+];
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/blog/sitemap-monitoring-best-practices", {
 	title: "Sitemap Monitoring Best Practices for Large Sites in 2026",
 	description:
 		"How to keep sitemap coverage high, spot stale entries, and catch orphaned pages before they get dropped from Google's index.",
@@ -84,7 +75,7 @@ export const metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/blog/sitemap-monitoring-best-practices`,
 	},
-};
+});
 
 export default function SitemapMonitoringPost() {
 	return (
@@ -95,10 +86,6 @@ export default function SitemapMonitoringPost() {
 				<script
 					type="application/ld+json"
 					dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
-				/>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
 				/>
 				<PostShell
 					slug="sitemap-monitoring-best-practices"
@@ -209,6 +196,7 @@ export default function SitemapMonitoringPost() {
 						automated monitoring workflow catches gaps before they become traffic problems.
 						Start with a clean sitemap, validate it regularly, and monitor coverage in GSC.
 					</p>
+					<PostFaq items={faqs} />
 				</PostShell>
 			</main>
 			<Footer />

@@ -18,7 +18,7 @@ const steps = [
 const features = [
 	{ title: "Bing Webmaster API + IndexNow", desc: "Broadcast through IndexNow to Bing, Yandex, Naver and Seznam. On Pro and Unlimited, add your Bing Webmaster API key for direct submissions." },
 	{ title: "Agent-native MCP & SKILL.md", desc: "Connect Claude Code, Cursor, Windsurf or VS Code and ask your AI to submit new pages as it ships them." },
-	{ title: "Catch what blocks indexing", desc: "Check any URL for noindex tags, canonical mismatches, redirects and HTTP errors." },
+	{ title: "Catch what blocks indexing", desc: "Check any URL for noindex tags, canonical mismatches, redirects, robots.txt blocks and HTTP errors." },
 ];
 
 export function Solution() {

@@ -1,5 +1,5 @@
 import { bulkSubmitUrlsForApi, listSubmissionsForUser, submitPendingForApi, submitUrlForApi } from "@/lib/platform/operations";
-import { readJsonBody, withApiAuth } from "@/lib/platform/http";
+import { intParam, readJsonBody, withApiAuth } from "@/lib/platform/http";
 
 type RouteContext = {
 	params: Promise<{ siteId: string }>;
@@ -8,7 +8,8 @@ type RouteContext = {
 export async function GET(request: Request, context: RouteContext) {
 	const { siteId } = await context.params;
 	const url = new URL(request.url);
-	const limit = Number(url.searchParams.get("limit") || 100);
+	// intParam: `?limit=abc` would otherwise reach SQL as NaN and turn into a 500.
+	const limit = intParam(url.searchParams.get("limit"), 100, 1, 500);
 
 	return withApiAuth(request, ["sites:read"], async (auth) => ({
 		submissions: await listSubmissionsForUser(auth.userId, siteId, limit),

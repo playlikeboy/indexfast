@@ -163,6 +163,13 @@ Search Console behaviour:
   (PASS -> indexed, blocked states -> blockers, FAIL/NEUTRAL -> not_indexed) and
   `lastCheckedAt`, plus a `checks` row (`gsc_inspection`). Only an inspection may set
   `indexed`; live diagnostics keep Google's verdict on a pass.
+- Deindexing alert: when an inspection returns not indexed for a URL whose previous
+  verdict was `indexed`, an `indexing_drop` alert ("Pages dropped out of Google's index")
+  is raised, one open alert per site, refreshed with the latest URL.
+
+Diagnostics (`evaluateUrlDiagnostics`, `src/lib/automation/diagnostics.ts`) check HTTP status,
+redirects (warn), `noindex` in meta or `X-Robots-Tag` (fail), canonical mismatch (warn) and
+robots.txt disallowing Googlebot or `*` (fail; an unreachable robots.txt fails open).
 - Access tokens are cached per isolate until 60s before expiry. `invalid_grant` on refresh
   marks the connection `failed` until the user reconnects. Disconnect revokes at Google and
   deletes the token plus every `gsc` / `google_indexing_api` site row.

@@ -52,13 +52,13 @@ describe("search engines research catalog", () => {
 		expect(baidu?.methods[0]?.authMethod).toBe("token");
 	});
 
-	it("marks the engine connections being added without promising Google indexing", () => {
+	it("marks the shipped engine connections live without promising Google indexing", () => {
 		const status = (engine: string, method: string) =>
 			getSearchEngineById(engine)?.methods.find((m) => m.name.includes(method))?.inIndexFast?.status;
-		expect(status("google", "Search Console")).toBe("adding");
-		expect(status("google", "Indexing API")).toBe("adding");
-		expect(status("yandex", "Recrawl")).toBe("adding");
-		expect(status("baidu", "Active Push")).toBe("adding");
+		expect(status("google", "Search Console")).toBe("live");
+		expect(status("google", "Indexing API")).toBe("live");
+		expect(status("yandex", "Recrawl")).toBe("live");
+		expect(status("baidu", "Active Push")).toBe("live");
 		expect(status("bing", "IndexNow")).toBe("live");
 
 		const notes = getAllSearchEngines().flatMap((e) => e.methods.map((m) => m.inIndexFast?.note ?? ""));

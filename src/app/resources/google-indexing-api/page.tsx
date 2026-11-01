@@ -9,12 +9,15 @@ import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { Container, Panel, Status } from "@/components/ui";
 import { ResourceHeader } from "../_components/ResourceHeader";
+import type { Metadata } from "next";
+import { SITE_URL, withPageSeo } from "@/lib/seo";
+import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/resources/google-indexing-api", {
 	title: "Google Indexing API Guardrails",
 	description:
 		"Learn when IndexFast can use Google's Indexing API and why most SEO workflows should rely on sitemap hygiene, diagnostics, GSC, and safe discovery signals.",
-};
+});
 
 const rules = [
 	{
@@ -40,6 +43,7 @@ export default function GoogleIndexingApiPage() {
 		<>
 			<Navbar />
 			<main>
+				<BreadcrumbJsonLd items={[{ name: "Home", url: SITE_URL }, { name: "Resources", url: `${SITE_URL}/resources` }, { name: "Google Indexing API guardrails", url: `${SITE_URL}/resources/google-indexing-api` }]} />
 				<ResourceHeader
 					title="Google's Indexing API: jobs and livestreams only"
 					lede="When the Google connection ships, IndexFast will send only job and livestream pages. Every other page uses sitemaps."

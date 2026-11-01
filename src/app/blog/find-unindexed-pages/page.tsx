@@ -3,6 +3,8 @@ import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import { PostShell } from "../_components/PostShell";
+import { PostFaq, type FaqItem } from "../_components/PostFaq";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -32,44 +34,32 @@ const toolJsonLd = {
 		url: SITE_URL,
 		logo: {
 			"@type": "ImageObject",
-			url: `${SITE_URL}/favicon.svg`,
+			url: `${SITE_URL}/logo.png`,
 		},
 	},
 	mainEntityOfPage: `${SITE_URL}/blog/find-unindexed-pages`,
 };
 
-const faqJsonLd = {
-	"@context": "https://schema.org",
-	"@type": "FAQPage",
-	mainEntity: [
-		{
-			"@type": "Question",
-			name: "How do I find unindexed pages on my site?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "Start by exporting your sitemap URLs, then run live SERP checks using the site: operator or a tool like Google Search Console. Compare the sitemap list against what's actually in Google's index to find gaps.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "Why would pages be in my sitemap but not indexed?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "Common reasons include: the page is too new, it's blocked by robots.txt or noindex, it has low-quality or duplicate content, it lacks inbound links, or it returned an error during crawling.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "Can accidentally noindex pages be recovered?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "Yes. Remove the noindex directive, ensure the page is accessible, resubmit it in Google Search Console, and request indexing. Most pages recover within a few days to a few weeks depending on crawl frequency.",
-			},
-		},
-	],
-};
+// Rendered as the visible FAQ and its FAQPage markup by PostFaq, so the two never diverge.
+const faqs: FaqItem[] = [
+	{
+		question: "How do I find unindexed pages on my site?",
+		answer:
+			"Start by exporting your sitemap URLs, then check index status with Search Console URL Inspection or the Pages report (the site: operator gives only a rough count). Compare the sitemap list against what's actually in Google's index to find gaps.",
+	},
+	{
+		question: "Why would pages be in my sitemap but not indexed?",
+		answer:
+			"Common reasons include: the page is too new, it's blocked by robots.txt or noindex, it has low-quality or duplicate content, it lacks inbound links, or it returned an error during crawling.",
+	},
+	{
+		question: "Can accidentally noindex pages be recovered?",
+		answer:
+			"Yes. Remove the noindex directive, ensure the page is accessible, resubmit it in Google Search Console, and request indexing. Most pages recover within a few days to a few weeks depending on crawl frequency.",
+	},
+];
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withPageSeo("/blog/find-unindexed-pages", {
 	title: "How to Find Unindexed Pages in 2026: The Complete Guide",
 	description:
 		"Learn how to audit your sitemap, run index checks, and recover dropped pages in 2026. A step-by-step guide to fixing invisible pages and recovering lost organic traffic.",
@@ -97,7 +87,7 @@ export const metadata: Metadata = {
 		description:
 			"Learn how to audit your sitemap, run index checks, and recover dropped pages in 2026.",
 	},
-};
+});
 
 export default function FindUnindexedPagesPost() {
 	return (
@@ -109,15 +99,11 @@ export default function FindUnindexedPagesPost() {
 					type="application/ld+json"
 					dangerouslySetInnerHTML={{ __html: JSON.stringify(toolJsonLd) }}
 				/>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-				/>
 				<PostShell
 					slug="find-unindexed-pages"
 					category="SEO Guide"
 					title="How to find unindexed pages in 2026: the complete guide"
-					lede="Your sitemap says you have 10,000 pages. Google Search Console shows only 6,200 indexed. Where did the other 3,800 pages go? Here is the exact workflow top SEO teams use to find, diagnose, and recover unindexed pages — and get them back into Google's index fast."
+					lede="Your sitemap says you have 10,000 pages. Google Search Console shows only 6,200 indexed. Where did the other 3,800 pages go? Here is the exact workflow top SEO teams use to find, diagnose, and recover unindexed pages — and give them the best chance of getting back into Google's index."
 				>
 					<h2>Why finding unindexed pages matters more than ever</h2>
 					<p>
@@ -148,14 +134,15 @@ export default function FindUnindexedPagesPost() {
 
 					<h2>Step 2: Check what Google actually has indexed</h2>
 					<p>
-						The fastest way to compare your sitemap against reality is with a live SERP check.
-						Use the site: operator in Google Search (e.g. site:yourdomain.com) to see a rough
+						Google Search Console is the authoritative source for what Google has indexed.
+						For a rough first look, use the site: operator in Google Search (e.g. site:yourdomain.com) to see a rough
 						count of indexed pages. For accurate, server-side data, connect Google Search
 						Console and pull the Pages report.
 					</p>
 					<p>
-						For a quick automated check, use the Bulk Index Checker. Paste your sitemap URLs
-						and get live SERP verification for every URL in minutes.
+						For a quick automated check, use the Bulk Index Checker. Paste up to 20 URLs and it
+						checks whether each one can be indexed (HTTP status, redirects, noindex and
+						canonical), with a link to URL Inspection in Search Console to confirm the status.
 					</p>
 
 					<h2>Step 3: Diagnose why pages are missing</h2>
@@ -200,9 +187,9 @@ export default function FindUnindexedPagesPost() {
 					<h2>Step 5: Monitor ongoing indexing health</h2>
 					<p>
 						Indexing is not a one-time check. Set up periodic monitoring to catch new drops
-						before they impact traffic. Tools like IndexFast automate sitemap sync, diagnostics,
-						and deindexing alerts so you are notified the moment a page disappears — not weeks
-						later when traffic drops.
+						before they impact traffic. Tools like IndexFast automate sitemap sync, indexability
+						diagnostics and Search Console URL inspection, so blockers show up on the next sync
+						instead of weeks later when traffic drops.
 					</p>
 
 					<h2>Common mistakes when auditing indexing</h2>
@@ -224,6 +211,7 @@ export default function FindUnindexedPagesPost() {
 						Start with a sitemap export, run a bulk index check, diagnose the blockers, fix
 						them, and monitor continuously. That is the winning formula for indexing health.
 					</p>
+					<PostFaq items={faqs} />
 				</PostShell>
 			</main>
 			<Footer />

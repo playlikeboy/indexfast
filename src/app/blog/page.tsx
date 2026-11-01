@@ -10,14 +10,15 @@ import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import { Container } from "@/components/ui";
 import { blogPosts } from "@/lib/marketing-data";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
-export const metadata: Metadata = {
-	title: "Blog | IndexFast",
+export const metadata: Metadata = withPageSeo("/blog", {
+	title: "Indexing Guides: IndexNow, Sitemaps and Search Console",
 	description:
 		"Practical guides on indexing health, sitemap management, pSEO launch monitoring, and safe discovery workflows.",
-};
+});
 
 const breadcrumbs = [
 	{ name: "Home", url: SITE_URL },

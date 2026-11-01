@@ -13,6 +13,15 @@ import { FAQ, faqs } from "@/components/marketing/FAQ";
 import { AgentSection } from "@/components/marketing/landing/AgentSection";
 import { FinalCTA } from "@/components/marketing/FinalCTA";
 import { Footer } from "@/components/marketing/Footer";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
+
+// The home page states its own canonical; the root layout intentionally sets none (see layout.tsx).
+export const metadata: Metadata = withPageSeo("/", {
+	title: "IndexFast: Automatic Indexing for IndexNow, Bing and Search Console",
+	description:
+		"Add a domain, host one key file, and IndexFast submits new and changed URLs to IndexNow, Bing, Yandex, Baidu and Search Console. MCP server and REST API on every plan.",
+});
 
 // FAQPage markup must match the visible FAQ, so both come from the same array.
 const faqJsonLd = {

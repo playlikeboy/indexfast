@@ -1,6 +1,8 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
 import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -26,6 +28,7 @@ const toolJsonLd = {
 	},
 };
 
+// The FAQ rows below are rendered from this same object: FAQPage markup must match visible text.
 const faqJsonLd = {
 	"@context": "https://schema.org",
 	"@type": "FAQPage",
@@ -49,7 +52,7 @@ const faqJsonLd = {
 	],
 };
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/tools/robots-txt-checker", {
 	title: "Free Robots.txt Checker | Analyze Crawl Rules and Sitemap Paths",
 	description:
 		"Instant robots.txt analysis showing crawl rules, sitemap references, and blocked paths. Free robots.txt checker for any domain.",
@@ -64,7 +67,7 @@ export const metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/tools/robots-txt-checker`,
 	},
-};
+});
 
 export default function RobotsTxtCheckerPage() {
 	return (
@@ -91,6 +94,11 @@ export default function RobotsTxtCheckerPage() {
 					<li>Case-sensitivity issues in path patterns.</li>
 				</ul>
 			</GuideTopic>
+			{faqJsonLd.mainEntity.map((item) => (
+				<GuideTopic key={item.name} title={item.name}>
+					<p>{item.acceptedAnswer.text}</p>
+				</GuideTopic>
+			))}
 		</ToolPage>
 	);
 }

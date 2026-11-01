@@ -7,12 +7,15 @@ import { Footer } from "@/components/marketing/Footer";
 import { Badge, Container, Table, Td, Th } from "@/components/ui";
 import { getToolsByPriority } from "@/lib/resources/tools";
 import { ResourceHeader } from "../_components/ResourceHeader";
+import type { Metadata } from "next";
+import { SITE_URL, withPageSeo } from "@/lib/seo";
+import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/resources/tools", {
 	title: "Best Free and Paid SEO Tools for Indexing, Sitemaps, and AI Visibility",
 	description:
 		"Curated third-party SEO tools for Google Search Console, Bing Webmaster, structured data, performance, technical crawls, and AI visibility.",
-};
+});
 
 export default function ResourceToolsPage() {
 	const tools = getToolsByPriority();
@@ -21,6 +24,7 @@ export default function ResourceToolsPage() {
 		<>
 			<Navbar />
 			<main>
+				<BreadcrumbJsonLd items={[{ name: "Home", url: SITE_URL }, { name: "Resources", url: `${SITE_URL}/resources` }, { name: "SEO tools", url: `${SITE_URL}/resources/tools` }]} />
 				<ResourceHeader
 					title="SEO tools to use alongside IndexFast"
 					lede="Official search data, structured-data checks, performance traces and research, in one list."

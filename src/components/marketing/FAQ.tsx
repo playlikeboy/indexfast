@@ -17,7 +17,7 @@ export const faqs = [
 	},
 	{
 		q: "Does it work with Google?",
-		a: "Google does not take IndexNow, and nobody can guarantee Google indexing. Connect Search Console and IndexFast inspects your URLs, resubmits your sitemap and flags noindex, canonical and HTTP problems. The Indexing API is used only for eligible job and livestream pages.",
+		a: "Google does not take IndexNow, and nobody can guarantee Google indexing. Connect Search Console and IndexFast inspects your URLs and resubmits your sitemap, while IndexFast's own checks flag noindex, canonical, redirect, robots.txt and HTTP problems. The Indexing API is used only for eligible job and livestream pages.",
 	},
 	{
 		q: "Do I need to write code?",

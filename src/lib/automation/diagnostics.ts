@@ -1,4 +1,10 @@
+/**
+ * Indexability diagnostics for a single URL: HTTP status, redirects, noindex (meta and
+ * X-Robots-Tag), canonical mismatch and robots.txt blocking. Used by the dashboard, REST/MCP
+ * and the free tools, so every check here must be a real signal the marketing copy can cite.
+ */
 import { safeFetchText, assertSafeExternalUrl } from "@/lib/url-utils";
+import { isPathAllowed, parseRobotsGroups, rulesForAgent } from "@/app/tools/robots-rules";
 
 export type DiagnosticResult = {
 	url: string;
@@ -9,10 +15,32 @@ export type DiagnosticResult = {
 	noindexSource: "meta_robots" | "x_robots_tag" | null;
 	canonical: string | null;
 	isCanonicalMatch: boolean;
+	redirected: boolean;
+	robotsBlocked: boolean;
 	title: string | null;
 	blockers: string[];
 	checkedAt: string;
 };
+
+/**
+ * Whether robots.txt on the URL's origin disallows Googlebot (falling back to the `*` group).
+ * Fails open: an unreachable or missing robots.txt means crawlers may fetch everything, so it
+ * must never be reported as a blocker.
+ */
+export async function isBlockedByRobots(url: URL): Promise<boolean> {
+	try {
+		const robots = await safeFetchText(new URL("/robots.txt", url).toString(), {
+			timeoutMs: 5000,
+			userAgent: "IndexFast Diagnostics/1.0 (+https://indexfast.co)",
+			maxBytes: 512 * 1024,
+		});
+		if (robots.status !== 200) return false;
+		const { rules } = rulesForAgent(parseRobotsGroups(robots.text), "googlebot");
+		return !isPathAllowed(rules, url.pathname + url.search);
+	} catch {
+		return false;
+	}
+}
 
 export async function evaluateUrlDiagnostics(inputUrl: string): Promise<DiagnosticResult> {
 	const checkedAt = new Date().toISOString();
@@ -32,6 +60,8 @@ export async function evaluateUrlDiagnostics(inputUrl: string): Promise<Diagnost
 			noindexSource: null,
 			canonical: null,
 			isCanonicalMatch: false,
+			redirected: false,
+			robotsBlocked: false,
 			title: null,
 			blockers: [message],
 			checkedAt,
@@ -39,11 +69,14 @@ export async function evaluateUrlDiagnostics(inputUrl: string): Promise<Diagnost
 	}
 
 	try {
-		const response = await safeFetchText(validUrl.toString(), {
-			timeoutMs: 10000,
-			userAgent: "IndexFast Diagnostics/1.0 (+https://indexfast.co)",
-			maxBytes: 2 * 1024 * 1024, // 2MB
-		});
+		const [response, robotsBlocked] = await Promise.all([
+			safeFetchText(validUrl.toString(), {
+				timeoutMs: 10000,
+				userAgent: "IndexFast Diagnostics/1.0 (+https://indexfast.co)",
+				maxBytes: 2 * 1024 * 1024, // 2MB
+			}),
+			isBlockedByRobots(validUrl),
+		]);
 
 		const httpStatus = response.status;
 		const finalUrl = response.finalUrl;
@@ -51,6 +84,15 @@ export async function evaluateUrlDiagnostics(inputUrl: string): Promise<Diagnost
 
 		if (httpStatus >= 400) {
 			blockers.push(`HTTP ${httpStatus} error returned`);
+		}
+
+		// Engines index the redirect target, not the submitted URL, so a redirect is worth flagging.
+		const redirected = new URL(finalUrl).href !== validUrl.href;
+		if (redirected) {
+			blockers.push(`Redirects to ${finalUrl}`);
+		}
+		if (robotsBlocked) {
+			blockers.push("robots.txt disallows crawling this URL");
 		}
 
 		// Check X-Robots-Tag header
@@ -100,9 +142,9 @@ export async function evaluateUrlDiagnostics(inputUrl: string): Promise<Diagnost
 
 		// Overall status
 		let status: "pass" | "warn" | "fail" = "pass";
-		if (httpStatus >= 400 || noindex) {
+		if (httpStatus >= 400 || noindex || robotsBlocked) {
 			status = "fail";
-		} else if (httpStatus >= 300 || !isCanonicalMatch) {
+		} else if (httpStatus >= 300 || redirected || !isCanonicalMatch) {
 			status = "warn";
 		}
 
@@ -115,6 +157,8 @@ export async function evaluateUrlDiagnostics(inputUrl: string): Promise<Diagnost
 			noindexSource,
 			canonical,
 			isCanonicalMatch,
+			redirected,
+			robotsBlocked,
 			title,
 			blockers,
 			checkedAt,
@@ -130,6 +174,8 @@ export async function evaluateUrlDiagnostics(inputUrl: string): Promise<Diagnost
 			noindexSource: null,
 			canonical: null,
 			isCanonicalMatch: false,
+			redirected: false,
+			robotsBlocked: false,
 			title: null,
 			blockers: [message],
 			checkedAt,

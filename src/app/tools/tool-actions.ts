@@ -70,8 +70,10 @@ export async function generateIndexNowKeyTool(domainInput: string) {
 export async function generateLlmsTxtTool(data: { domain: string; title: string; description: string }) {
 	return guard("Could not generate llms.txt", async () => {
 		const host = hostFrom(data.domain);
-		const title = data.title.trim() || host;
-		const description = data.description.trim() || `Official documentation and information for ${host}`;
+		// Collapse whitespace: the description comes from a textarea, and a line break would end the
+		// "> " blockquote (or the "# " heading) and leave the rest as stray Markdown.
+		const title = data.title.replace(/\s+/g, " ").trim() || host;
+		const description = data.description.replace(/\s+/g, " ").trim() || `Official documentation and information for ${host}`;
 		const llmsTxt = `# ${title}
 
 > ${description}
@@ -182,7 +184,8 @@ export async function checkNoindexTagTool(inputUrl: string) {
 			noindexSource: diag.noindexSource,
 			blockers: diag.blockers,
 			title: diag.title,
-			isIndexable: !diag.noindex && diag.httpStatus === 200,
+			robotsBlocked: diag.robotsBlocked,
+			isIndexable: !diag.noindex && !diag.robotsBlocked && diag.httpStatus === 200,
 		};
 	});
 }
@@ -364,7 +367,8 @@ export async function checkGoogleIndexTool(inputUrl: string) {
 			noindexSource: diag.noindexSource,
 			canonical: diag.canonical,
 			isCanonicalMatch: diag.isCanonicalMatch,
-			isIndexable: !diag.noindex && diag.httpStatus === 200,
+			robotsBlocked: diag.robotsBlocked,
+			isIndexable: !diag.noindex && !diag.robotsBlocked && diag.httpStatus === 200,
 			blockers: diag.blockers,
 			gscInspectUrl,
 			truthNote:

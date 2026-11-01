@@ -13,7 +13,7 @@
  */
 import { and, asc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { checks, siteIntegrations, siteSitemaps, sites, urls, userIntegrations, users } from "@/db/schema";
+import { alerts, checks, siteIntegrations, siteSitemaps, sites, urls, userIntegrations, users } from "@/db/schema";
 import { decryptSecret, encryptSecret } from "@/lib/automation/credentials";
 import { GOOGLE_LIMITS } from "@/lib/automation/constants";
 import type { EngineSubmissionResult } from "@/lib/automation/search-engines";
@@ -279,6 +279,27 @@ type InspectOutcome =
 	| { ok: true; inspection: InspectionSummary }
 	| { ok: false; message: string; quotaStop?: "day" | "minute" };
 
+const INDEXING_DROP_TITLE = "Pages dropped out of Google's index";
+
+/**
+ * One open alert per site (deduplicated by title, refreshed on repeats) so a large drop does not
+ * flood the dashboard with one alert per URL. Not shared with service.ts's raiseAlert to avoid a
+ * circular import between the engines and the automation service.
+ */
+async function raiseIndexingDropAlert(siteId: string, loc: string, gscStatus: string | null | undefined) {
+	const message = truncateMessage(`${loc} was indexed and Search Console now reports: ${gscStatus || "not indexed"}.`);
+	const [existing] = await db
+		.select({ id: alerts.id })
+		.from(alerts)
+		.where(and(eq(alerts.siteId, siteId), eq(alerts.title, INDEXING_DROP_TITLE), eq(alerts.resolved, false)))
+		.limit(1);
+	if (existing) {
+		await db.update(alerts).set({ message, createdAt: new Date() }).where(eq(alerts.id, existing.id));
+		return;
+	}
+	await db.insert(alerts).values({ siteId, title: INDEXING_DROP_TITLE, message, alertType: "indexing_drop", resolved: false });
+}
+
 async function inspectAndStore(urlRow: { id: string; loc: string }, property: string, token: string, dailyLimit: number): Promise<InspectOutcome> {
 	const now = new Date();
 	const day = quotaDay(now, GOOGLE_LIMITS.quotaTimeZone);
@@ -302,7 +323,16 @@ async function inspectAndStore(urlRow: { id: string; loc: string }, property: st
 	if (!result.ok || !result.inspection) return { ok: false, message: `Search Console: ${result.message}` };
 
 	const inspection = result.inspection;
+	// Read the previous verdict first: a page Google reported as indexed that now is not is the
+	// deindexing signal the dashboard alerts on.
+	const [previous] = await db
+		.select({ siteId: urls.siteId, indexingStatus: urls.indexingStatus })
+		.from(urls)
+		.where(eq(urls.id, urlRow.id))
+		.limit(1);
+	const dropped = previous?.indexingStatus === "indexed" && inspection.indexingStatus !== "indexed";
 	await Promise.all([
+		dropped ? raiseIndexingDropAlert(previous.siteId, urlRow.loc, inspection.gscStatus) : Promise.resolve(),
 		db
 			.update(urls)
 			.set({ gscStatus: inspection.gscStatus, indexingStatus: inspection.indexingStatus, lastCheckedAt: now })

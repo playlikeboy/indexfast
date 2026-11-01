@@ -153,7 +153,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
     "type": "URL_UPDATED"
   }'`,
 				notes: "IndexFast enforces safe guardrails for Google Indexing API to protect domains from API quota revocation or algorithmic penalties.",
-				inIndexFast: { status: "adding", note: "Being added as a gated connection: only pages whose JSON-LD contains JobPosting or BroadcastEvent in VideoObject are sent. No other page is ever submitted, and nothing guarantees Google indexes a page." },
+				inIndexFast: { status: "live", note: "Available on paid plans as a gated connection: only pages whose JSON-LD contains JobPosting or BroadcastEvent in VideoObject are sent. No other page is ever submitted, and nothing guarantees Google indexes a page." },
 			},
 			{
 				name: "Google Search Console URL Inspection API",
@@ -174,7 +174,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
     "siteUrl": "sc-domain:example.com"
   }'`,
 				notes: "Useful for checking whether Google has indexed a URL and verifying user-declared canonical tags.",
-				inIndexFast: { status: "adding", note: "Being added as a Google Search Console connection over OAuth, to read what Google reports for each URL. It does not request indexing." },
+				inIndexFast: { status: "live", note: "Connect Google Search Console over OAuth to read what Google reports for each URL and resubmit sitemaps after each sync. It does not request indexing. Free plans get a small daily inspection allowance." },
 			},
 		],
 		setupGuide: {
@@ -242,7 +242,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
   -H "Content-Type: application/json" \\
   -d '{"url": "https://example.com/page-1"}'`,
 				notes: "Due to small daily quotas (often just 20 URLs/day), IndexNow is much better suited for automated indexing.",
-				inIndexFast: { status: "adding", note: "Being added as an optional Yandex.Webmaster OAuth connection that queues recrawls within Yandex’s daily quota." },
+				inIndexFast: { status: "live", note: "Optional on paid plans: add your Yandex.Webmaster OAuth token and IndexFast queues recrawls within Yandex’s daily quota." },
 			},
 		],
 		setupGuide: {
@@ -251,7 +251,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 				"Add your site in IndexFast and verify your IndexNow key.",
 				"All verified IndexFast sites automatically submit URLs to Yandex through the federated IndexNow protocol.",
 				"Optionally add your site in Yandex.Webmaster (webmaster.yandex.com) to track Russian and CIS search analytics.",
-				"IndexFast is adding an optional Yandex.Webmaster OAuth connection for the recrawl queue, limited to Yandex's daily quota.",
+				"On Pro or Unlimited, add your Yandex.Webmaster OAuth token to also use the recrawl queue, limited to Yandex's daily quota.",
 			],
 		},
 		developerTips: [
@@ -265,8 +265,8 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 		company: "Baidu, Inc.",
 		marketShare: "The leading engine in mainland China.",
 		regions: ["China", "East Asia"],
-		supportLevel: "planned",
-		supportedInIndexFast: false,
+		supportLevel: "native",
+		supportedInIndexFast: true,
 		summary:
 			"Baidu operates the 'Active Push' (主动推送) API through the Baidu Search Resource Platform (百度搜索资源平台). It allows webmasters to submit up to 50,000 URLs daily via a direct HTTP POST with a site push token.",
 		methods: [
@@ -284,7 +284,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 				curlExample: `curl -H 'Content-Type:text/plain' --data-binary $'https://example.com/page-1\\nhttps://example.com/page-2' \\
   "http://data.zz.baidu.com/urls?site=https://example.com&token=YOUR_BAIDU_TOKEN"`,
 				notes: "Returns JSON response: {\"remain\":49990,\"success\":10}. Baidu does not currently participate in IndexNow.",
-				inIndexFast: { status: "adding", note: "Being added: push URLs with your own Baidu site token, for sites verified on the Baidu Search Resource Platform." },
+				inIndexFast: { status: "live", note: "Optional on paid plans: push URLs with your own Baidu site token, for sites verified on the Baidu Search Resource Platform." },
 			},
 		],
 		setupGuide: {
@@ -294,7 +294,7 @@ export const SEARCH_ENGINES: SearchEngine[] = [
 				"Add and verify your website domain via HTML file or DNS TXT record.",
 				"Go to Resource Submission (资源提交) > Ordinary Ingestion (普通收录) > API Submission (API提交).",
 				"Copy your site push token (16-character alphanumeric string).",
-				"Execute direct HTTP POST with plain text newline-delimited URLs to the push endpoint.",
+				"Execute direct HTTP POST with plain text newline-delimited URLs to the push endpoint, or on Pro/Unlimited paste the token into IndexFast and it pushes new URLs for you.",
 			],
 		},
 		developerTips: [

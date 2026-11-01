@@ -1,6 +1,8 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
 import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -26,6 +28,7 @@ const toolJsonLd = {
 	},
 };
 
+// The FAQ rows below are rendered from this same object: FAQPage markup must match visible text.
 const faqJsonLd = {
 	"@context": "https://schema.org",
 	"@type": "FAQPage",
@@ -49,14 +52,14 @@ const faqJsonLd = {
 	],
 };
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/tools/canonical-checker", {
 	title: "Free Canonical Checker | Detect Canonical Tag Conflicts",
 	description: "Verify a URL's canonical tag and detect mismatches with the actual page URL. Free canonical checker for SEO diagnostics.",
 	keywords: ["canonical checker", "canonical tag checker", "canonical mismatch", "check canonical url", "canonical tag validator"],
 	alternates: {
 		canonical: `${SITE_URL}/tools/canonical-checker`,
 	},
-};
+});
 
 export default function CanonicalCheckerPage() {
 	return (
@@ -84,6 +87,11 @@ export default function CanonicalCheckerPage() {
 					duplicate. Use the canonical checker alongside index status tools for a full picture.
 				</p>
 			</GuideTopic>
+			{faqJsonLd.mainEntity.map((item) => (
+				<GuideTopic key={item.name} title={item.name}>
+					<p>{item.acceptedAnswer.text}</p>
+				</GuideTopic>
+			))}
 		</ToolPage>
 	);
 }

@@ -2,6 +2,9 @@ import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import { PostShell } from "../_components/PostShell";
+import { PostFaq, type FaqItem } from "../_components/PostFaq";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -31,44 +34,32 @@ const articleJsonLd = {
 		url: SITE_URL,
 		logo: {
 			"@type": "ImageObject",
-			url: `${SITE_URL}/favicon.svg`,
+			url: `${SITE_URL}/logo.png`,
 		},
 	},
 	mainEntityOfPage: `${SITE_URL}/blog/gsc-alerts-setup`,
 };
 
-const faqJsonLd = {
-	"@context": "https://schema.org",
-	"@type": "FAQPage",
-	mainEntity: [
-		{
-			"@type": "Question",
-			name: "Does Google Search Console send deindexing alerts?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "GSC sends notifications for several indexing issues including security problems, manual actions, and significant coverage changes. However, it does not send granular alerts for every individual URL drop. Combine GSC with dedicated monitoring tools for full coverage.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "What are the most important GSC reports for indexing health?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "The Pages report, URL Inspection tool, Sitemaps report, and Coverage report are the most important for indexing health. Use them together to track what is indexed, what is excluded, and why.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "How can I automate GSC monitoring?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "Use the GSC API to pull daily coverage stats, integrate with alerting platforms like Slack or email, and combine with third-party SEO monitoring tools that parse GSC data for deindexing signals and trend changes.",
-			},
-		},
-	],
-};
+// Rendered as the visible FAQ and its FAQPage markup by PostFaq, so the two never diverge.
+const faqs: FaqItem[] = [
+	{
+		question: "Does Google Search Console send deindexing alerts?",
+		answer:
+			"GSC sends notifications for several indexing issues including security problems, manual actions, and significant coverage changes. However, it does not send granular alerts for every individual URL drop. Combine GSC with dedicated monitoring tools for full coverage.",
+	},
+	{
+		question: "What are the most important GSC reports for indexing health?",
+		answer:
+			"The Pages report, URL Inspection tool, Sitemaps report, and Coverage report are the most important for indexing health. Use them together to track what is indexed, what is excluded, and why.",
+	},
+	{
+		question: "How can I automate GSC monitoring?",
+		answer:
+			"Use the GSC API to pull daily coverage stats, integrate with alerting platforms like Slack or email, and combine with third-party SEO monitoring tools that parse GSC data for deindexing signals and trend changes.",
+	},
+];
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/blog/gsc-alerts-setup", {
 	title: "How to Set Up Google Search Console Alerts for Indexing Issues",
 	description:
 		"Automate your indexing health monitoring with GSC visibility workflows and deindexing alerts. A practical guide to staying ahead of indexing problems.",
@@ -83,7 +74,7 @@ export const metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/blog/gsc-alerts-setup`,
 	},
-};
+});
 
 export default function GscAlertsSetupPost() {
 	return (
@@ -94,10 +85,6 @@ export default function GscAlertsSetupPost() {
 				<script
 					type="application/ld+json"
 					dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
-				/>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
 				/>
 				<PostShell
 					slug="gsc-alerts-setup"
@@ -192,7 +179,7 @@ export default function GscAlertsSetupPost() {
 					</p>
 					<ul>
 						<li>Use IndexNow / Bing Webmaster for Bing indexing signals.</li>
-						<li>Run live SERP checks with a bulk index checker to cross-validate GSC data.</li>
+						<li>Run indexability checks (HTTP status, redirects, noindex, canonical) with a bulk index checker to explain what GSC reports.</li>
 						<li>Monitor HTTP status codes and robots.txt changes as complementary signals.</li>
 						<li>Set up deindexing alerts for your most important pages.</li>
 					</ul>
@@ -209,10 +196,12 @@ export default function GscAlertsSetupPost() {
 					<p>
 						Set up GSC email notifications today. They take five minutes and cover the most
 						critical events. For production-grade monitoring, layer an automated API pull on
-						top, and use a tool like IndexFast to correlate sitemap coverage, GSC data, and
-						live SERP checks in a single dashboard. The goal is to know about indexing problems
+						top, and use a tool like IndexFast to see sitemap coverage, Search Console URL
+						inspection results and indexability checks (status, redirects, noindex, canonical) in a single
+						dashboard. The goal is to know about indexing problems
 						within hours — not weeks.
 					</p>
+					<PostFaq items={faqs} />
 				</PostShell>
 			</main>
 			<Footer />

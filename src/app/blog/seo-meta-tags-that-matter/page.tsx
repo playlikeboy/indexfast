@@ -2,6 +2,9 @@ import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import { PostShell } from "../_components/PostShell";
+import { PostFaq, type FaqItem } from "../_components/PostFaq";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -31,44 +34,32 @@ const articleJsonLd = {
 		url: SITE_URL,
 		logo: {
 			"@type": "ImageObject",
-			url: `${SITE_URL}/favicon.svg`,
+			url: `${SITE_URL}/logo.png`,
 		},
 	},
 	mainEntityOfPage: `${SITE_URL}/blog/seo-meta-tags-that-matter`,
 };
 
-const faqJsonLd = {
-	"@context": "https://schema.org",
-	"@type": "FAQPage",
-	mainEntity: [
-		{
-			"@type": "Question",
-			name: "Which meta tag is most important for preventing indexing?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "The noindex directive — either as a meta robots tag or X-Robots-Tag HTTP header — is the most direct way to prevent indexing. A single accidental noindex can remove a page from Google entirely.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "Does the keywords meta tag affect indexing?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "No. Google has not used the keywords meta tag as a ranking signal for many years. Focus on title tags, meta descriptions, robots directives, and canonical tags — those still matter.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "What is the difference between noindex and nofollow?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "noindex tells search engines not to include the page in their index. nofollow tells them not to follow links on the page. They can be combined (e.g. 'noindex, nofollow') or used independently. Use noindex for staging sites and private pages; nofollow is rarely needed today.",
-			},
-		},
-	],
-};
+// Rendered as the visible FAQ and its FAQPage markup by PostFaq, so the two never diverge.
+const faqs: FaqItem[] = [
+	{
+		question: "Which meta tag is most important for preventing indexing?",
+		answer:
+			"The noindex directive \u2014 either as a meta robots tag or X-Robots-Tag HTTP header \u2014 is the most direct way to prevent indexing. A single accidental noindex can remove a page from Google entirely.",
+	},
+	{
+		question: "Does the keywords meta tag affect indexing?",
+		answer:
+			"No. Google has not used the keywords meta tag as a ranking signal for many years. Focus on title tags, meta descriptions, robots directives, and canonical tags \u2014 those still matter.",
+	},
+	{
+		question: "What is the difference between noindex and nofollow?",
+		answer:
+			"noindex tells search engines not to include the page in their index. nofollow tells them not to follow links on the page. They can be combined (e.g. 'noindex, nofollow') or used independently. Use noindex for staging sites and private pages; nofollow is rarely needed today.",
+	},
+];
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/blog/seo-meta-tags-that-matter", {
 	title: "SEO Meta Tags That Actually Matter for Indexing in 2026",
 	description:
 		"A practical guide to the meta tags, HTTP headers, and directives that control whether your pages get indexed — and which ones SEOs still waste time on.",
@@ -84,7 +75,7 @@ export const metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/blog/seo-meta-tags-that-matter`,
 	},
-};
+});
 
 export default function SeoMetaTagsPost() {
 	return (
@@ -95,10 +86,6 @@ export default function SeoMetaTagsPost() {
 				<script
 					type="application/ld+json"
 					dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
-				/>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
 				/>
 				<PostShell
 					slug="seo-meta-tags-that-matter"
@@ -240,6 +227,7 @@ export default function SeoMetaTagsPost() {
 						the index; a correct canonical can save it. These three tags are where your time
 						is best spent.
 					</p>
+					<PostFaq items={faqs} />
 				</PostShell>
 			</main>
 			<Footer />

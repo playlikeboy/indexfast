@@ -3,6 +3,10 @@
  * header and /sitemap.xml read from here, so a post's date and read time live in one place.
  * Every page under src/app/blog/<slug> must have an entry here or it is orphaned from the index
  * and the sitemap. Read time is the body word count at about 230 words a minute, rounded up.
+ * `comparisons` feeds /compare and /compare/<slug>. Comparison facts must be verifiable on the
+ * competitor's own public page (linked from each entry) and are dated by `checked`; never state a
+ * competitor price, a speed claim or anything we could not read on their site. IndexFast's own
+ * prices are not stored here: the page reads them from plans.ts.
  */
 export type ToolDefinition = {
 	slug: string;
@@ -23,22 +27,37 @@ export type BlogPost = {
 	sections: { heading: string; body: string }[];
 };
 
+export type Comparison = {
+	slug: string;
+	competitor: string;
+	competitorUrl: string;
+	category: string;
+	// Answer-first: two or three sentences an AI answer engine can quote as is.
+	summary: string;
+	rows: { label: string; indexfast: string; competitor: string }[];
+	competitorPricing: string;
+	chooseCompetitor: string[];
+	chooseIndexFast: string[];
+	faqs: { question: string; answer: string }[];
+	checked: string;
+};
+
 export const tools: ToolDefinition[] = [
 	{
 		slug: "google-index-checker",
 		title: "Google Index Checker",
-		description: "Check if a URL is indexed by Google using live SERP verification.",
+		description: "Check whether Google can index a URL (HTTP status, redirects, noindex, canonical) and open it in Search Console URL Inspection.",
 		tag: "Popular",
-		checks: ["URL format", "SERP visibility", "Indexing signal"],
-		outputs: ["Indexed status", "Search query used", "Recommended next action"],
+		checks: ["HTTP status and redirects", "Noindex meta and X-Robots-Tag", "Canonical target"],
+		outputs: ["Indexability verdict", "Blocker details", "Search Console URL Inspection link"],
 	},
 	{
 		slug: "bulk-index-checker",
 		title: "Bulk Index Checker",
-		description: "Check indexing status for hundreds of URLs at once via CSV or bulk input.",
+		description: "Check up to 20 URLs at once for indexing blockers: HTTP status, noindex and canonical.",
 		tag: "Popular",
-		checks: ["Bulk URL input", "Duplicate removal", "Index status queue"],
-		outputs: ["Per-URL status", "CSV export", "Priority issue list"],
+		checks: ["Bulk URL input (up to 20)", "Duplicate removal", "Per-URL indexability checks"],
+		outputs: ["Per-URL status", "Download results as CSV", "Priority issue list"],
 	},
 	{
 		slug: "sitemap-url-extractor",
@@ -108,6 +127,72 @@ export const tools: ToolDefinition[] = [
 ];
 
 export const blogPosts: BlogPost[] = [
+	{
+		slug: "discovered-currently-not-indexed",
+		title: "Discovered or crawled, currently not indexed: what it means and what to do",
+		description:
+			"What the two most common Search Console exclusions mean, how they differ, and a fix order that starts with technical blockers before content.",
+		date: "2026-11-01",
+		readTime: "5 min read",
+		sections: [
+			{
+				heading: "Discovered means Google knows the URL but has not fetched it",
+				body: "Google found the URL, usually in a sitemap or a link, and postponed crawling it. Common causes are a new site with little crawl demand, many near-identical URLs, weak internal linking, or a server that slowed down.",
+			},
+			{
+				heading: "Crawled means Google fetched it and chose not to index it yet",
+				body: "The page was fetched but not added to the index. Check for technical blockers first (noindex, canonical to another URL, soft 404), then for thin or duplicate content.",
+			},
+			{
+				heading: "Fix order",
+				body: "Remove blockers, link the page from pages that are already indexed, keep it in a clean sitemap, then use URL Inspection. Neither status is a penalty, and no tool can force Google to index a page.",
+			},
+		],
+	},
+	{
+		slug: "how-to-get-indexed-on-bing",
+		title: "How to get your pages indexed on Bing (and into AI answers that use it)",
+		description:
+			"A practical Bing indexing checklist: Bing Webmaster Tools, sitemaps, IndexNow and the Webmaster API, and why Bing coverage matters for Copilot and other AI search.",
+		date: "2026-10-30",
+		readTime: "5 min read",
+		sections: [
+			{
+				heading: "Verify the site in Bing Webmaster Tools",
+				body: "Add the site, verify it (import from Google Search Console is the fastest way), and submit your XML sitemap.",
+			},
+			{
+				heading: "Push changes with IndexNow",
+				body: "IndexNow tells Bing and other participating engines the moment a URL is created, updated or deleted. One key file at your site root proves ownership.",
+			},
+			{
+				heading: "Why Bing matters for AI search",
+				body: "Bing's index feeds Microsoft Copilot and several search engines that syndicate Bing results, so pages missing from Bing are harder for those AI answers to cite.",
+			},
+		],
+	},
+	{
+		slug: "indexnow-nextjs",
+		title: "How to set up IndexNow on a Next.js site",
+		description:
+			"Host the IndexNow key in public/, make sure it is served without redirects, and ping IndexNow after each deploy, with a copy-paste script and the response codes to expect.",
+		date: "2026-10-28",
+		readTime: "5 min read",
+		sections: [
+			{
+				heading: "Host the key in public/",
+				body: "Next.js serves files in public/ from the site root, so public/<key>.txt becomes https://your-site.com/<key>.txt. It must return 200 with the key as plain text and no redirect.",
+			},
+			{
+				heading: "Ping after each deploy",
+				body: "POST the changed URLs as JSON (host, key, keyLocation, urlList) to https://api.indexnow.org/indexnow. Up to 10,000 URLs fit in one request.",
+			},
+			{
+				heading: "Or automate it from your sitemap",
+				body: "IndexFast reads your sitemap, works out which URLs are new or changed, and sends them for you with throttle-aware retries.",
+			},
+		],
+	},
 	{
 		slug: "find-unindexed-pages",
 		title: "How to find unindexed pages in 2026",
@@ -294,6 +379,211 @@ export const blogPosts: BlogPost[] = [
 		],
 	},
 ];
+
+// Shared IndexFast column values, so every comparison describes the product the same way.
+const IF_TYPE = "Hosted service (web dashboard, MCP server, REST API, CLI)";
+const IF_WORKS_WITH = "Any site with an XML sitemap: Next.js, WordPress, static sites, programmatic SEO builds";
+const IF_DISCOVERY = "Reads your sitemaps on a schedule (daily on Free, hourly on paid plans) and queues new and changed URLs";
+const IF_ENGINES = "IndexNow on every plan; Bing Webmaster API, Yandex, Baidu and Search Console (URL inspection, sitemap submit) on paid plans";
+const IF_GOOGLE = "Uses Google's Indexing API only for JobPosting and livestream pages, as Google's policy requires. Never promises Google indexing";
+const IF_AGENTS = "MCP server, REST API, CLI and SKILL.md on every plan";
+const IF_SCOPE = "Only URLs on hosts you verified by hosting the IndexNow key file";
+
+export const comparisons: Comparison[] = [
+	{
+		slug: "rank-math-instant-indexing",
+		competitor: "Rank Math Instant Indexing",
+		competitorUrl: "https://wordpress.org/plugins/fast-indexing-api/",
+		category: "WordPress plugin",
+		summary:
+			"Rank Math's Instant Indexing is a free WordPress plugin that sends post URLs to Google's Indexing API, using a Google Cloud service account you create, and to IndexNow. IndexFast is a hosted service for any site with a sitemap: it sends IndexNow and other official engine APIs automatically, and uses Google's Indexing API only for the JobPosting and livestream pages Google allows.",
+		rows: [
+			{ label: "Type", indexfast: IF_TYPE, competitor: "WordPress plugin, configured in wp-admin" },
+			{ label: "Works with", indexfast: IF_WORKS_WITH, competitor: "WordPress sites only" },
+			{ label: "How URLs are found", indexfast: IF_DISCOVERY, competitor: "WordPress publish and update events for the post types you choose, plus manual submission" },
+			{ label: "Google Indexing API", indexfast: IF_GOOGLE, competitor: "Sends the post types you select. Google documents the API for JobPosting and BroadcastEvent pages only" },
+			{ label: "Other engines", indexfast: IF_ENGINES, competitor: "IndexNow" },
+			{ label: "Agent and API access", indexfast: IF_AGENTS, competitor: "WordPress admin screens" },
+		],
+		competitorPricing: "Free plugin on WordPress.org",
+		chooseCompetitor: [
+			"Your site runs on WordPress and you want a free plugin inside wp-admin.",
+			"Your pages are job postings or livestreams, which Google's Indexing API is meant for.",
+		],
+		chooseIndexFast: [
+			"Your site is not WordPress, or you run several sites from one place.",
+			"You want sitemap monitoring, a submission log and engine responses per URL.",
+			"You want an AI agent to run indexing work through MCP or the REST API.",
+			"You want to stay inside Google's Indexing API policy without checking each page yourself.",
+		],
+		faqs: [
+			{
+				question: "Can Rank Math Instant Indexing get any page indexed by Google?",
+				answer:
+					"No tool can guarantee that. Google's Indexing API documentation says the API is only for pages with JobPosting or BroadcastEvent (in VideoObject) structured data. Sending other pages is outside that policy, and Google decides what it indexes either way.",
+			},
+			{
+				question: "Can I use IndexFast on a WordPress site?",
+				answer:
+					"Yes. IndexFast reads your sitemap, so it works with WordPress (including sitemaps from Rank Math or Yoast) and with any other stack. You host one IndexNow key file to prove ownership.",
+			},
+		],
+		checked: "2026-11-01",
+	},
+	{
+		slug: "indexnow-wordpress-plugin",
+		competitor: "Microsoft IndexNow plugin",
+		competitorUrl: "https://wordpress.org/plugins/indexnow/",
+		category: "WordPress plugin",
+		summary:
+			"Microsoft's IndexNow plugin is a free WordPress plugin that notifies IndexNow engines when you publish, update or delete a post. IndexFast does the same IndexNow push for any site with a sitemap, and adds sitemap monitoring, a submission log, other official engine APIs on paid plans, and an MCP server for AI agents.",
+		rows: [
+			{ label: "Type", indexfast: IF_TYPE, competitor: "WordPress plugin from Microsoft Bing" },
+			{ label: "Works with", indexfast: IF_WORKS_WITH, competitor: "WordPress sites only" },
+			{ label: "How URLs are found", indexfast: IF_DISCOVERY, competitor: "WordPress publish, update and delete events" },
+			{ label: "Engines", indexfast: IF_ENGINES, competitor: "IndexNow (Bing, Yandex, Seznam, Naver and other participating engines)" },
+			{ label: "Google", indexfast: IF_GOOGLE, competitor: "Not covered: Google does not use IndexNow" },
+			{ label: "Agent and API access", indexfast: IF_AGENTS, competitor: "WordPress admin screens" },
+		],
+		competitorPricing: "Free plugin on WordPress.org",
+		chooseCompetitor: [
+			"You only run WordPress and IndexNow is all you need.",
+			"You prefer a plugin from the search engine itself and no external account.",
+		],
+		chooseIndexFast: [
+			"Your site is built with Next.js, a static generator or another non-WordPress stack.",
+			"You want to see which URLs were sent, when, and what each engine answered.",
+			"You also want the Bing Webmaster API, Yandex, Baidu or Search Console inspection.",
+			"You want agents in Claude Code or Cursor to manage indexing through MCP.",
+		],
+		faqs: [
+			{
+				question: "Do I need both the IndexNow plugin and IndexFast?",
+				answer:
+					"No. Both send IndexNow notifications, so pick one per site to avoid duplicate pings. IndexNow engines share submissions, so one ping per URL change is enough.",
+			},
+			{
+				question: "Does IndexNow reach Google?",
+				answer:
+					"No. Google does not use IndexNow. For Google, keep a clean XML sitemap and use Search Console. IndexFast can submit sitemaps and inspect URLs through the Search Console API once you connect Google.",
+			},
+		],
+		checked: "2026-11-01",
+	},
+	{
+		slug: "indexmenow",
+		competitor: "IndexMeNow",
+		competitorUrl: "https://indexmenow.com/",
+		category: "Paid indexing service",
+		summary:
+			"IndexMeNow is a paid indexing service marketed for getting pages and backlinks indexed in Google, with credits bought per URL according to its website. IndexFast is different in scope: it only submits URLs on hosts you verify, only through documented official engine APIs such as IndexNow, Bing and Search Console, and never promises Google indexing.",
+		rows: [
+			{ label: "Type", indexfast: IF_TYPE, competitor: "Hosted paid service" },
+			{ label: "Which URLs", indexfast: IF_SCOPE, competitor: "Any URL you submit, including backlinks on sites you do not own" },
+			{ label: "Method", indexfast: "Documented engine APIs only: IndexNow, Bing Webmaster API, Yandex, Baidu, Search Console", competitor: "Not publicly documented on its website at the time we checked" },
+			{ label: "Google", indexfast: IF_GOOGLE, competitor: "Marketed around Google indexing" },
+			{ label: "Monitoring", indexfast: "Sitemap sync, indexability checks (status, redirects, noindex, canonical), submission log", competitor: "Reports the status of submitted URLs" },
+			{ label: "Agent and API access", indexfast: IF_AGENTS, competitor: "See its website for current API options" },
+		],
+		competitorPricing: "Paid, credit based. See its website for current prices",
+		chooseCompetitor: [
+			"You want third-party URLs, such as backlinks on other sites, sent for indexing. IndexFast cannot do that because it only submits hosts you verify.",
+		],
+		chooseIndexFast: [
+			"You want only official, documented engine APIs used for your own site.",
+			"You want new and changed pages found from your sitemap automatically, without buying credits per URL.",
+			"You want a record of exactly what was sent and what each engine answered.",
+			"You want AI agents to run the workflow through MCP or the REST API.",
+		],
+		faqs: [
+			{
+				question: "Is IndexFast an IndexMeNow alternative?",
+				answer:
+					"For your own site's pages, yes: IndexFast pushes new and changed URLs through official engine APIs and finds the blockers that keep them out of the index. It is not a backlink indexer, because it only submits URLs on hosts you have verified.",
+			},
+			{
+				question: "Can any service guarantee Google indexing?",
+				answer:
+					"No. Google decides what to crawl and index. Official channels for Google are XML sitemaps, Search Console, and the Indexing API for JobPosting and livestream pages only.",
+			},
+		],
+		checked: "2026-11-01",
+	},
+	{
+		slug: "omega-indexer",
+		competitor: "Omega Indexer",
+		competitorUrl: "https://www.omegaindexer.com/",
+		category: "Paid link indexing service",
+		summary:
+			"Omega Indexer is a long-running paid link indexing service, used mostly to get backlinks crawled, with credit-based pricing according to its website. IndexFast is built for your own sites instead: it reads your sitemaps, pushes new and changed URLs through official engine APIs, diagnoses indexing blockers, and exposes everything to AI agents over MCP.",
+		rows: [
+			{ label: "Type", indexfast: IF_TYPE, competitor: "Hosted paid service" },
+			{ label: "Which URLs", indexfast: IF_SCOPE, competitor: "URLs you submit in campaigns, typically backlinks" },
+			{ label: "Method", indexfast: "Documented engine APIs only: IndexNow, Bing Webmaster API, Yandex, Baidu, Search Console", competitor: "Not publicly documented on its website at the time we checked" },
+			{ label: "Google", indexfast: IF_GOOGLE, competitor: "Marketed around getting links crawled and indexed" },
+			{ label: "Monitoring", indexfast: "Sitemap sync, indexability checks (status, redirects, noindex, canonical), submission log", competitor: "Campaign reports" },
+			{ label: "Agent and API access", indexfast: IF_AGENTS, competitor: "See its website for current API options" },
+		],
+		competitorPricing: "Paid, credit based. See its website for current prices",
+		chooseCompetitor: ["Your goal is getting backlinks on other people's sites crawled. IndexFast only submits hosts you verify."],
+		chooseIndexFast: [
+			"Your goal is getting your own new and changed pages discovered.",
+			"You want only official engine APIs and no grey-area techniques.",
+			"You want indexing blockers (noindex, canonical, redirects, errors) found for you.",
+			"You want an MCP server so an AI agent can run indexing work.",
+		],
+		faqs: [
+			{
+				question: "Does IndexFast index backlinks?",
+				answer:
+					"No. IndexFast only submits URLs on hosts whose ownership you proved by hosting the IndexNow key file. Submitting other people's URLs through official APIs is not allowed by those APIs.",
+			},
+		],
+		checked: "2026-11-01",
+	},
+	{
+		slug: "google-search-console",
+		competitor: "Google Search Console",
+		competitorUrl: "https://search.google.com/search-console/about",
+		category: "Google's free webmaster tool",
+		summary:
+			"Google Search Console is Google's free tool for seeing how Google crawls and indexes your site; its Request indexing button works one URL at a time with a daily limit. IndexFast does not replace it: IndexFast connects to Search Console to inspect URLs and submit sitemaps through the official API, and also pushes your URLs to IndexNow, Bing, Yandex and Baidu.",
+		rows: [
+			{ label: "Type", indexfast: IF_TYPE, competitor: "Google's web dashboard and APIs" },
+			{ label: "Engines", indexfast: IF_ENGINES, competitor: "Google only" },
+			{ label: "Request indexing", indexfast: "Not offered for Google: no public API requests indexing for normal pages", competitor: "Manual, one URL at a time in URL Inspection, with a daily limit" },
+			{ label: "URL Inspection", indexfast: "Automated through the URL Inspection API within Google's quota (2,000 a day per property); 100 a day on Free", competitor: "Manual in the dashboard, or the URL Inspection API (2,000 a day, 600 a minute per property)" },
+			{ label: "Sitemaps", indexfast: "Monitors your sitemaps and submits them to Search Console once Google is connected (paid plans)", competitor: "Submit and view sitemap status" },
+			{ label: "Agent and API access", indexfast: IF_AGENTS, competitor: "REST APIs with OAuth" },
+		],
+		competitorPricing: "Free",
+		chooseCompetitor: [
+			"You need Google's own data: the Pages report, performance and manual actions. Every site should have Search Console set up.",
+		],
+		chooseIndexFast: [
+			"You want Bing, Yandex, Baidu and other IndexNow engines notified automatically too.",
+			"You want URL inspection run for you on a schedule instead of one URL at a time.",
+			"You want an AI agent to check index status and fix blockers through MCP.",
+		],
+		faqs: [
+			{
+				question: "Can IndexFast press Request indexing for me?",
+				answer:
+					"No. Google offers no public API that requests indexing for normal pages. The URL Inspection API only reads status. IndexFast uses it to report what Google sees and submits your sitemaps, which is the supported path.",
+			},
+			{
+				question: "Do I still need Search Console if I use IndexFast?",
+				answer:
+					"Yes. Search Console is where Google reports coverage, performance and manual actions. IndexFast connects to it over OAuth and adds the other engines and automation on top.",
+			},
+		],
+		checked: "2026-11-01",
+	},
+];
+
+export function getComparisonBySlug(slug: string) {
+	return comparisons.find((item) => item.slug === slug);
+}
 
 export function getToolBySlug(slug: string) {
 	return tools.find((tool) => tool.slug === slug || tool.aliases?.includes(slug));

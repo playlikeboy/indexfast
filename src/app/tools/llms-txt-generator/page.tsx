@@ -1,6 +1,8 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
 import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -26,6 +28,7 @@ const toolJsonLd = {
 	},
 };
 
+// The FAQ rows below are rendered from this same object: FAQPage markup must match visible text.
 const faqJsonLd = {
 	"@context": "https://schema.org",
 	"@type": "FAQPage",
@@ -49,7 +52,7 @@ const faqJsonLd = {
 	],
 };
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/tools/llms-txt-generator", {
 	title: "Free llms.txt Generator | Create llms.txt for AI Crawlers",
 	description:
 		"Generate an llms.txt file for your domain to help AI crawlers and LLM indexers understand your site content. Free generator.",
@@ -57,7 +60,7 @@ export const metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/tools/llms-txt-generator`,
 	},
-};
+});
 
 export default function LlmsTxtGeneratorPage() {
 	return (
@@ -81,6 +84,11 @@ export default function LlmsTxtGeneratorPage() {
 					semantic guidance rather than access rules.
 				</p>
 			</GuideTopic>
+			{faqJsonLd.mainEntity.map((item) => (
+				<GuideTopic key={item.name} title={item.name}>
+					<p>{item.acceptedAnswer.text}</p>
+				</GuideTopic>
+			))}
 		</ToolPage>
 	);
 }

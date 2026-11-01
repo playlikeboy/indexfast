@@ -2,6 +2,9 @@ import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import { PostShell } from "../_components/PostShell";
+import { PostFaq, type FaqItem } from "../_components/PostFaq";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -31,44 +34,32 @@ const articleJsonLd = {
 		url: SITE_URL,
 		logo: {
 			"@type": "ImageObject",
-			url: `${SITE_URL}/favicon.svg`,
+			url: `${SITE_URL}/logo.png`,
 		},
 	},
 	mainEntityOfPage: `${SITE_URL}/blog/pseo-pages-not-ranking`,
 };
 
-const faqJsonLd = {
-	"@context": "https://schema.org",
-	"@type": "FAQPage",
-	mainEntity: [
-		{
-			"@type": "Question",
-			name: "Why do programmatic SEO pages often fail to rank?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "pSEO pages often fail because they are thin, duplicate, or lack the internal links and authority signals that search engines need. Technical issues like noindex tags, canonical mismatches, and slow page speed also prevent indexing and ranking.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "How many pSEO pages should I launch at once?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "There is no magic number, but quality matters more than quantity. Launch pages in batches, monitor their indexing status, and fix technical blockers before scaling. Use tools like IndexFast to track which pages were discovered and which were dropped.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "How long does it take for a new pSEO page to rank?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "It depends on crawl frequency, competition, and content quality. With an existing authoritative domain, pages can start appearing in days. For newer domains, it may take weeks or months. Submit via IndexNow and GSC to speed up discovery.",
-			},
-		},
-	],
-};
+// Rendered as the visible FAQ and its FAQPage markup by PostFaq, so the two never diverge.
+const faqs: FaqItem[] = [
+	{
+		question: "Why do programmatic SEO pages often fail to rank?",
+		answer:
+			"pSEO pages often fail because they are thin, duplicate, or lack the internal links and authority signals that search engines need. Technical issues like noindex tags, canonical mismatches, and slow page speed also prevent indexing and ranking.",
+	},
+	{
+		question: "How many pSEO pages should I launch at once?",
+		answer:
+			"There is no magic number, but quality matters more than quantity. Launch pages in batches, monitor their indexing status, and fix technical blockers before scaling. Use tools like IndexFast to track which pages were discovered and which were dropped.",
+	},
+	{
+		question: "How long does it take for a new pSEO page to rank?",
+		answer:
+			"It depends on crawl frequency, competition, and content quality. With an existing authoritative domain, pages can start appearing in days. For newer domains, it may take weeks or months. Submit via IndexNow and GSC to speed up discovery.",
+	},
+];
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/blog/pseo-pages-not-ranking", {
 	title: "Why Your Programmatic SEO Pages Are Not Ranking (And How to Fix It)",
 	description:
 		"Common pSEO indexing failures and how to fix them before they tank your organic growth. A deep dive into why launched pages disappear from search results.",
@@ -84,7 +75,7 @@ export const metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/blog/pseo-pages-not-ranking`,
 	},
-};
+});
 
 export default function PseoNotRankingPost() {
 	return (
@@ -95,10 +86,6 @@ export default function PseoNotRankingPost() {
 				<script
 					type="application/ld+json"
 					dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
-				/>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
 				/>
 				<PostShell
 					slug="pseo-pages-not-ranking"
@@ -223,6 +210,7 @@ export default function PseoNotRankingPost() {
 						most pages. They are the ones who monitor indexing, fix blockers fast, and keep
 						their generated content above the quality threshold.
 					</p>
+					<PostFaq items={faqs} />
 				</PostShell>
 			</main>
 			<Footer />

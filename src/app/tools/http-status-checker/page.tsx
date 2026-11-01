@@ -1,6 +1,8 @@
 import { GuideTerms, GuideTopic, ToolPage } from "@/components/tools/ToolPage";
 import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -26,6 +28,7 @@ const toolJsonLd = {
 	},
 };
 
+// The FAQ rows below are rendered from this same object: FAQPage markup must match visible text.
 const faqJsonLd = {
 	"@context": "https://schema.org",
 	"@type": "FAQPage",
@@ -49,7 +52,7 @@ const faqJsonLd = {
 	],
 };
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/tools/http-status-checker", {
 	title: "Free HTTP Status Checker | Check Redirects, 404s, and Response Codes",
 	description:
 		"Check HTTP status codes, the final URL after redirects, and response headers for any URL. Free HTTP status checker for SEO and technical diagnostics.",
@@ -63,7 +66,7 @@ export const metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/tools/http-status-checker`,
 	},
-};
+});
 
 export default function HttpStatusCheckerPage() {
 	return (
@@ -110,6 +113,11 @@ export default function HttpStatusCheckerPage() {
 					the HTTP status checker alongside the noindex and canonical checkers to catch technical blockers.
 				</p>
 			</GuideTopic>
+			{faqJsonLd.mainEntity.map((item) => (
+				<GuideTopic key={item.name} title={item.name}>
+					<p>{item.acceptedAnswer.text}</p>
+				</GuideTopic>
+			))}
 		</ToolPage>
 	);
 }

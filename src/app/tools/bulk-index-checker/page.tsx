@@ -1,6 +1,8 @@
 import { GuideTopic, ToolPage } from "@/components/tools/ToolPage";
 import { TOOL_LEADS, TOOL_NAMES } from "@/components/tools/tool-leads";
 import { ToolRunner } from "@/components/tools/ToolRunner";
+import type { Metadata } from "next";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -26,6 +28,7 @@ const toolJsonLd = {
 	},
 };
 
+// The FAQ rows below are rendered from this same object: FAQPage markup must match visible text.
 const faqJsonLd = {
 	"@context": "https://schema.org",
 	"@type": "FAQPage",
@@ -49,7 +52,7 @@ const faqJsonLd = {
 	],
 };
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/tools/bulk-index-checker", {
 	title: "Free Bulk Index Checker | Check 20 URLs for Indexing Blockers",
 	description:
 		"Check up to 20 URLs at once for the status, noindex and canonical problems that keep pages out of Google. Free bulk checker, no signup required.",
@@ -63,7 +66,7 @@ export const metadata = {
 	alternates: {
 		canonical: `${SITE_URL}/tools/bulk-index-checker`,
 	},
-};
+});
 
 export default function BulkIndexCheckerPage() {
 	return (
@@ -95,6 +98,11 @@ export default function BulkIndexCheckerPage() {
 					technical keeps important URLs out of the index.
 				</p>
 			</GuideTopic>
+			{faqJsonLd.mainEntity.map((item) => (
+				<GuideTopic key={item.name} title={item.name}>
+					<p>{item.acceptedAnswer.text}</p>
+				</GuideTopic>
+			))}
 		</ToolPage>
 	);
 }

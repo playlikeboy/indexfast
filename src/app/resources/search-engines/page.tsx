@@ -6,26 +6,21 @@
  * nothing reads as a shipped feature or a promise of Google indexing.
  */
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
 import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
-import { Badge, CodeBlock, Container, Status, Table, Td, Th, buttonClass, type StatusTone } from "@/components/ui";
-import { getAllSearchEngines, type SearchEngine, type SearchEngineMethod } from "@/lib/resources/search-engines";
+import { CodeBlock, Container, Status, Table, Td, Th, buttonClass } from "@/components/ui";
+import { getAllSearchEngines } from "@/lib/resources/search-engines";
+import { EngineSection, supportStatus } from "../_components/EngineSection";
 import { ResourceHeader } from "../_components/ResourceHeader";
+import type { Metadata } from "next";
+import { SITE_URL, withPageSeo } from "@/lib/seo";
+import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/resources/search-engines", {
 	title: "Search Engine URL Submission & Indexing APIs — Developer Guide",
 	description:
 		"Complete developer reference for automated search engine indexing: IndexNow, Microsoft Bing Webmaster API, Google Indexing API restrictions, Baidu Active Push, Yandex, and Naver.",
-};
-
-const supportStatus: Record<SearchEngine["supportLevel"], { tone: StatusTone; label: string }> = {
-	native: { tone: "success", label: "Native" },
-	indexnow: { tone: "info", label: "Via IndexNow" },
-	restricted: { tone: "warning", label: "Gated (jobs and live)" },
-	syndicated: { tone: "neutral", label: "Syndicated" },
-	planned: { tone: "neutral", label: "Planned" },
-};
+});
 
 const bingCurl = `curl -X POST \\
   https://indexfast.co/api/v1/sites/example.com/bing \\
@@ -38,104 +33,6 @@ const bingMcp = `call_tool("set_bing_api_key", {
   apiKey: "..."
 })`;
 
-function MethodBlock({ method }: { method: SearchEngineMethod }) {
-	// Entries that start with "None" (e.g. "None (any valid page...)") carry no restriction to warn about.
-	const restricted = Boolean(method.contentRestrictions) && !/^None\b/.test(method.contentRestrictions);
-	return (
-		<div className="min-w-0 border-t border-border pt-8">
-			<div className="flex flex-wrap items-center gap-3">
-				<h4 className="font-display text-lg font-medium tracking-display">{method.name}</h4>
-				<Badge>{method.httpMethod}</Badge>
-				{method.inIndexFast ? (
-					<Status tone={method.inIndexFast.status === "live" ? "success" : "info"}>
-						{method.inIndexFast.status === "live" ? "In IndexFast" : "Being added"}
-					</Status>
-				) : null}
-			</div>
-			{method.inIndexFast ? <p className="mt-2 max-w-[35em] text-md text-ink-2">{method.inIndexFast.note}</p> : null}
-			<dl className="mt-6 grid gap-x-10 gap-y-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-				<div className="min-w-0">
-					<dt className="text-muted">Auth</dt>
-					<dd className="mt-1 font-mono text-ink">{method.authMethod}</dd>
-				</div>
-				<div className="min-w-0">
-					<dt className="text-muted">Batch</dt>
-					<dd className="num mt-1 text-ink">{method.batchSize.toLocaleString("en-US")} URLs</dd>
-				</div>
-				<div className="min-w-0">
-					<dt className="text-muted">Quota</dt>
-					<dd className="mt-1 text-ink">{method.dailyQuota}</dd>
-				</div>
-				<div className="min-w-0">
-					<dt className="text-muted">Latency</dt>
-					<dd className="mt-1 text-ink">{method.latency}</dd>
-				</div>
-			</dl>
-			{restricted ? (
-				<p className="mt-6 max-w-3xl rounded-input bg-warning-wash px-4 py-3 text-sm text-ink">
-					<Status tone="warning" className="mr-2 align-[-0.15em]">
-						Restriction
-					</Status>
-					{method.contentRestrictions}
-				</p>
-			) : null}
-			<p className="mt-6 text-sm text-muted">Endpoint</p>
-			<code className="mt-1 block overflow-x-auto rounded-input bg-well px-3 py-2 font-mono text-sm text-ink">{method.endpoint}</code>
-			<CodeBlock title="curl" code={method.curlExample} className="mt-6" />
-			{method.notes ? <p className="mt-4 max-w-[35em] text-sm text-muted">{method.notes}</p> : null}
-		</div>
-	);
-}
-
-function EngineSection({ engine }: { engine: SearchEngine }) {
-	const docs = engine.methods[0]?.documentationUrl;
-	return (
-		<article id={engine.id} className="scroll-mt-24 border-t border-border-strong pt-12">
-			<div className="flex flex-wrap items-start justify-between gap-6">
-				<div className="min-w-0 max-w-[35em]">
-					<h3 className="text-title">{engine.name}</h3>
-					<p className="mt-2 text-sm text-muted">{engine.marketShare}</p>
-					<p className="mt-4 text-md text-ink-2">{engine.summary}</p>
-				</div>
-				{docs ? (
-					<a href={docs} target="_blank" rel="noopener noreferrer" className={buttonClass({ variant: "secondary", size: "md" })}>
-						Official docs
-						<ExternalLink aria-hidden="true" className="size-4" />
-					</a>
-				) : null}
-			</div>
-			<h4 className="visually-hidden">Available submission methods</h4>
-			<div className="mt-10 space-y-10">
-				{engine.methods.map((method) => (
-					<MethodBlock key={method.name} method={method} />
-				))}
-			</div>
-			<div className="mt-10 grid gap-10 border-t border-border pt-8 md:grid-cols-2 md:gap-16">
-				<div className="min-w-0">
-					<h4 className="font-display text-md font-medium">{engine.setupGuide.title}</h4>
-					<ol className="mt-4 list-decimal space-y-2 pl-5 text-md text-ink-2 marker:text-muted">
-						{engine.setupGuide.steps.map((step) => (
-							<li key={step} className="pl-1">
-								{step}
-							</li>
-						))}
-					</ol>
-				</div>
-				<div className="min-w-0">
-					<h4 className="font-display text-md font-medium">Developer tips and gotchas</h4>
-					<ul className="mt-4 list-disc space-y-2 pl-5 text-md text-ink-2 marker:text-muted">
-						{engine.developerTips.map((tip) => (
-							<li key={tip} className="pl-1">
-								{tip}
-							</li>
-						))}
-					</ul>
-				</div>
-			</div>
-		</article>
-	);
-}
-
 export default function SearchEnginesGuidePage() {
 	const searchEngines = getAllSearchEngines();
 
@@ -143,6 +40,7 @@ export default function SearchEnginesGuidePage() {
 		<>
 			<Navbar />
 			<main>
+				<BreadcrumbJsonLd items={[{ name: "Home", url: SITE_URL }, { name: "Resources", url: `${SITE_URL}/resources` }, { name: "Search engine APIs", url: `${SITE_URL}/resources/search-engines` }]} />
 				<ResourceHeader
 					title="Search engine submission APIs"
 					lede="Protocols, rate limits, auth and content rules for every major engine."
@@ -179,9 +77,9 @@ export default function SearchEnginesGuidePage() {
 									return (
 										<tr key={engine.id}>
 											<Td className="sticky left-0 z-(--z-raised) min-w-44 bg-background">
-												<a href={`#${engine.id}`} className="font-display font-medium text-ink underline decoration-border-strong underline-offset-4 hover:decoration-signal">
+												<Link href={`/resources/search-engines/${engine.id}`} className="font-display font-medium text-ink underline decoration-border-strong underline-offset-4 hover:decoration-signal">
 													{engine.name}
-												</a>
+												</Link>
 												<span className="mt-0.5 block text-muted">{engine.company}</span>
 											</Td>
 											<Td>
@@ -211,7 +109,7 @@ export default function SearchEnginesGuidePage() {
 						</p>
 						<div className="mt-16 space-y-20">
 							{searchEngines.map((engine) => (
-								<EngineSection key={engine.id} engine={engine} />
+								<EngineSection key={engine.id} engine={engine} guideLink />
 							))}
 						</div>
 					</Container>

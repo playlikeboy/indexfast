@@ -4,6 +4,8 @@ import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import { PostShell } from "../_components/PostShell";
+import { PostFaq, type FaqItem } from "../_components/PostFaq";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
@@ -33,52 +35,37 @@ const articleJsonLd = {
 		url: SITE_URL,
 		logo: {
 			"@type": "ImageObject",
-			url: `${SITE_URL}/favicon.svg`,
+			url: `${SITE_URL}/logo.png`,
 		},
 	},
 	mainEntityOfPage: `${SITE_URL}/blog/bing-webmaster-api-key`,
 };
 
-const faqJsonLd = {
-	"@context": "https://schema.org",
-	"@type": "FAQPage",
-	mainEntity: [
-		{
-			"@type": "Question",
-			name: "Where can I find my Bing Webmaster Tools API key?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "Log in to the Bing Webmaster Tools portal, click the gear icon in the top right to open Settings, navigate to API Access, and choose API Key. You can generate or copy your key from that section.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "Is the Bing Webmaster API key per-site or per-user?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "It is a user-level key. Once generated, the same API key can manage and submit URLs for any and all websites verified under that particular Bing Webmaster Tools account.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "How many URLs can I submit daily using the Bing Webmaster API?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "For most verified websites, Bing offers a generous daily submission limit of up to 10,000 URLs. You can query your remaining quota using the API's GetUrlSubmissionQuota endpoint.",
-			},
-		},
-		{
-			"@type": "Question",
-			name: "What does the 'InvalidParameter' error mean in Bing Webmaster Tools?",
-			acceptedAnswer: {
-				"@type": "Answer",
-				text: "This error occurs when the URL hostname or format sent to the API does not match the exact hostname of the verified site registered in Bing Webmaster Tools. Check for protocol mismatches (http vs. https) or www subdomain mismatches.",
-			},
-		},
-	],
-};
+// Rendered as the visible FAQ and its FAQPage markup by PostFaq, so the two never diverge.
+const faqs: FaqItem[] = [
+	{
+		question: "Can I use the same API key for multiple websites?",
+		answer:
+			"Yes. The API key belongs to your Bing Webmaster Tools user account, so it can submit URLs for any site verified in that account. You do not need a separate key per domain.",
+	},
+	{
+		question: "Why am I getting an 'InvalidParameter' error when validating the key?",
+		answer:
+			"This is the most common integration error. The site URL you submit for does not match the exact host registered in Bing Webmaster Tools. Check whether the site is registered as https://example.com or https://www.example.com; they must match exactly.",
+	},
+	{
+		question: "How do I know how many URL submissions I have left today?",
+		answer:
+			"Bing resets the quota daily and the limit varies by site. Call the GetUrlSubmissionQuota endpoint, or open the Bing Webmaster API row in your site's settings in IndexFast, which reads the same endpoint.",
+	},
+	{
+		question: "Is the Bing Webmaster API key the same as the IndexNow key?",
+		answer:
+			"No. The Bing Webmaster API key is a private, user-level secret that authenticates requests to Bing's Webmaster API. The IndexNow key is a public, per-host key hosted at the root of your site (/YOUR_KEY.txt) and is shared with every engine that participates in IndexNow, such as Bing, Yandex and Seznam.",
+	},
+];
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withPageSeo("/blog/bing-webmaster-api-key", {
 	title: "How to Find and Use your Bing Webmaster API Key",
 	description:
 		"Learn how to generate your Bing Webmaster Tools API key, configure search discovery pipelines, and troubleshoot validation errors so search engines are notified as soon as your pages change.",
@@ -106,7 +93,7 @@ export const metadata: Metadata = {
 		description:
 			"An in-depth guide answering what the Bing Webmaster Tools API key is, why you need it to automate indexing, and how to configure it step-by-step.",
 	},
-};
+});
 
 export default function BingApiKeyPost() {
 	return (
@@ -117,10 +104,6 @@ export default function BingApiKeyPost() {
 				<script
 					type="application/ld+json"
 					dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
-				/>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
 				/>
 				<PostShell
 					slug="bing-webmaster-api-key"
@@ -223,28 +206,7 @@ export default function BingApiKeyPost() {
 						<li>Once validated, IndexFast stores the key securely. From then on, any sitemap changes, new pages, or updated content will be pushed to Bing automatically.</li>
 					</ul>
 
-					{/* FAQ */}
-					<h2 id="faq">Frequently asked questions</h2>
-					
-					<h3>Q1: Can I use the same API key for multiple websites?</h3>
-					<p>
-						Yes. Because the API key is associated with your Bing Webmaster user account, it can manage and submit URLs for any website verified in that account. There is no need to generate separate keys for different domains.
-					</p>
-
-					<h3>Q2: Why am I getting an 'InvalidParameter' error when validating the key?</h3>
-					<p>
-						This is the most common integration error. It occurs because the site URL you are trying to submit does not match the exact hostname registered inside your Bing Webmaster Tools. Check if the site is registered as <code>https://example.com</code> or <code>https://www.example.com</code> — they must match exactly.
-					</p>
-
-					<h3>Q3: How do I know how many URL submissions I have left today?</h3>
-					<p>
-						Bing resets your quota daily. You can view your remaining quota on the Bing Webmaster API row in your site's Settings in IndexFast, or by calling the <code>GetUrlSubmissionQuota</code> API endpoint. For most verified sites, the limit is 10,000 URLs per day.
-					</p>
-
-					<h3>Q4: Is the Bing Webmaster API key the same as the IndexNow key?</h3>
-					<p>
-						No. The Bing Webmaster API Key is a user-level secret used to authenticate programmatic requests to Bing's private endpoints. The IndexNow key is a domain-level verification key hosted publicly on your server (<code>/YOUR_KEY.txt</code>) and is shared across participating search engines (like Bing, Yandex, and Seznam).
-					</p>
+					<PostFaq items={faqs} />
 
 					{/* CITATIONS */}
 					<h2 id="citations">References and official citations</h2>

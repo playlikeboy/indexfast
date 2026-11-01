@@ -222,7 +222,7 @@ export async function listUrlsForUser(userId: string, siteRef: string, limit = 1
 		.from(urls)
 		.where(and(...conditions))
 		.orderBy(desc(urls.createdAt))
-		.limit(Math.min(Math.max(limit, 1), 1000));
+		.limit(Math.min(Math.max(Math.trunc(limit) || 100, 1), 1000));
 }
 
 export async function submitUrlForApi(userId: string, siteRef: string, urlLoc: string) {
@@ -254,7 +254,7 @@ export async function listSubmissionsForUser(userId: string, siteRef: string, li
 		.from(submissions)
 		.where(eq(submissions.siteId, site.id))
 		.orderBy(desc(submissions.createdAt))
-		.limit(Math.min(Math.max(limit, 1), 500));
+		.limit(Math.min(Math.max(Math.trunc(limit) || 100, 1), 500));
 }
 
 export async function listAlertsForUser(userId: string, limit = 100) {
@@ -273,7 +273,7 @@ export async function listAlertsForUser(userId: string, limit = 100) {
 		.innerJoin(sites, eq(alerts.siteId, sites.id))
 		.where(eq(sites.userId, userId))
 		.orderBy(desc(alerts.createdAt))
-		.limit(Math.min(Math.max(limit, 1), 500));
+		.limit(Math.min(Math.max(Math.trunc(limit) || 100, 1), 500));
 }
 
 /** Live indexability check (status, noindex, canonical) for one URL on a site. */
@@ -314,6 +314,8 @@ export async function runDiagnosticsForUser(input: { userId: string; siteId: str
 				noindexSource: result.noindexSource,
 				canonical: result.canonical,
 				isCanonicalMatch: result.isCanonicalMatch,
+				redirected: result.redirected,
+				robotsBlocked: result.robotsBlocked,
 				title: result.title,
 				blockers: result.blockers,
 				finalUrl: result.finalUrl,

@@ -7,17 +7,18 @@ import { Footer } from "@/components/marketing/Footer";
 import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 import type { Metadata } from "next";
 import { LegalDocument } from "./LegalDocument";
+import { withPageSeo } from "@/lib/seo";
 
 const SITE_URL = "https://indexfast.co";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = withPageSeo("/privacy", {
 	title: "Privacy Policy",
 	description:
 		"Read the IndexFast privacy policy to learn how we securely collect, process, and safeguard your account details and web property diagnostic data.",
 	alternates: {
 		canonical: `${SITE_URL}/privacy`,
 	},
-};
+});
 
 const breadcrumbs = [
 	{ name: "Home", url: SITE_URL },

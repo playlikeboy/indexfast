@@ -31,7 +31,8 @@ export function Footer() {
 							<li><Link href="/#features" className={linkClass}>Features</Link></li>
 							<li><Link href="/#pricing" className={linkClass}>Pricing</Link></li>
 							<li><Link href="/dashboard" className={linkClass}>Console</Link></li>
-							<li><Link href="/dashboard/connect" className={linkClass}>MCP integration</Link></li>
+							<li><Link href="/resources/skill" className={linkClass}>MCP and SKILL.md</Link></li>
+							<li><Link href="/compare" className={linkClass}>Compare</Link></li>
 							<li><Link href="/resources" className={linkClass}>Resources</Link></li>
 						</ul>
 					</nav>
@@ -42,6 +43,7 @@ export function Footer() {
 						<ul className="mt-4 space-y-3">
 							<li><Link href="/tools" className={linkClass}>Free SEO tools</Link></li>
 							<li><Link href="/blog" className={linkClass}>Blog</Link></li>
+							<li><Link href="/resources/search-engines" className={linkClass}>Search engine APIs</Link></li>
 							<li><Link href="/about" className={linkClass}>About</Link></li>
 							<li><Link href="/privacy" className={linkClass}>Privacy</Link></li>
 							<li><Link href="/terms" className={linkClass}>Terms</Link></li>

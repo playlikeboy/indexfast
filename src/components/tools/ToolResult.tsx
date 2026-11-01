@@ -7,7 +7,8 @@
  * Copy JSON hands back the exact action result for agents and scripts.
  */
 import { useState, type ReactNode, type RefObject } from "react";
-import { ExternalLink } from "lucide-react";
+import { Download, ExternalLink } from "lucide-react";
+import { toCsv } from "@/lib/csv";
 import { Button, CodeBlock, Stat, Status, Table, Td, Th, buttonClass, type StatusTone } from "@/components/ui";
 import type {
 	checkAiCrawlerTool,
@@ -209,6 +210,12 @@ function PageDiagnosticsResult({
 			value: r.noindex ? <Status tone="danger">Blocked by {r.noindexSource}</Status> : <Status tone="success">None, indexable</Status>,
 		});
 	}
+	if ("robotsBlocked" in r) {
+		rows.push({
+			label: "robots.txt",
+			value: r.robotsBlocked ? <Status tone="danger">Disallows Googlebot</Status> : <Status tone="success">Allows crawling</Status>,
+		});
+	}
 	if ("canonical" in r) {
 		rows.push({
 			label: "Canonical",
@@ -331,9 +338,28 @@ const BULK_LABEL: Record<string, string> = {
 	skipped: "Not checked",
 };
 
+function downloadBulkCsv(r: Ok<typeof checkBulkIndexTool>) {
+	const csv = toCsv(
+		["url", "result", "http_status", "noindex", "canonical_match", "blockers"],
+		r.results.map((row) => [row.url, BULK_LABEL[row.status], row.httpStatus || "", row.noindex, row.canonicalMatch, row.blockers.join("; ")]),
+	);
+	const href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+	const link = document.createElement("a");
+	link.href = href;
+	link.download = `indexfast-bulk-check-${new Date().toISOString().slice(0, 10)}.csv`;
+	link.click();
+	URL.revokeObjectURL(href);
+}
+
 function BulkResult({ r }: { r: Ok<typeof checkBulkIndexTool> }) {
 	return (
 		<div className="space-y-6">
+			<div className="flex justify-end">
+				<Button size="sm" variant="secondary" onClick={() => downloadBulkCsv(r)}>
+					<Download aria-hidden="true" className="size-4" />
+					Download CSV
+				</Button>
+			</div>
 			<div className={r.skipped > 0 ? "grid grid-cols-2 gap-4 sm:grid-cols-4" : "grid grid-cols-3 gap-4"}>
 				<Stat label="Pass" value={r.passed} />
 				<Stat label="Warn" value={r.warned} />

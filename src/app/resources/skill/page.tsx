@@ -7,12 +7,15 @@ import { Navbar } from "@/components/marketing/Navbar";
 import { Footer } from "@/components/marketing/Footer";
 import { CodeBlock, Container, buttonClass } from "@/components/ui";
 import { ResourceHeader } from "../_components/ResourceHeader";
+import type { Metadata } from "next";
+import { SITE_URL, withPageSeo } from "@/lib/seo";
+import { BreadcrumbJsonLd } from "@/components/marketing/BreadcrumbJsonLd";
 
-export const metadata = {
+export const metadata: Metadata = withPageSeo("/resources/skill", {
 	title: "IndexFast SKILL.md for AI Coding Agents",
 	description:
 		"Install the IndexFast SKILL.md file so AI IDEs and coding agents can operate indexing, sitemap, MCP, CLI, and SEO workflows safely.",
-};
+});
 
 // --create-dirs: on a first install the skills folder does not exist and curl would exit 23.
 const downloadCommand = `curl -fsSL --create-dirs -o ~/.codex/skills/indexfast/SKILL.md \\
@@ -35,6 +38,7 @@ export default function SkillPage() {
 		<>
 			<Navbar />
 			<main>
+				<BreadcrumbJsonLd items={[{ name: "Home", url: SITE_URL }, { name: "Resources", url: `${SITE_URL}/resources` }, { name: "SKILL.md for agents", url: `${SITE_URL}/resources/skill` }]} />
 				<ResourceHeader
 					title="Install IndexFast into your coding agent"
 					lede="The skill teaches AI IDEs the dashboard, API, MCP server and CLI."

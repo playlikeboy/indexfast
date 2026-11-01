@@ -2,7 +2,7 @@
 
 **Stop publishing invisible pages.**
 
-IndexFast is an indexing health, sitemap monitoring, IndexNow automation, and Google visibility diagnostics platform for fast-growing websites.
+IndexFast is an indexing health, sitemap monitoring, IndexNow automation, and Search Console diagnostics platform for fast-growing websites.
 
 It helps pSEO builders, SEO agencies, directories, SaaS blogs, marketplaces, ecommerce stores, and AI-generated websites find pages that search engines are ignoring.
 
@@ -13,9 +13,9 @@ It focuses on safe, transparent workflows:
 - indexability checks
 - Google Search Console visibility workflows
 - IndexNow/Bing discovery
-- deindexing alerts
+- sitemap and submission failure alerts
 - technical SEO diagnostics
-- agency-ready reports
+- REST API, MCP server and CLI
 
 ---
 
@@ -27,14 +27,12 @@ IndexFast helps website owners answer one simple question:
 
 Most websites keep publishing pages without knowing:
 
-- which URLs are indexed
-- which URLs are blocked
+- which URLs search engines have been told about
+- which URLs return errors or redirect
 - which URLs have `noindex`
-- which URLs are missing from the sitemap
 - which URLs have canonical issues
-- which URLs dropped from Google
-- which pages were discovered but not indexed
-- which pages are technically indexable but still invisible
+- which URLs robots.txt blocks
+- what Google's own index verdict is for a URL (via Search Console URL inspection)
 
 IndexFast turns indexing into a dashboard, not guesswork.
 
@@ -48,47 +46,33 @@ Automatically sync sitemaps, detect new URLs, and keep track of published pages.
 
 ### Indexability Diagnostics
 
-Check every URL for common indexing blockers:
+Check URLs for common indexing blockers:
 
 - HTTP status codes
 - redirects
-- `noindex` tags
+- `noindex` tags (meta and `X-Robots-Tag`)
 - canonical mismatches
 - robots.txt blocking
-- missing sitemap entries
-- thin or duplicate page signals
-- JS-only rendering issues
-
-### Google Visibility Checks
-
-Track whether important URLs appear to be visible in Google search results.
 
 ### Google Search Console Workflows
 
-Connect verified sites and use official visibility/indexing data where available.
+Connect Google to read Google's own index verdict for a URL (URL inspection) and resubmit
+sitemaps after each sync. Free plans get a small daily inspection allowance.
 
 ### IndexNow Automation
 
-Submit updated URLs safely through IndexNow-supported search engines such as Bing and Yandex.
+Submit new and changed URLs through IndexNow (Bing, Yandex, Naver, Seznam, Yep). Paid plans
+add the Bing Webmaster API, Yandex recrawl, Baidu push and the gated Google Indexing API.
 
-### Deindexing Alerts
+### Alerts
 
-Get notified when important pages disappear, become blocked, or start returning errors.
+The dashboard raises alerts when a sitemap stops syncing, submissions keep failing, a search
+engine rate-limits a site, or a page Search Console reported as indexed drops out of the index.
 
-### Reports
+### API, MCP and CLI
 
-Generate clean indexing health reports for:
-
-- clients
-- pSEO launches
-- SEO audits
-- sitemap coverage
-- deindexing incidents
-- weekly monitoring
-
-### API and Webhooks
-
-Use IndexFast inside your own workflows, deployment pipelines, and SEO automation systems.
+Use IndexFast inside your own workflows and deployment pipelines through the REST API
+(`/api/v1`), the MCP server (`/api/mcp`) or `npx indexfast`.
 
 ---
 
@@ -104,7 +88,6 @@ IndexFast is built for:
 - ecommerce stores
 - SaaS blogs
 - local SEO agencies
-- backlink monitoring teams
 - AI website builders
 - indie hackers shipping pages fast
 
