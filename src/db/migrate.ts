@@ -5,6 +5,9 @@
  * transactions: drizzle's pg migrator runs every pending migration and its journal row inside
  * one transaction, so a failing statement rolls everything back instead of leaving a
  * half-applied migration that is not recorded and cannot simply be re-run.
+ *
+ * Run under Node (tsx), not Bun: under Bun the Neon WebSocket client stalls after the first
+ * query and the migration hangs forever (seen 2026-11-01).
  */
 import { Pool } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-serverless";
