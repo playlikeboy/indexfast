@@ -17,7 +17,6 @@
 import { neon } from "@neondatabase/serverless";
 import { and, desc, eq, gt, inArray, max, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-http";
-import { alias } from "drizzle-orm/pg-core";
 import { submissionJobs } from "../src/db/schema";
 import { dedupeRequeueCandidates, planRequeueSchedule } from "../src/lib/automation/requeue";
 
@@ -34,8 +33,9 @@ async function main() {
 	const db = drizzle(neon(url));
 	const now = new Date();
 
-	const open = alias(submissionJobs, "open_job");
-	const noOpenJob = sql`not exists (select 1 from ${open} where ${open.siteId} = ${submissionJobs.siteId} and ${open.loc} = ${submissionJobs.loc} and ${open.engine} = ${submissionJobs.engine} and ${open.status} in ('queued', 'processing'))`;
+	// Raw table name on purpose: a drizzle alias() inside sql`` renders only the alias, not "table AS alias".
+	// Inside the subquery the bare "submission_jobs" columns still refer to the outer row.
+	const noOpenJob = sql`not exists (select 1 from "submission_jobs" as open_job where open_job.site_id = ${submissionJobs.siteId} and open_job.loc = ${submissionJobs.loc} and open_job.engine = ${submissionJobs.engine} and open_job.status in ('queued', 'processing'))`;
 	const isThrottledFailure = and(eq(submissionJobs.status, "failed"), eq(submissionJobs.httpStatus, 429));
 
 	const failed = await db
