@@ -23,6 +23,9 @@
 		"binding": "ASSETS",
 		"directory": ".open-next/assets"
 	},
+	// Custom Domain: wrangler deploy creates and owns the DNS record. Any manual A/AAAA
+	// record on the apex (e.g. copied from another account) must be deleted first.
+	"routes": [{ "pattern": "indexfast.co", "custom_domain": true }],
 	"triggers": {
 		"crons": [
 			"0 * * * *"
