@@ -3,7 +3,7 @@
  * razorpay-billing.ts) but kept so existing Dodo subscribers keep receiving webhook updates.
  * Do not build new features on this module.
  */
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { db } from "@/db";
 import { billingCustomers, billingEvents, subscriptions, users } from "@/db/schema";
 import { normalizeBillingTier, type BillingTier } from "./plans";
@@ -178,7 +178,12 @@ export async function recordDodoBillingEvent(payload: DodoPayload) {
 			.where(and(eq(users.id, userId), inArray(users.billingTier, LEGACY_DODO_TIERS), isNull(users.planExpiresAt)));
 	} else if (tierChange) {
 		// Legacy tiers never expire on our side (Dodo renews them), so the expiry is cleared.
-		await db.update(users).set({ billingTier: tierChange, planExpiresAt: null, updatedAt: now }).where(eq(users.id, userId));
+		// A user holding a live Razorpay period (future planExpiresAt) keeps it: a Dodo renewal
+		// must not erase prepaid time the user bought after subscribing on Dodo.
+		await db
+			.update(users)
+			.set({ billingTier: tierChange, planExpiresAt: null, updatedAt: now })
+			.where(and(eq(users.id, userId), or(isNull(users.planExpiresAt), lt(users.planExpiresAt, now))));
 	}
 
 	return { eventType, userId, plan };

@@ -194,7 +194,7 @@ bun run preview            # build + wrangler preview
 export default {
   fetch: handler.fetch,                  // re-exported from .open-next/worker.js
   async scheduled(controller, env, ctx) {
-    // 1. bind DATABASE_URL from Cloudflare secrets → process.env
+    // 1. copy every string binding (secrets included) → process.env
     // 2. if missing, throw (cron will not silently run)
     // 3. ctx.waitUntil(runScheduledAutomation())
   },
@@ -469,9 +469,14 @@ Production Worker secrets are set with `wrangler secret put` (see `docs/deployme
 - No OpenNext incremental cache is configured, so never set `dynamicParams = false` on a dynamic
   route: prerendered params are not served from the Worker and every page 404s. Validate the
   param and call `notFound()` instead (see `src/app/compare/[slug]/page.tsx`).
-- `process.env` is empty inside Workers — `worker.ts` mirrors
-  `DATABASE_URL` from `env` into `process.env` before calling
-  `runScheduledAutomation`.
+- `process.env` is empty inside the scheduled handler — `worker.ts` copies every string
+  binding from `env` into `process.env` before calling `runScheduledAutomation`, and throws
+  if `DATABASE_URL` is missing.
+- `GET /api/health` returns 503 when the database is unreachable or no cron run has succeeded
+  in 2 hours; the daily smoke test (`scripts/smoke-test.sh`) checks it.
+- `next.config.ts` `headers()` sets HSTS, `X-Frame-Options: DENY` / `frame-ancestors 'none'`,
+  nosniff, Referrer-Policy and Permissions-Policy on every route. No full CSP yet (it must
+  allow Razorpay Checkout and Stack Auth).
 
 ### Tailwind v4 specifics
 - Use `@import "tailwindcss";` and `@custom-variant dark (&:where(.dark, .dark *));`

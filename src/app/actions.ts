@@ -41,7 +41,7 @@ import { createApiKeyForUser, revokeApiKeyForUser } from "@/lib/platform/api-key
 import { DEFAULT_API_SCOPES, PLAN_PERIOD_DAYS, isPaidPlan } from "@/lib/platform/plans";
 import { runDiagnosticsForUser } from "@/lib/platform/operations";
 import { activatePaidOrder, createCheckoutOrder } from "@/lib/platform/razorpay-billing";
-import { getRazorpayConfig, verifyCheckoutSignature } from "@/lib/platform/razorpay";
+import { fetchRazorpayPayment, getRazorpayConfig, verifyCheckoutSignature } from "@/lib/platform/razorpay";
 import { publicErrorMessage } from "@/lib/platform/http";
 
 export type ActionResult = { ok: boolean; message?: string; error?: string; data?: Record<string, unknown> } | null;
@@ -339,6 +339,14 @@ export async function confirmPaymentAction(input: { orderId: string; paymentId: 
 		const user = await requireActionUser();
 		const valid = await verifyCheckoutSignature({ ...input, keySecret: getRazorpayConfig().keySecret });
 		if (!valid) throw new Error("Payment signature mismatch. If you were charged, it will activate automatically within minutes.");
+		// The Checkout signature exists once a payment is merely authorized. An authorized
+		// payment Razorpay never captures is auto-refunded, so only a captured payment for this
+		// exact order grants a period here; anything else is left to the payment.captured webhook.
+		const payment = await fetchRazorpayPayment(input.paymentId);
+		if (payment.order_id !== input.orderId) throw new Error("Payment does not belong to this order.");
+		if (payment.status !== "captured") {
+			return "Payment received and still processing. Your plan activates automatically within a few minutes.";
+		}
 		const result = await activatePaidOrder({ orderId: input.orderId, paymentId: input.paymentId, expectedUserId: user.id });
 		if (!result.ok) throw new Error(result.reason === "unauthorized" ? "Not allowed" : "Order not found.");
 		revalidatePath("/dashboard", "layout");

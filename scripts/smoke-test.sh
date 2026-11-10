@@ -32,6 +32,9 @@ for path in / /pricing /about /contact /privacy /terms /tools /blog /resources /
   check "$BASE$path" "200"
 done
 
+# Database reachable and the hourly cron has succeeded in the last 2 hours (503 otherwise).
+check "$BASE/api/health" "200"
+
 # Protected surfaces must not be served to anonymous visitors.
 check "$BASE/dashboard" "30[0-9]|401|403"
 check "$BASE/api/v1/sites" "401|403"

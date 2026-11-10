@@ -58,7 +58,8 @@ export default function TermsPage() {
 					</p>
 					<h2>Pricing and payments</h2>
 					<p>
-						Subscription fees are billed on a monthly or annual basis. All fees are
+						Paid plans are prepaid for a 30-day period and do not renew automatically;
+						you buy a new period when you want to continue. All fees are
 						non-refundable unless required by law. We reserve the right to change pricing
 						with reasonable notice.
 					</p>

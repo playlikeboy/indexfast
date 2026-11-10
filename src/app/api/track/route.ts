@@ -12,6 +12,7 @@ import { db } from "@/db";
 import { pageViews } from "@/db/schema";
 
 const MAX_PATH_LENGTH = 300;
+const MAX_BODY_BYTES = 2048;
 const DEDUPE_WINDOW_MS = 60_000;
 
 const BOT_PATTERN = /bot|crawl|spider|slurp|bingpreview|headless|lighthouse|monitor|curl|wget|python|axios/i;
@@ -46,7 +47,20 @@ export async function POST(request: Request) {
 			return new Response(null, { status: 204 });
 		}
 
-		const body = (await request.json().catch(() => ({}))) as { path?: unknown; referrer?: unknown };
+		// A real beacon is a few hundred bytes; refuse to buffer anything larger.
+		if (Number(request.headers.get("content-length") || 0) > MAX_BODY_BYTES) {
+			return new Response(null, { status: 204 });
+		}
+		const raw = await request.text();
+		if (raw.length > MAX_BODY_BYTES) {
+			return new Response(null, { status: 204 });
+		}
+		let body: { path?: unknown; referrer?: unknown } = {};
+		try {
+			body = JSON.parse(raw);
+		} catch {
+			body = {};
+		}
 		const path = typeof body.path === "string" ? body.path.split("?")[0] : "";
 		if (!path.startsWith("/") || path.length >= MAX_PATH_LENGTH || path.startsWith("/admin") || path.startsWith("/api")) {
 			return new Response(null, { status: 204 });

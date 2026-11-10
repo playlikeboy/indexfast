@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -60,7 +63,6 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REDIRECT_URI: ${{ secrets.GOOGLE_REDIRECT_URI }}
           ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
           DODO_PAYMENTS_API_KEY: ${{ secrets.DODO_PAYMENTS_API_KEY }}
           DODO_PAYMENTS_WEBHOOK_KEY: ${{ secrets.DODO_PAYMENTS_WEBHOOK_KEY }}
           DODO_PAYMENTS_RETURN_URL: ${{ secrets.DODO_PAYMENTS_RETURN_URL }}
@@ -69,15 +71,4 @@ jobs:
           DODO_PRODUCT_ID_GROWTH: ${{ secrets.DODO_PRODUCT_ID_GROWTH }}
           DODO_PRODUCT_ID_AGENCY: ${{ secrets.DODO_PRODUCT_ID_AGENCY }}
           DODO_PRODUCT_ID_SCALE: ${{ secrets.DODO_PRODUCT_ID_SCALE }}
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
-          RESEND_REPLY_TO_EMAIL: ${{ secrets.RESEND_REPLY_TO_EMAIL }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-          NVIDIA_API_URL: ${{ secrets.NVIDIA_API_URL }}
-          NVIDIA_MODEL: ${{ secrets.NVIDIA_MODEL }}
         run: bun run deploy

@@ -36,7 +36,9 @@ There is no auto-charge; users get reminders instead.
    (`notes.app = "indexfast"`, `notes.userId`, `notes.plan`) and a `payments` row (`created`).
 2. The browser opens Razorpay Checkout (`components/app/RazorpayCheckout.tsx`).
 3. On success two independent paths call `activatePaidOrder()`:
-   - client -> `confirmPaymentAction()` verifies `HMAC_SHA256(order_id|payment_id, key_secret)`;
+   - client -> `confirmPaymentAction()` verifies `HMAC_SHA256(order_id|payment_id, key_secret)`,
+     then fetches the payment and activates only if it is `captured` for that order (an
+     authorized-but-uncaptured payment is left to the `payment.captured` webhook);
    - Razorpay -> `POST /api/webhooks/razorpay` verifies `HMAC_SHA256(raw body, webhook secret)`.
 4. `activatePaidOrder()` runs one neon-http batch (a single transaction): a conditional
    UPDATE flips the payment to `paid` (so the period is granted exactly once), one UPDATE on
@@ -120,7 +122,9 @@ Webhook rules (`recordDodoBillingEvent`, `resolveDodoTierChange`):
 - The plan comes only from the product id (`getPlanFromDodoProductId`); `metadata.plan` is ignored.
 - `payment.*` events never change the tier.
 - A paid tier is granted only for a `subscription.*` event with status `active`, and sets
-  `planExpiresAt = NULL` (legacy tiers never expire on our side).
+  `planExpiresAt = NULL` (legacy tiers never expire on our side). It is skipped while the user
+  holds a live Razorpay period or admin grant (`planExpiresAt > now`), so a Dodo renewal never
+  erases prepaid time.
 - `subscription.cancelled` / `expired` (or that status) drops to Free only a user still on a
   legacy tier with null expiry; a Razorpay period or admin grant survives.
 
