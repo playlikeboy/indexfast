@@ -22,7 +22,6 @@ Runtime secrets live in Cloudflare (`wrangler secret put NAME`) and are mirrored
 | `ADMIN_EMAILS` | Worker + GitHub |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Worker + GitHub. Google OAuth "Web application" client |
 | `NEXT_PUBLIC_SITE_URL` (optional), `GOOGLE_REDIRECT_URI` (optional) | Worker + build env. Redirect defaults to `<NEXT_PUBLIC_SITE_URL>/api/integrations/google/callback` |
-| `DODO_*` (legacy webhook only) | Worker |
 
 Google Cloud setup (not in code): register `https://indexfast.co/api/integrations/google/callback`
 (and the localhost callback for dev) as an authorized redirect URI, and enable the Search Console
@@ -34,7 +33,7 @@ Google raises the quota.
 Local (all gitignored; templates in `.env.example` / `.dev.vars.example`):
 - `.env`: everything shared across modes, plus `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN`
   (wrangler reads these for deploy) and `R2_*`.
-- `.env.development` / `.env.production`: only the Dodo test vs live keys.
+- `.env.development` / `.env.production`: optional per-mode overrides (no longer needed for billing).
 - `.dev.vars`: only `NEXTJS_ENV=development` (OpenNext then loads `.env` + `.env.development`)
   and `DATABASE_URL` (the scheduled handler reads it from bindings).
 

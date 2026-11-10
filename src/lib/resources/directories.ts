@@ -105,7 +105,7 @@ export const submissionDirectories = [
 	directory("Airtable Universe", "https://www.airtable.com/universe", "templates", "P3", "free", true, "Template discovery", "Publish directory tracking templates if available.", "medium", 48),
 	directory("Notion Template Gallery", "https://www.notion.com/templates", "templates", "P2", "free", true, "SEO checklist templates", "Ship a free IndexFast launch checklist template.", "medium", 55),
 	directory("Gumroad Discover", "https://gumroad.com/discover", "marketplace", "P3", "free", true, "Digital templates", "Use for paid checklists or launch templates.", "medium", 47),
-	directory("Lemon Squeezy Discover", "https://www.lemonsqueezy.com/", "marketplace", "P3", "paid", true, "Digital product sales", "Lower priority because billing uses DodoPayments.", "medium", 44),
+	directory("Lemon Squeezy Discover", "https://www.lemonsqueezy.com/", "marketplace", "P3", "paid", true, "Digital product sales", "Lower priority because billing uses Razorpay.", "medium", 44),
 	directory("Ko-fi Shop", "https://ko-fi.com/", "marketplace", "P3", "free", true, "Digital resources", "Use only for auxiliary templates.", "low", 41),
 	directory("Chrome Web Store", "https://chromewebstore.google.com/", "extension", "P2", "free", true, "Browser extension visibility", "Submit only after Chrome extension exists.", "high", 56),
 	directory("WordPress Plugin Directory", "https://wordpress.org/plugins/developers/add/", "wordpress", "P2", "free", true, "WordPress integrations", "Submit only after plugin exists.", "high", 56),

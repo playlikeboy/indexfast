@@ -1,5 +1,5 @@
 /**
- * Billing: current plan and expiry, the visible plans (Razorpay only; Dodo is hidden), the
+ * Billing: current plan and expiry, the visible plans (Razorpay only), the
  * expiry policy in plain words, and payment history. Prices, periods and limits come from
  * plans.ts only. One primary key on the screen: the recommended plan's checkout.
  */

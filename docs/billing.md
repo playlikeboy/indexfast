@@ -110,23 +110,18 @@ If the Razorpay account cannot accept USD (international payments disabled), set
 for a non-USD currency without an override, so checkout fails loudly instead of charging the
 USD cent figure as paise (about 1/100 of the price).
 
-## DodoPayments (hidden)
+## DodoPayments (removed)
 
-Only `/api/webhooks/dodo`, `lib/platform/billing.ts` and `getDodoWebhookKey()` in
-`lib/platform/dodo.ts` remain, so legacy subscribers keep syncing. The Dodo checkout and
-customer portal routes were removed. Do not build new features on them.
+Razorpay is the only payment provider. All Dodo code (checkout, customer portal, the
+`/api/webhooks/dodo` webhook, `lib/platform/billing.ts`, `lib/platform/dodo.ts`) was removed on
+2026-11-10, when no user held a legacy tier. Kept as data only, so nothing is deleted:
 
-Webhook rules (`recordDodoBillingEvent`, `resolveDodoTierChange`):
-
-- The `billing_events` insert is the idempotency key; a duplicate event id is not reprocessed.
-- The plan comes only from the product id (`getPlanFromDodoProductId`); `metadata.plan` is ignored.
-- `payment.*` events never change the tier.
-- A paid tier is granted only for a `subscription.*` event with status `active`, and sets
-  `planExpiresAt = NULL` (legacy tiers never expire on our side). It is skipped while the user
-  holds a live Razorpay period or admin grant (`planExpiresAt > now`), so a Dodo renewal never
-  erases prepaid time.
-- `subscription.cancelled` / `expired` (or that status) drops to Free only a user still on a
-  legacy tier with null expiry; a Razorpay period or admin grant survives.
+- The `billing_customers` and `subscriptions` tables (Dodo history) and `billing_events` rows.
+- The hidden legacy tiers `indie`/`growth`/`agency`/`scale` in `plans.ts`, so an old row still
+  resolves. A paid tier with a null expiry can no longer be created; fix any such row with
+  "Grant a plan" in `/admin`.
+- The `@dodopayments/nextjs` package is still listed in `package.json` (no imports) until
+  someone runs `bun remove @dodopayments/nextjs` and commits the updated `bun.lock`.
 
 ## Support
 

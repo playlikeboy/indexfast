@@ -63,12 +63,4 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REDIRECT_URI: ${{ secrets.GOOGLE_REDIRECT_URI }}
           ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
-          DODO_PAYMENTS_API_KEY: ${{ secrets.DODO_PAYMENTS_API_KEY }}
-          DODO_PAYMENTS_WEBHOOK_KEY: ${{ secrets.DODO_PAYMENTS_WEBHOOK_KEY }}
-          DODO_PAYMENTS_RETURN_URL: ${{ secrets.DODO_PAYMENTS_RETURN_URL }}
-          DODO_PAYMENTS_ENVIRONMENT: ${{ secrets.DODO_PAYMENTS_ENVIRONMENT }}
-          DODO_PRODUCT_ID_INDIE: ${{ secrets.DODO_PRODUCT_ID_INDIE }}
-          DODO_PRODUCT_ID_GROWTH: ${{ secrets.DODO_PRODUCT_ID_GROWTH }}
-          DODO_PRODUCT_ID_AGENCY: ${{ secrets.DODO_PRODUCT_ID_AGENCY }}
-          DODO_PRODUCT_ID_SCALE: ${{ secrets.DODO_PRODUCT_ID_SCALE }}
         run: bun run deploy

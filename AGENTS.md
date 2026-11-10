@@ -29,7 +29,7 @@ and a Cloudflare Worker cron job that runs automation in the background.
 | REST API | `/api/v1/*` | Bearer API-key interface for sites, verify, sitemaps, URLs, submissions, queue, diagnostics, engines (`bing`, `yandex`, `baidu`, `gsc`, `inspect`) and resources |
 | Google OAuth | `/api/integrations/google/start`, `/api/integrations/google/callback` | Connects a user's Google account for Search Console inspection/sitemap submit and the gated Google Indexing API |
 | MCP | `/api/mcp` | Authenticated JSON-RPC MCP server for AI IDEs (all plans). See `docs/mcp.md` |
-| Billing | `/api/webhooks/razorpay` (+ server actions) | Razorpay prepaid 30-day plans. Only the legacy Dodo webhook (`/api/webhooks/dodo`) remains; the Dodo checkout and customer portal routes were removed. See `docs/billing.md` |
+| Billing | `/api/webhooks/razorpay` (+ server actions) | Razorpay prepaid 30-day plans; Razorpay is the only payment provider (all Dodo code removed). See `docs/billing.md` |
 | Analytics | `/api/track` | Cookie-less first-party page view beacon feeding `/admin` |
 | Automation cron | `worker.ts` → `runScheduledAutomation()` | Hourly: expire plans, sync due sitemaps, drain submission queue, Search Console inspections, prune usage/quota rows, log `cron_runs`. See `docs/automation.md` |
 
@@ -52,7 +52,7 @@ in `src/lib/engines/` (IndexNow/Bing stay in `src/lib/automation/search-engines.
 - **Design system:** Cobalt. Rules in `DESIGN.md` (read it before any UI work); primitives in `src/components/ui` (import from `@/components/ui`)
 - **Database:** Neon serverless PostgreSQL (HTTP driver at runtime, WebSocket driver for migrations) + Drizzle ORM
 - **Auth:** Stack Auth (`@stackframe/stack`) — `StackProvider` wraps the app, `stack` singleton in `src/stack.ts`
-- **Billing:** Razorpay Orders (prepaid). DodoPayments remains only as a legacy webhook
+- **Billing:** Razorpay Orders (prepaid), the only payment provider
 - **Tests:** Vitest (node environment), tests colocated in `__tests__/` folders
 - **Linting:** ESLint flat config via `next/core-web-vitals` + `next/typescript`
 - **Icons:** `lucide-react`
@@ -139,7 +139,7 @@ bun run preview            # build + wrangler preview
     │   │   ├── mcp/            # JSON-RPC MCP endpoint
     │   │   ├── integrations/google/  # OAuth start + callback
     │   │   ├── track/          # first-party page view beacon (admin analytics)
-    │   │   └── webhooks/       # razorpay/ (active), dodo/ (legacy)
+    │   │   └── webhooks/       # razorpay/
     │   ├── admin/              # layout.tsx (requireAdmin) + page.tsx (analytics, revenue, cron, grants)
     │   └── dashboard/
     │       ├── layout.tsx      # auth guard, ensureUserRow, AppShell + plan banner
@@ -170,7 +170,7 @@ bun run preview            # build + wrangler preview
         ├── mcp/server.ts       # MCP method/tool/resource/prompt implementation
         ├── auth.ts             # session helpers, ensureUserRow, admin gate
         ├── platform/           # plans.ts (pricing + expiry policy), entitlements.ts, razorpay*.ts,
-        │                       # api-keys, http, operations (REST/MCP), legacy billing.ts/dodo.ts
+        │                       # api-keys, http, operations (REST/MCP)
         ├── resources/          # 100+ submission directories + third-party SEO tool data
         ├── engines/            # Google OAuth + Search Console (gsc.ts), Google Indexing API service,
         │                       # Yandex, Baidu, extra-engine wiring, quota windows; __tests__/
@@ -226,7 +226,7 @@ to `random()`.
 
 | Table | Purpose | Notable columns |
 |---|---|---|
-| `users` | Mirrors Stack Auth profile | `id` (PK, Stack user id), `email`, `billingTier` (`free`/`pro`/`unlimited`, hidden legacy `indie`/`growth`/`agency`/`scale`), `planExpiresAt` (end of prepaid period; null on a paid tier = legacy Dodo), `lastSeenAt` |
+| `users` | Mirrors Stack Auth profile | `id` (PK, Stack user id), `email`, `billingTier` (`free`/`pro`/`unlimited`, hidden legacy `indie`/`growth`/`agency`/`scale`), `planExpiresAt` (end of prepaid period; null on a paid tier = legacy Dodo, no longer created), `lastSeenAt` |
 | `payments` | Razorpay order ledger | `orderId` (unique), `paymentId`, `plan`, `amount` (minor units), `currency`, `status` (`created`/`paid`/`failed`/`refunded`), `periodStart`, `periodEnd` |
 | `page_views` | First-party analytics | `path`, `referrer` (host), `country`, `device`, `visitorHash` (daily rotating) |
 | `cron_runs` | Cron heartbeat | `status`, `summary` (jsonb), `errorMessage`, `startedAt`, `finishedAt` |
@@ -242,8 +242,8 @@ to `random()`.
 | `alerts` | Operator alerts | `alertType` (`indexing_drop`/`error_detected`/`sitemap_failure`), `resolved` |
 | `api_keys` | Hashed IndexFast API keys | `keyPrefix`, `keyHash`, `scopes`, `status`, `lastUsedAt`, `expiresAt`, unique `keyHash` |
 | `api_usage_events` | API/MCP usage log | `apiKeyId`, `userId`, `method`, `route`, `statusCode`, `metadata` |
-| `billing_customers` | Dodo customer mapping | `userId`, `dodoCustomerId`, `email` |
-| `subscriptions` | Dodo subscription state | `dodoSubscriptionId`, `dodoProductId`, `plan`, `status`, current period, cancel flag |
+| `billing_customers` | Dodo customer mapping (history only, Dodo removed) | `userId`, `dodoCustomerId`, `email` |
+| `subscriptions` | Dodo subscription state (history only, Dodo removed) | `dodoSubscriptionId`, `dodoProductId`, `plan`, `status`, current period, cancel flag |
 | `engine_quota_usage` | Counters for quotas engines do not report (GSC inspection per property, Google Indexing API per project) | `quotaKey`, `window` (day or UTC minute), `used`; unique `(quotaKey, window)`; atomic reserve |
 | `billing_events` | Webhook audit log (Dodo and `razorpay.*`) | `eventId`, `eventType`, `payload`, `processedAt` |
 | `google_integrations` | Unused (service-account era); Google now uses `user_integrations` provider `google`. Can be dropped in a later migration | |
@@ -276,8 +276,8 @@ Both use parallel `Promise.all` to keep page latency low.
   quota. Notifications return 202. Details: `docs/mcp.md`.
 - Plans (single source of truth `src/lib/platform/plans.ts`): Free, Pro $19, Unlimited $99,
   each paid plan a prepaid 30-day period. Legacy tiers are hidden, never removed.
-- Payments: Razorpay only in the UI (`docs/billing.md`). Only the Dodo webhook stays for
-  legacy subscribers; the Dodo checkout and customer portal routes were removed.
+- Payments: Razorpay is the only provider (`docs/billing.md`). All Dodo code (checkout, portal,
+  webhook) was removed; its tables remain as history.
 - MCP tools include engine management: `list_engines`, `get_google_connection`, `inspect_url`,
   `submit_sitemap_to_gsc`, `set_yandex_token`, `set_baidu_token`, `set_engine_auto_submit`,
   `remove_engine`, plus the Bing tools. `remove_bing_api_key` deletes the user's key (all sites).
@@ -353,14 +353,6 @@ DATABASE_URL=                       # Neon Postgres connection string
 NEXT_PUBLIC_STACK_PROJECT_ID=       # Stack Auth project id (public)
 NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY=
 STACK_SECRET_SERVER_KEY=            # Stack Auth server key (secret)
-DODO_PAYMENTS_API_KEY=              # Dodo bearer token
-DODO_PAYMENTS_WEBHOOK_KEY=          # Dodo webhook signing key
-DODO_PAYMENTS_RETURN_URL=           # e.g. https://indexfast.co/dashboard
-DODO_PAYMENTS_ENVIRONMENT=          # test_mode or live_mode
-DODO_PRODUCT_ID_INDIE=
-DODO_PRODUCT_ID_GROWTH=
-DODO_PRODUCT_ID_AGENCY=
-DODO_PRODUCT_ID_SCALE=
 RAZORPAY_KEY_ID=                    # Razorpay (the only checkout shown in the UI)
 RAZORPAY_KEY_SECRET=
 RAZORPAY_WEBHOOK_SECRET=            # webhook: https://indexfast.co/api/webhooks/razorpay
@@ -387,7 +379,7 @@ NEXTJS_ENV=development              # OpenNext then loads .env + .env.developmen
 DATABASE_URL=                       # scheduled handler reads it from bindings
 ```
 
-`.env.development` / `.env.production` hold only the Dodo test vs live keys.
+`.env.development` / `.env.production` are optional per-mode overrides.
 `.env` also holds `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` (wrangler deploy
 credentials, account must match `wrangler.jsonc` `account_id`) and `R2_*`.
 Production Worker secrets are set with `wrangler secret put` (see `docs/deployment.md`).
@@ -501,12 +493,12 @@ Production Worker secrets are set with `wrangler secret put` (see `docs/deployme
 
 `vitest` with `node` environment and the `@` alias mirrored from `tsconfig`.
 
-Suites live in `__tests__/` next to the code (30 files). Highlights:
+Suites live in `__tests__/` next to the code (29 files). Highlights:
 - `lib/automation/__tests__/` — credentials, sitemaps + sitemap-tree, url-utils, search-engines,
   submission-queue, requeue, bing-automation, diagnostics
 - `lib/engines/__tests__/` — engines (eligibility/wiring), google-oauth, gsc, yandex-baidu
 - `lib/platform/__tests__/` — plans (expiry/grace/legacy, paused sites), razorpay + razorpay-billing,
-  billing (Dodo), api-key-utils, auth, http, google-indexing guardrail
+  api-key-utils, auth, http, google-indexing guardrail
 - `lib/mcp/__tests__/mcp.test.ts` — protocol negotiation, notifications, tool listing/errors
 - `lib/resources/__tests__/` — directory catalog and search-engine specs
 - `app/tools/__tests__/` — tool-actions (free tool server actions, `ToolResult` shape), robots-rules
@@ -567,7 +559,6 @@ and `bun run cron:dev`.
 | MCP request is rejected | Confirm Bearer auth, `mcp:use` scope, and monthly quota (429). Inspect `src/lib/mcp/server.ts` for exact tool names. |
 | Paid but plan not active | Look up `payments` by order id. `created` = no webhook/verify yet (check Razorpay webhook deliveries, `RAZORPAY_WEBHOOK_SECRET`); `billing_events` with `razorpay.*` shows what arrived. Fix by hand with "Grant a plan" in `/admin`. |
 | User says sites stopped syncing | Likely expired past grace -> Free -> extra sites paused. Check `users.plan_expires_at`. |
-| Dodo webhook did not update billing (legacy) | Check `billing_events` for the event ID and `DODO_PAYMENTS_WEBHOOK_KEY`. |
 | Google Indexing API page rejected | Confirm JSON-LD contains `JobPosting` or `BroadcastEvent` inside `VideoObject`; otherwise use sitemap/GSC workflows. |
 | Hourly cron is silent | Check the Cron card in `/admin` (`cron_runs`). Confirm `wrangler.jsonc` cron is still `0 * * * *`, `DATABASE_URL` is set as a Worker secret, and `worker.ts.scheduled` is not throwing. The throw is intentional — failed binding surfaces immediately. |
 | Local dev can't reach DB | Ensure `DATABASE_URL` is in `.env`. The DB module throws on import if it's missing. |
@@ -613,7 +604,7 @@ and `bun run cron:dev`.
 - **IndexFast API key** — plaintext starts with `idxf_`, shown once, stored as
   SHA-256 hash in `api_keys`.
 - **Razorpay** — the billing provider shown to users (prepaid Orders).
-- **DodoPayments** — legacy billing provider; only its webhook remains, for existing subscribers.
+- **DodoPayments** — former billing provider; all code removed 2026-11-10, its tables kept as history.
 - **Cobalt** — the design system (`DESIGN.md`, tokens in `globals.css`, primitives in `src/components/ui`).
 - **Google Indexing API guardrail** — helper that only allows JobPosting or
   livestream BroadcastEvent-in-VideoObject pages to be queued.
