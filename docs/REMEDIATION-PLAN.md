@@ -1,7 +1,7 @@
 # IndexFast — Master Codebase Remediation & Hardening Plan
 
 **Date:** September 2026  
-**Repository:** `https://github.com/SH20RAJ/index-fast`  
+**Repository:** `https://github.com/playlikeboy/indexfast`  
 **Target Domain:** `https://indexfast.co`  
 **Status:** In Progress (Phase 1 Audit Complete)
 
