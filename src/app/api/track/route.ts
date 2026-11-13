@@ -3,13 +3,20 @@
  * counted with a daily-rotating SHA-256 of ip + user agent, and only the referrer host is
  * kept. Bots and admin/API paths are dropped. Always returns 204 so it never breaks pages.
  *
+ * The same endpoint also accepts the four named conversion events
+ * (landing_viewed, tool_used, account_created, trial_started) with optional outreach
+ * attribution (?ifb/ifl/ifs, see src/lib/attribution.ts), stored in conversion_events
+ * under the same guards. trial_started is recorded server-side instead (see
+ * activatePaidOrder in razorpay-billing.ts), never from the browser.
+ *
  * Abuse guards (the endpoint is public and unauthenticated): only same-origin beacons are
  * accepted, paths are bounded, and a repeat of the same visitor + path within 60 seconds is
  * dropped so a reload loop or script cannot inflate the admin numbers.
  */
 import { and, eq, gt } from "drizzle-orm";
 import { db } from "@/db";
-import { pageViews } from "@/db/schema";
+import { conversionEvents, pageViews } from "@/db/schema";
+import { isAttributionEvent, parseAttribution } from "@/lib/attribution";
 
 const MAX_PATH_LENGTH = 300;
 const MAX_BODY_BYTES = 2048;
@@ -55,7 +62,7 @@ export async function POST(request: Request) {
 		if (raw.length > MAX_BODY_BYTES) {
 			return new Response(null, { status: 204 });
 		}
-		let body: { path?: unknown; referrer?: unknown } = {};
+		let body: { path?: unknown; referrer?: unknown; event?: unknown; ifb?: unknown; ifl?: unknown; ifs?: unknown; userId?: unknown } = {};
 		try {
 			body = JSON.parse(raw);
 		} catch {
@@ -79,6 +86,42 @@ export async function POST(request: Request) {
 		const ip = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0] || "";
 		const day = new Date().toISOString().slice(0, 10);
 		const visitorHash = await sha256(`${day}|${ip}|${ua}|${process.env.STACK_SECRET_SERVER_KEY || "indexfast"}`);
+		const event = isAttributionEvent(body.event) ? body.event : null;
+		if (event) {
+			// A malformed attribution is dropped but the event is still recorded:
+			// funnel counts stay honest, only fully-valid attribution is stored.
+			const attribution = parseAttribution({ ifb: body.ifb, ifl: body.ifl, ifs: body.ifs });
+			const userId =
+				event === "account_created" && typeof body.userId === "string" && body.userId.length > 0 && body.userId.length <= 128
+					? body.userId
+					: null;
+			const [recentEvent] = await db
+				.select({ id: conversionEvents.id })
+				.from(conversionEvents)
+				.where(
+					and(
+						eq(conversionEvents.visitorHash, visitorHash),
+						eq(conversionEvents.event, event),
+						eq(conversionEvents.path, path),
+						gt(conversionEvents.createdAt, new Date(Date.now() - DEDUPE_WINDOW_MS)),
+					),
+				)
+				.limit(1);
+			if (!recentEvent) {
+				await db.insert(conversionEvents).values({
+					event,
+					path,
+					visitorHash,
+					userId,
+					batch: attribution?.batch ?? null,
+					leadKey: attribution?.leadKey ?? null,
+					stage: attribution?.stage ?? null,
+					country: request.headers.get("cf-ipcountry") || null,
+					device: deviceFromUserAgent(ua),
+				});
+			}
+			return new Response(null, { status: 204 });
+		}
 		const [recent] = await db
 			.select({ id: pageViews.id })
 			.from(pageViews)
