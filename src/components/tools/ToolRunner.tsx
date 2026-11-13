@@ -23,6 +23,7 @@ import {
 	checkBulkIndexTool,
 } from "@/app/tools/tool-actions";
 import { ToolResult, type ToolOutput, type ToolType } from "./ToolResult";
+import { sendAttributionEvent } from "@/lib/attribution";
 
 type Inputs = { first: string; second: string; third: string };
 
@@ -71,8 +72,10 @@ export function ToolRunner({ toolType, placeholder, buttonLabel }: { toolType: T
 				second: secondInput,
 				third: thirdInput,
 			});
-			if (res.success) setResult(res);
-			else setError(res.error);
+			if (res.success) {
+				setResult(res);
+				sendAttributionEvent("tool_used", window.location.pathname);
+			} else setError(res.error);
 		} catch {
 			setError("The request did not reach the server. Check your connection and try again.");
 		} finally {
