@@ -53,8 +53,8 @@ export async function requireActionUser() {
 	return user;
 }
 
-/** Upsert the mirror row; refresh email and a throttled lastSeenAt for analytics. */
-export async function ensureUserRow(user: SessionUser) {
+/** Upsert the mirror row; refresh email and a throttled lastSeenAt for analytics. Returns whether this visit created the row (first dashboard visit = account creation). */
+export async function ensureUserRow(user: SessionUser): Promise<{ created: boolean }> {
 	const [existing] = await db
 		.select({ email: users.email, lastSeenAt: users.lastSeenAt })
 		.from(users)
@@ -67,7 +67,7 @@ export async function ensureUserRow(user: SessionUser) {
 			.insert(users)
 			.values({ id: user.id, email: user.email, billingTier: "free", lastSeenAt: now })
 			.onConflictDoNothing({ target: users.id });
-		return;
+		return { created: true };
 	}
 
 	const stale = !existing.lastSeenAt || now.getTime() - existing.lastSeenAt.getTime() > LAST_SEEN_THROTTLE_MS;
@@ -77,6 +77,7 @@ export async function ensureUserRow(user: SessionUser) {
 			.set({ email: user.email || existing.email, lastSeenAt: now, updatedAt: now })
 			.where(eq(users.id, user.id));
 	}
+	return { created: false };
 }
 
 export const DEFAULT_ADMIN_EMAILS = ["sh20raj@gmail.com", "shaswatraj3@gmail.com"];
