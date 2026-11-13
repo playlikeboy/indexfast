@@ -13,7 +13,7 @@
  */
 import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { billingEvents, payments, users } from "@/db/schema";
+import { billingEvents, conversionEvents, payments, users } from "@/db/schema";
 import {
 	PLANS,
 	PLAN_GRACE_DAYS,
@@ -147,7 +147,39 @@ export async function activatePaidOrder(input: { orderId: string; paymentId: str
 		return healPaidOrder(latest ?? payment);
 	}
 
+	// First paid activation for this user = the trial-start conversion event. (IndexFast
+	// has no free-trial period; see docs/billing.md.) Best-effort: analytics must never
+	// fail a payment.
+	await recordTrialStartedIfFirst(payment.userId);
+
 	return { ok: true as const, alreadyProcessed: false, periodEnd: granted[0]?.planExpiresAt ?? null, plan: payment.plan };
+}
+
+/**
+ * Insert the trial_started conversion event the first time a user activates a paid
+ * plan. Attribution is joined later via the account_created event for the same user
+ * (see src/lib/attribution.ts). Best-effort: any failure is logged, never thrown, so
+ * analytics can never break billing. The report counts the first trial_started per
+ * user, so a duplicate insert here is harmless.
+ */
+async function recordTrialStartedIfFirst(userId: string) {
+	try {
+		const [already] = await db
+			.select({ id: conversionEvents.id })
+			.from(conversionEvents)
+			.where(and(eq(conversionEvents.userId, userId), eq(conversionEvents.event, "trial_started")))
+			.limit(1);
+		if (already) return;
+		const paid = await db
+			.select({ id: payments.id })
+			.from(payments)
+			.where(and(eq(payments.userId, userId), eq(payments.status, "paid")))
+			.limit(2);
+		if (paid.length !== 1) return;
+		await db.insert(conversionEvents).values({ event: "trial_started", path: "/dashboard/billing", userId });
+	} catch (error) {
+		console.error("trial_started event failed", error);
+	}
 }
 
 async function healPaidOrder(payment: typeof payments.$inferSelect) {
