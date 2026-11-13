@@ -496,3 +496,33 @@ export const engineQuotaUsage = pgTable(
 		index("engine_quota_usage_updated_idx").on(table.updatedAt), // Retention prune in the cron
 	],
 );
+
+// Named conversion events for outreach attribution (see src/lib/attribution.ts).
+// Four events only: 'landing_viewed', 'tool_used', 'account_created', 'trial_started'.
+// No PII is stored: batch is the outreach send date (YYYYMMDD), leadKey is an 8-hex
+// hash of the lead's email (computed by the outreach side; the site never sees the
+// email), and visitorHash is the same daily-rotating hash page_views already uses
+// (NULL for the server-side trial_started event, which has no browser visitor).
+// userId is the Stack Auth id, set on account_created and trial_started so a paid
+// activation can be joined back to the signup that carried the attribution.
+export const conversionEvents = pgTable(
+	"conversion_events",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		event: text("event").notNull(), // 'landing_viewed' | 'tool_used' | 'account_created' | 'trial_started'
+		path: text("path").notNull(),
+		visitorHash: text("visitor_hash"),
+		userId: text("user_id"),
+		batch: text("batch"), // Outreach send date, YYYYMMDD
+		leadKey: text("lead_key"), // 8-hex hash of the lead email
+		stage: text("stage"), // 'e2' | 'e3' | 'reply'
+		country: text("country"),
+		device: text("device"), // 'mobile' | 'desktop' | 'tablet'
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+	},
+	(table) => [
+		index("conversion_events_event_created_idx").on(table.event, table.createdAt),
+		index("conversion_events_batch_lead_idx").on(table.batch, table.leadKey, table.event),
+		index("conversion_events_user_idx").on(table.userId, table.event),
+	],
+);
