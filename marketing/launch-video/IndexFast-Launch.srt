@@ -1,0 +1,48 @@
+1
+00:00:00,207 --> 00:00:02,597
+You shipped the site Search engines still
+
+2
+00:00:02,558 --> 00:00:05,761
+haven't found it Meet IndexFast Add your
+
+3
+00:00:05,724 --> 00:00:07,602
+domain host one key file and you're
+
+4
+00:00:07,564 --> 00:00:10,320
+done Every new or changed URL goes
+
+5
+00:00:10,281 --> 00:00:13,888
+to IndexNow Bing Yandex and Baidu automatically
+
+6
+00:00:14,390 --> 00:00:17,371
+Search Console inspections show what's indexed and
+
+7
+00:00:17,333 --> 00:00:19,811
+what's blocking the rest And it's agent
+
+8
+00:00:19,772 --> 00:00:21,982
+native Run it from Claude Code or
+
+9
+00:00:21,943 --> 00:00:24,311
+Cursor with MCP the API or the
+
+10
+00:00:24,273 --> 00:00:27,660
+CLI No black hat tricks Only official
+
+11
+00:00:27,621 --> 00:00:31,286
+engine APIs running every hour Start free
+
+12
+00:00:31,246 --> 00:00:32,751
+at indexfast dot co
+

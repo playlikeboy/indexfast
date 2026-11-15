@@ -1,0 +1,298 @@
+{
+ "title": "IndexFast launch",
+ "slug": "indexfast_launch",
+ "style": "clean",
+ "W": 864,
+ "H": 1080,
+ "brand": "indexfast.co",
+ "voice": {
+  "engine": "edge",
+  "name": "en-US-BrianNeural",
+  "rate": "+10%"
+ },
+ "music": "bright",
+ "music_db": -18,
+ "sfx_db": -10,
+ "gap": 0.12,
+ "scenes": [
+  {
+   "say": "You shipped the site. Search engines still haven't found it.",
+   "splash": "tl,br",
+   "cap": [
+    {
+     "text": "You shipped the site.",
+     "size": "m"
+    },
+    {
+     "text": "Search engines",
+     "size": "l",
+     "pos": "bottom"
+    },
+    {
+     "text": "still haven't found it.",
+     "size": "m",
+     "pos": "bottom",
+     "style": "pill"
+    }
+   ],
+   "vis": [
+    {
+     "type": "icon",
+     "icon": "search",
+     "tile": "dark",
+     "size": 170,
+     "at": -0.3
+    },
+    {
+     "type": "spacer",
+     "h": 30
+    },
+    {
+     "type": "label",
+     "text": "Discovered \u2013 currently not indexed",
+     "size": 38,
+     "at": -0.3
+    }
+   ]
+  },
+  {
+   "say": "Meet IndexFast. Add your domain, host one key file, and you're done.",
+   "cap": [
+    {
+     "text": "Meet",
+     "size": "m"
+    },
+    {
+     "text": "IndexFast",
+     "size": "xl",
+     "color": "accent"
+    },
+    {
+     "text": "Add your domain, host one key file,",
+     "size": "s",
+     "pos": "bottom"
+    },
+    {
+     "text": "and you're done.",
+     "size": "m",
+     "pos": "bottom",
+     "style": "pill"
+    }
+   ],
+   "vis": [
+    {
+     "type": "tiles",
+     "size": 120,
+     "items": [
+      {
+       "icon": "globe",
+       "tile": "light",
+       "at": "domain"
+      },
+      {
+       "icon": "lock",
+       "tile": "dark",
+       "at": "key"
+      },
+      {
+       "icon": "check",
+       "tile": "blue",
+       "at": "done"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "say": "Every new or changed URL goes to IndexNow, Bing, Yandex and Baidu automatically.",
+   "cap": [
+    {
+     "text": "Every new or changed URL",
+     "size": "m"
+    },
+    {
+     "text": "goes to IndexNow, Bing, Yandex and Baidu",
+     "size": "s",
+     "pos": "bottom"
+    },
+    {
+     "text": "automatically.",
+     "size": "l",
+     "pos": "bottom",
+     "color": "accent"
+    }
+   ],
+   "vis": [
+    {
+     "type": "tree",
+     "root": {
+      "icon": "layers",
+      "tile": "blue",
+      "label": "sitemap"
+     },
+     "size": 118,
+     "gap": 26,
+     "at": "URL",
+     "items": [
+      {
+       "text": "IndexNow",
+       "tile": "light",
+       "at": "IndexNow"
+      },
+      {
+       "text": "Bing",
+       "tile": "light",
+       "at": "Bing"
+      },
+      {
+       "text": "Yandex",
+       "tile": "light",
+       "at": "Yandex"
+      },
+      {
+       "text": "Baidu",
+       "tile": "light",
+       "at": "Baidu"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "say": "Search Console inspections show what's indexed, and what's blocking the rest.",
+   "cap": [
+    {
+     "text": "Search Console inspections",
+     "size": "m"
+    },
+    {
+     "text": "what's indexed,",
+     "size": "l",
+     "pos": "bottom"
+    },
+    {
+     "text": "and what's blocking the rest.",
+     "size": "s",
+     "pos": "bottom"
+    }
+   ],
+   "vis": [
+    {
+     "type": "checklist",
+     "size": 40,
+     "items": [
+      {
+       "text": "Indexed",
+       "at": "indexed"
+      },
+      {
+       "text": "Blocked by robots",
+       "at": "blocking"
+      },
+      {
+       "text": "Fix and resubmit",
+       "at": "rest"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "say": "And it's agent native. Run it from Claude Code or Cursor with MCP, the API, or the CLI.",
+   "cap": [
+    {
+     "text": "Agent native.",
+     "size": "l",
+     "color": "accent"
+    },
+    {
+     "text": "Claude Code \u00b7 Cursor",
+     "size": "s",
+     "pos": "bottom"
+    },
+    {
+     "text": "MCP \u00b7 API \u00b7 CLI",
+     "size": "m",
+     "pos": "bottom",
+     "style": "pill"
+    }
+   ],
+   "vis": [
+    {
+     "type": "tiles",
+     "size": 130,
+     "items": [
+      {
+       "icon": "terminal",
+       "tile": "dark",
+       "at": "Claude"
+      },
+      {
+       "icon": "cursor",
+       "tile": "light",
+       "at": "Cursor"
+      },
+      {
+       "icon": "router",
+       "tile": "blue",
+       "at": "MCP"
+      },
+      {
+       "icon": "code",
+       "tile": "light",
+       "at": "CLI"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "say": "No black hat tricks. Only official engine APIs, running every hour.",
+   "cap": [
+    {
+     "text": "No black hat tricks.",
+     "size": "m"
+    },
+    {
+     "text": "Only official engine APIs,",
+     "size": "m",
+     "pos": "bottom"
+    },
+    {
+     "text": "running every hour.",
+     "size": "m",
+     "pos": "bottom",
+     "style": "pill"
+    }
+   ],
+   "vis": [
+    {
+     "type": "icon",
+     "icon": "shield",
+     "tile": "blue",
+     "size": 200,
+     "at": "official"
+    }
+   ]
+  },
+  {
+   "say": "Start free at indexfast dot co.",
+   "splash": "tl,br",
+   "cap": [
+    {
+     "text": "Start free at",
+     "size": "m"
+    }
+   ],
+   "vis": [
+    {
+     "type": "big",
+     "text": "indexfast.co",
+     "color": "accent",
+     "size": 120,
+     "at": "indexfast"
+    }
+   ]
+  }
+ ]
+}

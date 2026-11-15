@@ -45,7 +45,7 @@ Agent-native (confirmed by the user). IndexFast is built to be driven by AI agen
 ## Evidence on Hand
 
 - Product screenshots: capture from the running dashboard (none committed yet).
-- Video: `public/IndexFast-Editorial-v2.mp4`.
+- Video: `public/IndexFast-Editorial-v2.mp4` (16:9 walkthrough); `public/IndexFast-Launch.mp4` (4:5 launch cut, source in `marketing/launch-video/`).
 - Real engine documentation and limits in `src/lib/resources/search-engines.ts`.
 - Absent, must not be fabricated: testimonials, customer logos, usage or performance statistics, case studies.
 
