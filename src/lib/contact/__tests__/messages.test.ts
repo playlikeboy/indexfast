@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contactRecipient, formatContactEmail, parseContactForm } from "../messages";
+import { contactRecipient, contactSender, formatContactEmail, parseContactForm } from "../messages";
 
 function form(fields: Record<string, string>) {
 	const f = new FormData();
@@ -50,5 +50,12 @@ describe("contactRecipient", () => {
 		expect(contactRecipient({ CONTACT_NOTIFY_EMAIL: "ops@x.co", ADMIN_EMAILS: "a@x.co" })).toBe("ops@x.co");
 		expect(contactRecipient({ ADMIN_EMAILS: " a@x.co , b@x.co" })).toBe("a@x.co");
 		expect(contactRecipient({})).toBeNull();
+	});
+});
+
+describe("contactSender", () => {
+	it("defaults to noreply@indexfast.co", () => {
+		expect(contactSender({})).toBe("noreply@indexfast.co");
+		expect(contactSender({ CONTACT_FROM_EMAIL: "hi@indexfast.co" })).toBe("hi@indexfast.co");
 	});
 });

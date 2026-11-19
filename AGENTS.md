@@ -18,7 +18,7 @@ and a Cloudflare Worker cron job that runs automation in the background.
 
 | Surface | Route | Purpose |
 |---|---|---|
-| Marketing site | `/`, `/about`, `/pricing`, `/contact`, `/feedback`, `/privacy`, `/terms` | Public landing + blog + free tools + agent-first copy. `/contact` and `/feedback` forms store to `contact_messages` and email the operator via Resend (`src/app/contact/actions.ts`, `src/lib/contact/messages.ts`) |
+| Marketing site | `/`, `/about`, `/pricing`, `/contact`, `/feedback`, `/privacy`, `/terms` | Public landing + blog + free tools + agent-first copy. `/contact` and `/feedback` forms store to `contact_messages` and email the operator via the Cloudflare `send_email` binding `EMAIL`, Resend as fallback (`src/app/contact/actions.ts`, `src/lib/contact/messages.ts`) |
 | Comparisons | `/compare`, `/compare/[slug]` | "IndexFast vs X" pages from `comparisons` in `marketing-data.ts` (dated, sourced, no competitor prices) |
 | AI briefs | `/llms.txt`, `/llms-full.txt` | Route handlers built by `src/lib/llms.ts` from plans.ts and the content data (no static file in `public/`) |
 | Free SEO tools | `/tools/*` (11 tools) | No-signup utilities — index checkers, sitemap extractor, IndexNow key generator, llms.txt generator, AI crawler checker, etc. |
@@ -233,7 +233,7 @@ to `random()`.
 | `users` | Mirrors Stack Auth profile | `id` (PK, Stack user id), `email`, `billingTier` (`free`/`pro`/`unlimited`, hidden legacy `indie`/`growth`/`agency`/`scale`), `planExpiresAt` (end of prepaid period; null on a paid tier = legacy Dodo, no longer created), `lastSeenAt` |
 | `payments` | Razorpay order ledger | `orderId` (unique), `paymentId`, `plan`, `amount` (minor units), `currency`, `status` (`created`/`paid`/`failed`/`refunded`), `periodStart`, `periodEnd` |
 | `page_views` | First-party analytics | `path`, `referrer` (host), `country`, `device`, `visitorHash` (daily rotating) |
-| `contact_messages` | Public /contact and /feedback submissions | `kind` (`contact`/`feedback`), `name`, `email`, `topic`, `rating` (1-5), `message`, `pagePath`, `userId?`, `emailStatus` (`pending`/`sent`/`failed`/`skipped`), `emailError`. Row saved before the email; 5 per email per hour |
+| `contact_messages` | Public /contact and /feedback submissions | `kind` (`contact`/`feedback`), `name`, `email`, `topic`, `rating` (1-5), `message`, `pagePath`, `userId?`, `emailStatus` (`pending`/`sent:cloudflare`/`sent:resend`/`failed`/`skipped`), `emailError`. Row saved before the email; 5 per email per hour |
 | `cron_runs` | Cron heartbeat | `status`, `summary` (jsonb), `errorMessage`, `startedAt`, `finishedAt` |
 | `sites` | Connected web properties | `domain`, `indexingHost` (preserves `www`), `verified`, `automationEnabled`, `verificationToken`, `sitemapUrl` (primary), unique `(userId, domain)` |
 | `site_sitemaps` | Configured sitemap sources per site | `url`, `isPrimary`, `status` (`active`/`disabled`/`failed`), `lastSyncAt`, `lastErrorAt`, `lastErrorMessage`, unique `(siteId, url)` |
@@ -369,7 +369,8 @@ NEXT_PUBLIC_SITE_URL=https://indexfast.co
 GOOGLE_CLIENT_ID=                   # Google OAuth "Web application" client
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=                # optional; default <NEXT_PUBLIC_SITE_URL>/api/integrations/google/callback
-RESEND_API_KEY=                     # contact/feedback notification email (Resend REST, no SDK)
+CONTACT_FROM_EMAIL=                 # optional; Cloudflare EMAIL binding sender, default noreply@indexfast.co
+RESEND_API_KEY=                     # fallback notification email when the Cloudflare binding fails (Resend REST)
 RESEND_FROM_EMAIL=                  # verified Resend sender, e.g. IndexFast <hello@indexfast.co>
 CONTACT_NOTIFY_EMAIL=               # optional; default first ADMIN_EMAILS address
 ```
@@ -404,6 +405,7 @@ Production Worker secrets are set with `wrangler secret put` (see `docs/deployme
 - `assets.directory: ".open-next/assets"` (build output)
 - `triggers.crons: ["0 * * * *"]` (hourly)
 - `images.binding: "IMAGES"`
+- `send_email` binding `EMAIL` (contact/feedback notifications; needs Email Routing on indexfast.co and a verified destination)
 - `services` self-reference for cache
 - `observability.enabled: true`, `upload_source_maps: true`
 

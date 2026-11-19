@@ -36,6 +36,13 @@
 		// see https://opennext.js.org/cloudflare/howtos/image
 		"binding": "IMAGES"
 	},
+	// Contact/feedback notifications (src/lib/contact/messages.ts). Needs Email Routing on
+	// indexfast.co with the recipient verified as a destination address.
+	"send_email": [
+		{
+			"name": "EMAIL"
+		}
+	],
 	"services": [
 		{
 			// Self-reference service binding, the service name must match the worker name

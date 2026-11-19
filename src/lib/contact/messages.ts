@@ -2,6 +2,10 @@
  * Contact and feedback messages: input validation and the notification email. Pure functions
  * here (parse, format) are unit tested; sendContactEmail is the only network call.
  *
+ * Email goes through Cloudflare's send_email binding (EMAIL in wrangler.jsonc) first. Resend is
+ * the fallback, used only when the binding is missing (local dev) or the send is refused, e.g.
+ * while Email Routing on indexfast.co or the destination address is not verified yet.
+ *
  * Rules:
  * - Anyone can submit, so every field is length capped and the email must look like an address.
  * - A hidden "website" field is a honeypot: bots fill it, people never see it. A filled honeypot
@@ -101,16 +105,32 @@ export function contactRecipient(env: Record<string, string | undefined> = proce
 	return (env.ADMIN_EMAILS ?? "").split(",").map((s) => s.trim()).find(Boolean) ?? null;
 }
 
-export type EmailOutcome = { status: "sent" } | { status: "skipped"; error: string } | { status: "failed"; error: string };
+export type EmailOutcome = { status: "sent"; via: "cloudflare" | "resend" } | { status: "skipped"; error: string } | { status: "failed"; error: string };
 
-// Resend REST API over fetch (no SDK, so it runs on the Worker). Never throws.
-export async function sendContactEmail(input: ContactInput, id: string): Promise<EmailOutcome> {
+// Sender for the Cloudflare binding: must be an address on a zone with Email Routing enabled.
+export function contactSender(env: Record<string, string | undefined> = process.env) {
+	return env.CONTACT_FROM_EMAIL?.trim() || "noreply@indexfast.co";
+}
+
+type CloudflareEmailBinding = {
+	send(message: { from: string | { email: string; name: string }; to: string; subject: string; text: string; replyTo?: string }): Promise<{ messageId: string }>;
+};
+
+function cloudflareEmailBinding(): CloudflareEmailBinding | null {
+	try {
+		// eslint-disable-next-line @typescript-eslint/no-require-imports
+		const { getCloudflareContext } = require("@opennextjs/cloudflare");
+		const binding = getCloudflareContext()?.env?.EMAIL as CloudflareEmailBinding | undefined;
+		return binding && typeof binding.send === "function" ? binding : null;
+	} catch {
+		return null; // Outside the Worker (tests, scripts)
+	}
+}
+
+async function sendViaResend(to: string, input: ContactInput, subject: string, body: string): Promise<EmailOutcome> {
 	const apiKey = process.env.RESEND_API_KEY;
 	const from = process.env.RESEND_FROM_EMAIL;
-	const to = contactRecipient();
-	if (!apiKey || !from || !to) return { status: "skipped", error: "RESEND_API_KEY, RESEND_FROM_EMAIL or a recipient is not set" };
-
-	const { subject, text: body } = formatContactEmail(input, id);
+	if (!apiKey || !from) return { status: "skipped", error: "no Cloudflare EMAIL binding and RESEND_API_KEY / RESEND_FROM_EMAIL not set" };
 	try {
 		const res = await fetch("https://api.resend.com/emails", {
 			method: "POST",
@@ -118,9 +138,30 @@ export async function sendContactEmail(input: ContactInput, id: string): Promise
 			body: JSON.stringify({ from, to: [to], reply_to: input.email, subject, text: body }),
 			signal: AbortSignal.timeout(10_000),
 		});
-		if (res.ok) return { status: "sent" };
+		if (res.ok) return { status: "sent", via: "resend" };
 		return { status: "failed", error: `Resend ${res.status}: ${(await res.text()).slice(0, 300)}` };
 	} catch (err) {
-		return { status: "failed", error: err instanceof Error ? err.message : String(err) };
+		return { status: "failed", error: `Resend: ${err instanceof Error ? err.message : String(err)}` };
 	}
+}
+
+// Never throws. A Cloudflare refusal is kept in the error text if Resend also fails.
+export async function sendContactEmail(input: ContactInput, id: string): Promise<EmailOutcome> {
+	const to = contactRecipient();
+	if (!to) return { status: "skipped", error: "no recipient: set CONTACT_NOTIFY_EMAIL or ADMIN_EMAILS" };
+	const { subject, text: body } = formatContactEmail(input, id);
+
+	let cloudflareError: string | null = null;
+	const binding = cloudflareEmailBinding();
+	if (binding) {
+		try {
+			await binding.send({ from: { email: contactSender(), name: "IndexFast" }, to, subject, text: body, replyTo: input.email });
+			return { status: "sent", via: "cloudflare" };
+		} catch (err) {
+			cloudflareError = `Cloudflare: ${err instanceof Error ? err.message : String(err)}`;
+		}
+	}
+	const fallback = await sendViaResend(to, input, subject, body);
+	if (fallback.status !== "sent" && cloudflareError) return { status: "failed", error: `${cloudflareError}; ${fallback.error}` };
+	return fallback;
 }

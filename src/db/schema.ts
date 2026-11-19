@@ -69,7 +69,7 @@ export const pageViews = pgTable(
 );
 
 // Messages from the public /contact and /feedback forms. The row is written before the email
-// is attempted, so a Resend outage never loses a message; emailStatus records what happened.
+// is attempted, so a mail outage never loses a message; emailStatus records what happened.
 export const contactMessages = pgTable(
 	"contact_messages",
 	{
@@ -82,7 +82,7 @@ export const contactMessages = pgTable(
 		message: text("message").notNull(),
 		pagePath: text("page_path"), // Where the form was submitted from
 		userId: text("user_id"), // Stack Auth user id when signed in
-		emailStatus: text("email_status").default("pending").notNull(), // 'pending' | 'sent' | 'failed' | 'skipped'
+		emailStatus: text("email_status").default("pending").notNull(), // 'pending' | 'sent:cloudflare' | 'sent:resend' | 'failed' | 'skipped'
 		emailError: text("email_error"),
 		createdAt: timestamp("created_at").defaultNow().notNull(),
 	},

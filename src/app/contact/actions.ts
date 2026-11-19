@@ -54,7 +54,7 @@ export async function submitContactMessage(_prev: ContactFormState, form: FormDa
 		const outcome = await sendContactEmail(input, row.id);
 		await db
 			.update(contactMessages)
-			.set({ emailStatus: outcome.status, emailError: outcome.status === "sent" ? null : outcome.error })
+			.set({ emailStatus: outcome.status === "sent" ? `sent:${outcome.via}` : outcome.status, emailError: outcome.status === "sent" ? null : outcome.error })
 			.where(eq(contactMessages.id, row.id));
 		if (outcome.status !== "sent") console.error("contact email not sent", row.id, outcome.error);
 
