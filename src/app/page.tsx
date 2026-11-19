@@ -1,10 +1,11 @@
 /*
  * Landing page: the agent-native pitch, from the submission pipeline in the hero to the close.
- * Section order is the argument (how it works and what it does, how agents drive it, where URLs
+ * Section order is the argument (the 35 s launch video, how it works and what it does, how agents drive it, where URLs
  * go, then free tools, answers and price); every id here is a nav or footer anchor.
  */
 import { Navbar } from "@/components/marketing/Navbar";
 import { Hero } from "@/components/marketing/Hero";
+import { LaunchVideo } from "@/components/marketing/LaunchVideo";
 import { Solution } from "@/components/marketing/Solution";
 import { SearchEnginesShowcase } from "@/components/marketing/SearchEnginesShowcase";
 import { FreeTools } from "@/components/marketing/FreeTools";
@@ -37,6 +38,7 @@ export default function Home() {
 			<Navbar />
 			<main>
 				<Hero />
+				<LaunchVideo />
 				<Solution />
 				<AgentSection />
 				<SearchEnginesShowcase />

@@ -68,6 +68,30 @@ export const pageViews = pgTable(
 	],
 );
 
+// Messages from the public /contact and /feedback forms. The row is written before the email
+// is attempted, so a Resend outage never loses a message; emailStatus records what happened.
+export const contactMessages = pgTable(
+	"contact_messages",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		kind: text("kind").notNull(), // 'contact' | 'feedback'
+		name: text("name"),
+		email: text("email").notNull(),
+		topic: text("topic"), // contact: 'support' | 'sales' | 'security' | 'other'
+		rating: integer("rating"), // feedback: 1..5
+		message: text("message").notNull(),
+		pagePath: text("page_path"), // Where the form was submitted from
+		userId: text("user_id"), // Stack Auth user id when signed in
+		emailStatus: text("email_status").default("pending").notNull(), // 'pending' | 'sent' | 'failed' | 'skipped'
+		emailError: text("email_error"),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+	},
+	(table) => [
+		index("contact_messages_created_idx").on(table.createdAt),
+		index("contact_messages_email_created_idx").on(table.email, table.createdAt),
+	],
+);
+
 // One row per scheduled automation run so the admin panel can prove the cron is alive.
 export const cronRuns = pgTable(
 	"cron_runs",

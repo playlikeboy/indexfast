@@ -16,3 +16,10 @@ produce a duplicate migration creating `conversion_events` (which already exists
 3. Rename the generated snapshot to `0009_snapshot.json`.
 
 After that, `db:generate` diffs against the real schema again.
+
+## Resolved by 0010 (2026-11-19)
+
+`0010_snapshot.json` was generated from the full schema, so it includes `conversion_events`.
+The generated `0010_contact_messages.sql` had a duplicate `CREATE TABLE conversion_events`; it was
+removed by hand. `db:generate` now diffs correctly; `0009_snapshot.json` stays missing, which is fine.
+drizzle-kit reads every file in this folder as JSON, so move this README aside while generating.

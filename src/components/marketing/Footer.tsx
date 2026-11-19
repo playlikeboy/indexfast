@@ -1,11 +1,13 @@
 /*
  * Shared marketing footer (every public page imports it): the wordmark over the real site links
- * and the legal line. FinalCTA is re-exported here because /pricing and the home page import it
+ * and the legal line, plus the contact/feedback forms and the Instagram profile (INSTAGRAM_URL in
+ * lib/social.ts, also listed in the Organization sameAs). FinalCTA is re-exported here because /pricing and the home page import it
  * from this module; its source lives in FinalCTA.tsx.
  */
 import Link from "next/link";
 import { Container } from "@/components/ui";
 import { Logo } from "./Navbar";
+import { INSTAGRAM_URL } from "@/lib/social";
 
 export { FinalCTA } from "./FinalCTA";
 
@@ -45,6 +47,9 @@ export function Footer() {
 							<li><Link href="/blog" className={linkClass}>Blog</Link></li>
 							<li><Link href="/resources/search-engines" className={linkClass}>Search engine APIs</Link></li>
 							<li><Link href="/about" className={linkClass}>About</Link></li>
+							<li><Link href="/contact" className={linkClass}>Contact</Link></li>
+							<li><Link href="/feedback" className={linkClass}>Feedback</Link></li>
+							<li><a href={INSTAGRAM_URL} className={linkClass} rel="me noopener" target="_blank">Instagram</a></li>
 							<li><Link href="/privacy" className={linkClass}>Privacy</Link></li>
 							<li><Link href="/terms" className={linkClass}>Terms</Link></li>
 						</ul>

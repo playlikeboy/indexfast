@@ -21,6 +21,7 @@ Runtime secrets live in Cloudflare (`wrangler secret put NAME`) and are mirrored
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `NEXT_PUBLIC_RAZORPAY_KEY_ID` | Worker + GitHub |
 | `ADMIN_EMAILS` | Worker + GitHub |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Worker + GitHub. Google OAuth "Web application" client |
+| `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `CONTACT_NOTIFY_EMAIL` (optional) | Worker + GitHub. Emails each /contact and /feedback submission; without them the message is still stored (`email_status = skipped`) |
 | `NEXT_PUBLIC_SITE_URL` (optional), `GOOGLE_REDIRECT_URI` (optional) | Worker + build env. Redirect defaults to `<NEXT_PUBLIC_SITE_URL>/api/integrations/google/callback` |
 
 Google Cloud setup (not in code): register `https://indexfast.co/api/integrations/google/callback`

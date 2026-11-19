@@ -1,3 +1,4 @@
+import { INSTAGRAM_URL } from "@/lib/social";
 import type { Metadata } from "next";
 import { Familjen_Grotesk, IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
@@ -90,7 +91,7 @@ const organizationJsonLd = {
 	// /favicon.svg does not exist (404); the logo must be a real, crawlable image.
 	logo: LOGO_URL,
 	description: siteDescription,
-	sameAs: [],
+	sameAs: [INSTAGRAM_URL],
 };
 
 const websiteJsonLd = {
