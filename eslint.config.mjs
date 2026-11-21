@@ -11,6 +11,7 @@ const eslintConfig = [
 			"node_modules/**",
 			"cli/**",
 			"email-mcp/**",
+			"openseo/**",
 			"cloudflare-env.d.ts",
 			"next-env.d.ts",
 		],

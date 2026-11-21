@@ -52,3 +52,12 @@ next-env.d.ts
 !.dev.vars.example
 email-mcp/*
 graphify-out/
+
+# Vendored OpenSEO (openseo/): its own installs, build output and deploy state
+/openseo/node_modules
+/openseo/dist
+/openseo/.alchemy
+/openseo/.env*
+!/openseo/.env.example
+/openseo/.wrangler
+/openseo/.logs

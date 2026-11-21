@@ -6,7 +6,10 @@ its source in its header comment. Their licenses require keeping these notices.
 ## OpenSEO
 
 Source: https://github.com/every-app/open-seo (commit af3f995f)
-Used in: `src/lib/providers/dataforseo/client.ts`, `src/lib/providers/dataforseo/labs.ts`
+Used in: `openseo/` (the full application, vendored without its git history; its own LICENSE
+file is kept at `openseo/LICENSE`), `src/lib/providers/dataforseo/client.ts`,
+`src/lib/providers/dataforseo/labs.ts`. Changes in `openseo/`: worker and resource names
+(`indexfast-seo`), visible product name, deploy settings for seo.indexfast.co.
 
 MIT License
 

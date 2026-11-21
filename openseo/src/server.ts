@@ -1,0 +1,376 @@
+import {
+  createStartHandler,
+  defaultStreamHandler,
+} from "@tanstack/react-start/server";
+import { routeAgentRequest } from "agents";
+import { env as workerEnv } from "cloudflare:workers";
+import { everyApp } from "@every-app/sdk/server";
+import { serveEveryAppRequest } from "@/server/lib/gateway-attribution";
+import { resolveUserContextFromHeaders } from "@/middleware/ensure-user/resolve";
+import { ProjectRepository } from "@/server/features/projects/repositories/ProjectRepository";
+import { SamSessionRepository } from "@/server/features/sam/SamSessionRepository";
+import { runScheduledRankChecks } from "@/server/features/rank-tracking/services/scheduledRankChecks";
+import { reconcileStaleAudits } from "@/server/features/audit/services/auditReconciler";
+import { sendFirstAuditEmails } from "@/server/features/audit/services/firstAuditEmails";
+import {
+  getAuthMode,
+  isHostedAuthMode,
+  setRuntimeAuthMode,
+  usesBetterAuth,
+} from "@/lib/auth-mode";
+import {
+  createOpenSeoOAuthProvider,
+  type OpenSeoOAuthEnv,
+} from "@/server/mcp/oauth-provider";
+import { requestWithPublicOrigin } from "@/server/mcp/public-origin";
+import { MCP_ROUTE } from "@/server/mcp/context";
+import { withPgClient } from "@/db";
+import { ENFORCED_CSP, reportOnlyCsp } from "@/server/lib/csp";
+import { withDataforseoSlots } from "@/server/lib/dataforseo/request-slots";
+import {
+  AUTUMN_WEBHOOK_PATH,
+  handleAutumnWebhookRequest,
+} from "@/server/billing/autumn-webhook";
+import {
+  STRIPE_PROJECTS_PATH_PREFIX,
+  handleStripeProjectsRequest,
+} from "@/server/stripe-projects/handler";
+import { sweepDubReferredOrganizations } from "@/server/referrals/dub";
+import { maybeSendSelfHostHeartbeat } from "@/server/lib/self-host-telemetry";
+import { handleOperatorRequest } from "@/server/standalone/admin";
+import { handleImport, isLegacyImportActive } from "@/server/standalone/import";
+import { EVERY_APP_TRANSFER_PATH } from "@/server/features/every-app-transfer/protocol";
+import { hasOperatorSecret } from "@/server/standalone/operator-auth";
+
+const startHandler = createStartHandler(defaultStreamHandler);
+
+// Security headers for everything the app serves, set here because wrapping
+// the handler covers the OAuth-provider path too, which serves app documents
+// through this same function.
+//
+// The Content-Security-Policy goes on HTML documents that carry no policy of
+// their own, so a route that sets its own stricter CSP keeps it (two CSP
+// headers intersect, so adding a second could only confuse things). What is
+// enforced is ENFORCED_CSP. OpenSEO Cloud also sends the full policy
+// report-only (csp.ts); the nonce it names reaches the document's inline
+// scripts through the router (router.tsx).
+async function appFetch(request: Request): Promise<Response> {
+  const cspNonce = crypto.randomUUID();
+  const response = await startHandler(request, { context: { cspNonce } });
+  // A WebSocket upgrade's response can't be rebuilt, and has no use for these.
+  if (response.status === 101) return response;
+  const headers = new Headers(response.headers);
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  // Only over https: a self-hosted instance on plain http has no TLS to pin.
+  if (new URL(request.url).protocol === "https:") {
+    headers.set("Strict-Transport-Security", "max-age=31536000");
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (
+    contentType.startsWith("text/html") &&
+    !headers.has("content-security-policy")
+  ) {
+    headers.set("Content-Security-Policy", ENFORCED_CSP);
+    if (isHostedAuthMode(workerEnv.AUTH_MODE)) {
+      headers.set(
+        "Content-Security-Policy-Report-Only",
+        reportOnlyCsp({
+          nonce: cspNonce,
+          host: new URL(request.url).host,
+          posthogHost: workerEnv.POSTHOG_HOST,
+        }),
+      );
+    }
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+const openSeoOAuthProvider = createOpenSeoOAuthProvider(appFetch);
+
+// Authorize a SAM agent connection in the Worker, before it reaches the Durable
+// Object. The DO instance name is the sessionId (set client-side); we resolve
+// the session here and authorize the caller against the session's project via
+// the same canonical project-access check the rest of the app uses, so the DO
+// can trust its `name` and derive org/project/user from the session row.
+// Returning a Response rejects; void lets it through.
+async function authorizeSamChat(
+  request: Request,
+  sessionId: string,
+): Promise<Response | undefined> {
+  let context;
+  try {
+    context = await resolveUserContextFromHeaders(request.headers);
+  } catch {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  const session = await SamSessionRepository.getActiveSession(
+    sessionId,
+    context.userId,
+  );
+  const project = session
+    ? await ProjectRepository.getProjectForOrganization(
+        session.projectId,
+        context.organizationId,
+      )
+    : null;
+  if (!session || !project) {
+    return new Response("Forbidden", { status: 403 });
+  }
+  return undefined;
+}
+
+// The chat DO lives behind /agents/*. Dispatch on the DO binding partyserver
+// resolved for the request (rather than re-parsing the path), and fail closed
+// on anything unrecognized.
+function authorizeChatAgent(
+  request: Request,
+  lobby: { className: string; name: string },
+): Promise<Response | undefined> | Response {
+  if (lobby.className === "SAM_CHAT") {
+    return authorizeSamChat(request, lobby.name);
+  }
+  return new Response("Forbidden", { status: 403 });
+}
+
+// Route /agents/* to the SAM chat DO. Auth happens here (both the WS upgrade
+// and any HTTP message-history fetch), keeping it off the OAuth wrapper and
+// TanStack route guard below.
+async function routeChatAgents(request: Request, env: Env): Promise<Response> {
+  const response = await routeAgentRequest(request, env, {
+    onBeforeConnect: (req, lobby) => authorizeChatAgent(req, lobby),
+    onBeforeRequest: (req, lobby) => authorizeChatAgent(req, lobby),
+  });
+  return response ?? new Response("Not found", { status: 404 });
+}
+
+function fetch(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  // Scope a per-request Postgres client (no-op in D1 mode). The client isn't
+  // closed here — the Workers↔Hyperdrive socket is reclaimed at invocation end.
+  // The DataForSEO cap is per request too, matching the connection limit.
+  return withPgClient(() =>
+    withDataforseoSlots(() => Promise.resolve(handleFetch(request, env, ctx))),
+  );
+}
+
+// AUTH_MODE=everyapp: OpenSEO is private behind an Every App gateway, which
+// signs the person's identity onto every request it forwards. Fail closed on
+// anything else before routing, then resolve users per request as the other
+// modes do. Gateway calls made while serving the request forward its
+// identity (gateway-attribution.ts). The gateway's tool calls
+// (`/__everyapp/tools/*`) load the MCP tools on first use only.
+async function handleEveryAppRequest(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  if (new URL(request.url).pathname.startsWith("/__everyapp/")) {
+    const { everyAppTools } = await import("@/server/everyapp/tools");
+    return everyAppTools.fetch(request, env, ctx);
+  }
+  // everyApp() also drops any Set-Cookie on the way out.
+  return everyApp<Env>(async (verified, _env, _ctx, user) => {
+    // The one public route (everyapp.config.ts): a self-hosted install
+    // moving here, gated by the transfer code's secret, not a member.
+    if (new URL(verified.url).pathname === EVERY_APP_TRANSFER_PATH) {
+      const { EveryAppTransferReceiver } =
+        await import("@/server/features/every-app-transfer/EveryAppTransferReceiver");
+      return EveryAppTransferReceiver.handleTransferRequest(verified);
+    }
+    return serveEveryAppRequest(verified, user, () =>
+      handleAppRequest(verified, env, ctx),
+    );
+  }).fetch(request, env, ctx);
+}
+
+function handleFetch(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): Response | Promise<Response> {
+  if (getAuthMode(env.AUTH_MODE) === "everyapp") {
+    return handleEveryAppRequest(request, env, ctx);
+  }
+  return handleAppRequest(request, env, ctx);
+}
+
+async function handleAppRequest(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  const authMode = getAuthMode(env.AUTH_MODE);
+  setRuntimeAuthMode(env.AUTH_MODE);
+  const publicRequest = requestWithPublicOrigin(request);
+  const pathname = new URL(publicRequest.url).pathname;
+  ctx.waitUntil(maybeSendSelfHostHeartbeat(pathname));
+
+  // Standalone Docker operator tooling (account commands, legacy import).
+  // Both handlers answer 404 without the operator secret; the block is also
+  // what keeps hosted from paying a KV read per request.
+  if (hasOperatorSecret()) {
+    if (pathname === "/api/standalone/import")
+      return handleImport(publicRequest);
+    if (await isLegacyImportActive()) {
+      return new Response("Data import in progress", { status: 503 });
+    }
+    if (pathname === "/api/standalone/admin") {
+      return handleOperatorRequest(publicRequest);
+    }
+  }
+
+  if (pathname === "/api/ai-visibility/download") {
+    return import("@/server/features/ai-visibility/services/aiVisibilityExport").then(
+      ({ handleAiVisibilityDownload }) =>
+        handleAiVisibilityDownload(publicRequest),
+    );
+  }
+
+  if (pathname.startsWith("/agents/")) {
+    return routeChatAgents(publicRequest, env);
+  }
+
+  if (isHostedAuthMode(authMode) && pathname === AUTUMN_WEBHOOK_PATH) {
+    return handleAutumnWebhookRequest(publicRequest);
+  }
+
+  if (
+    isHostedAuthMode(authMode) &&
+    pathname.startsWith(STRIPE_PROJECTS_PATH_PREFIX)
+  ) {
+    return handleStripeProjectsRequest(publicRequest);
+  }
+
+  if (usesBetterAuth(authMode)) {
+    return openSeoOAuthProvider.fetch(
+      publicRequest,
+      env as OpenSeoOAuthEnv,
+      ctx,
+    );
+  }
+
+  if (
+    (authMode === "cloudflare_access" || authMode === "local_noauth") &&
+    pathname === MCP_ROUTE
+  ) {
+    return import("@/server/mcp/transport").then(
+      ({ handleSelfHostedOpenSeoMcpRequest }) =>
+        handleSelfHostedOpenSeoMcpRequest(publicRequest, authMode, env, ctx),
+    );
+  }
+
+  return appFetch(request);
+}
+
+// Export Workflow classes as named exports. SiteAuditWorkflow and the
+// AuditScratchpad DO live in the open-seo-audit aux worker
+// (src/audit-worker.ts); this worker reaches them via cross-script bindings.
+export { RankCheckWorkflow } from "./server/workflows/RankCheckWorkflow";
+export { AiVisibilityWorkflow } from "./server/workflows/AiVisibilityWorkflow";
+export { LocalRankWorkflow } from "./server/workflows/LocalRankWorkflow";
+// Durable Object class for the SAM in-app agent (Agents SDK).
+export { SamChatAgent } from "./server/features/sam/SamChatAgent";
+
+// Daily OAuth KV garbage collection; must match a trigger in wrangler.jsonc.
+const MCP_OAUTH_PURGE_CRON = "17 3 * * *";
+
+export default {
+  fetch,
+  async scheduled(
+    controller: ScheduledController,
+    env: Env,
+    _ctx: ExecutionContext,
+  ) {
+    // A legacy Docker import owns the database until it finishes.
+    if (hasOperatorSecret() && (await isLegacyImportActive())) return;
+    // So does a move from a self-hosted install: a tracker that arrived
+    // before its keywords would run half a check.
+    if (getAuthMode(env.AUTH_MODE) === "everyapp") {
+      const { EveryAppTransferReceiver } =
+        await import("@/server/features/every-app-transfer/EveryAppTransferReceiver");
+      if (await EveryAppTransferReceiver.isTransferRunning()) return;
+    }
+    if (controller.cron === MCP_OAUTH_PURGE_CRON) {
+      const authMode = getAuthMode(env.AUTH_MODE);
+      // Only the modes with their own accounts run the OAuth provider (and
+      // have OAUTH_KV bound).
+      if (usesBetterAuth(authMode)) {
+        const result = await openSeoOAuthProvider.purgeExpiredData(
+          env as OpenSeoOAuthEnv,
+        );
+        console.log("[mcp-oauth] purged expired OAuth data", result);
+      }
+      if (isHostedAuthMode(authMode)) {
+        // Daily referral-sale sweep: catches paid Autumn invoices the
+        // billing.updated webhook path misses (renewals, one-time top-ups).
+        try {
+          await sweepDubReferredOrganizations();
+        } catch (err) {
+          console.error("[cron] Dub referral sale sweep failed:", err);
+        }
+
+        // Daily cleanup of Google grants no project uses any more, as the
+        // hosted privacy policy promises.
+        try {
+          const { purgeUnusedGoogleData } =
+            await import("@/server/features/google/googleDataRetention");
+          const purged = await withPgClient(() => purgeUnusedGoogleData());
+          console.log("[retention] purged unused Google data", purged);
+        } catch (err) {
+          console.error("[cron] Google data cleanup failed:", err);
+        }
+
+        // Self-serve account deletions whose 14-day wait is over.
+        try {
+          const { AccountDeletionService } =
+            await import("@/server/account-deletion/AccountDeletionService");
+          const result = await withPgClient(() =>
+            AccountDeletionService.runDueDeletions(),
+          );
+          console.log("[account-deletion] daily run", result);
+        } catch (err) {
+          console.error("[cron] Account deletion run failed:", err);
+        }
+      }
+      return;
+    }
+
+    // Watchdog first: reconcile audits stuck in "running" whose workflow died
+    // without reaching mark-failed (OOM/CPU kills, expired instances). Runs
+    // before the rank loop so a slow tick can't delay or starve it. Its
+    // failure is held until after the rank checks so it can't suppress them,
+    // then rethrown so the invocation still reports as failed.
+    let watchdogError: unknown;
+    try {
+      await withPgClient(() => reconcileStaleAudits());
+    } catch (err) {
+      watchdogError = err;
+      console.error("[cron] Stale-audit reconcile failed:", err);
+    }
+    // Scope a per-request Postgres client for the cron run (no-op in D1 mode).
+    // The cron itself calls no provider: it starts Workflows, each carrying
+    // the organization that owns the tracker, which every gateway call the
+    // run makes names (gateway-attribution.ts).
+    const checks = await Promise.allSettled([
+      withPgClient(() => runScheduledRankChecks(env)),
+      withPgClient(async () => {
+        const { runScheduledAiVisibility } =
+          await import("@/server/features/ai-visibility/services/scheduledAiVisibility");
+        await runScheduledAiVisibility();
+      }),
+      withPgClient(() => sendFirstAuditEmails()),
+    ]);
+    for (const result of checks)
+      if (result.status === "rejected") throw result.reason;
+    if (watchdogError) throw watchdogError;
+  },
+};
