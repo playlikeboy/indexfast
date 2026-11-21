@@ -53,6 +53,9 @@ export type JsonRpcRequest = {
 
 export const SUPPORTED_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
+import { estimateKeywordResearchForApi, getCreditUsageForApi, listSavedKeywordsForApi, researchKeywordsForApi, removeSavedKeywordsForApi, saveKeywordsForApi } from "@/lib/platform/seo-operations";
+import type { SaveKeywordInput } from "@/lib/seo/keywords/service";
+
 const serverInfo = { name: "indexfast", title: "IndexFast", version: "1.0.0" };
 
 const instructions = `IndexFast gets a website's pages discovered by search engines automatically: IndexNow by default (Bing, Yandex, Seznam, Naver, Yep), plus optional Bing Webmaster API, Google Search Console, Yandex Webmaster and Baidu push.
@@ -317,6 +320,64 @@ const tools = [
 		inputSchema: { type: "object", properties: { site, engine: ENGINE_SCHEMA }, required: ["site", "engine"] },
 	},
 	{
+		name: "research_keywords",
+		title: "Research keywords",
+		description:
+			"Keyword ideas for a seed keyword with search volume, CPC, competition, keyword difficulty, intent and 12-month trend (DataForSEO). Uses SEO data credits; repeat queries within 24h are cached and free. Call estimate_keyword_research first for the cost.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				site,
+				keyword: { type: "string", description: "Seed keyword" },
+				mode: { type: "string", enum: ["suggestions", "related", "ideas"], description: "suggestions (contain the seed, default), related (SERP-related), ideas (same topic)" },
+				locationCode: { type: "number", description: "DataForSEO location code, default 2840 (United States). 2826 UK, 2356 India, 2124 Canada, 2036 Australia" },
+				languageCode: { type: "string", description: "Language code, default en" },
+				limit: { type: "number", description: "Rows, 10-200 (default 50)" },
+			},
+			required: ["site", "keyword"],
+		},
+	},
+	{
+		name: "estimate_keyword_research",
+		title: "Estimate keyword research cost",
+		description: "Credits research_keywords would reserve for a given row limit. Free.",
+		inputSchema: { type: "object", properties: { keyword: { type: "string" }, limit: { type: "number" } } },
+	},
+	{
+		name: "save_keywords",
+		title: "Save keywords",
+		description: "Save keywords (with their metrics from research_keywords) to the site's keyword list.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				site,
+				keywords: { type: "array", items: { type: "object", properties: { keyword: { type: "string" }, searchVolume: { type: "number" }, cpc: { type: "number" }, keywordDifficulty: { type: "number" }, intent: { type: "string" } }, required: ["keyword"] } },
+				locationCode: { type: "number" },
+				languageCode: { type: "string" },
+				tags: { type: "array", items: { type: "string" } },
+			},
+			required: ["site", "keywords"],
+		},
+	},
+	{
+		name: "list_saved_keywords",
+		title: "List saved keywords",
+		description: "The site's saved keyword list with metrics and tags.",
+		inputSchema: { type: "object", properties: { site }, required: ["site"] },
+	},
+	{
+		name: "remove_saved_keywords",
+		title: "Remove saved keywords",
+		description: "Remove saved keywords by id.",
+		inputSchema: { type: "object", properties: { site, ids: { type: "array", items: { type: "string" } } }, required: ["site", "ids"] },
+	},
+	{
+		name: "get_credit_usage",
+		title: "SEO data credits",
+		description: "Remaining SEO data credits this month and the recent usage ledger (what spent them).",
+		inputSchema: { type: "object", properties: { limit: { type: "number" } } },
+	},
+	{
 		name: "list_search_engines",
 		title: "List search engines",
 		description: "Get structured specifications, submission APIs, daily quotas, auth types, and documentation for major search engines worldwide.",
@@ -464,6 +525,29 @@ async function callTool(auth: AuthenticatedApiKey, rawName: string, args: Record
 			return setEngineAutoSubmitForApi(auth.userId, siteRef, asString(args.engine), args.enabled === true);
 		case "remove_engine":
 			return removeEngineForApi(auth.userId, siteRef, asString(args.engine));
+		case "research_keywords":
+			return researchKeywordsForApi(auth.userId, siteRef, {
+				keyword: asString(args.keyword),
+				mode: asString(args.mode) || undefined,
+				locationCode: typeof args.locationCode === "number" ? args.locationCode : undefined,
+				languageCode: asString(args.languageCode) || undefined,
+				limit: typeof args.limit === "number" ? args.limit : undefined,
+			});
+		case "estimate_keyword_research":
+			return estimateKeywordResearchForApi({ keyword: asString(args.keyword), limit: typeof args.limit === "number" ? args.limit : undefined });
+		case "save_keywords":
+			return saveKeywordsForApi(auth.userId, siteRef, {
+				keywords: Array.isArray(args.keywords) ? (args.keywords as SaveKeywordInput[]).filter((row) => row && typeof row.keyword === "string") : [],
+				locationCode: typeof args.locationCode === "number" ? args.locationCode : undefined,
+				languageCode: asString(args.languageCode) || undefined,
+				tags: asStringArray(args.tags),
+			});
+		case "list_saved_keywords":
+			return listSavedKeywordsForApi(auth.userId, siteRef);
+		case "remove_saved_keywords":
+			return removeSavedKeywordsForApi(auth.userId, siteRef, asStringArray(args.ids));
+		case "get_credit_usage":
+			return getCreditUsageForApi(auth.userId, asNumber(args.limit, 50));
 		default:
 			throw new Error(`Unknown tool: ${rawName}`);
 	}

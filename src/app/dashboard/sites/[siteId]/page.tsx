@@ -10,6 +10,7 @@ import { notFound } from "next/navigation";
 import { SECTIONS, SiteView, TABS, type SiteSection } from "@/components/app/views/SiteView";
 import { getSitePage, type UrlTab } from "@/db/app-queries";
 import { requireSessionUser } from "@/lib/auth";
+import { getKeywordsPageData } from "@/lib/seo/keywords/page-data";
 import { parsePageNumber, firstParam, isUuid } from "./params";
 
 type Param = string | string[] | undefined;
@@ -35,6 +36,8 @@ export default async function SitePage({ params, searchParams }: PageProps) {
 
 	const data = await getSitePage(user.id, siteId, { tab, q, page: pageNumber });
 	if (!data) notFound();
+	// Only the Keywords section needs credit and keyword data; other sections skip the queries.
+	const keywords = section === "keywords" ? await getKeywordsPageData(user.id, siteId) : null;
 
-	return <SiteView data={data} section={section} tab={tab} q={q} pageNumber={pageNumber} />;
+	return <SiteView data={data} section={section} tab={tab} q={q} pageNumber={pageNumber} keywords={keywords} />;
 }

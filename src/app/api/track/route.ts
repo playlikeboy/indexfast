@@ -17,6 +17,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { db } from "@/db";
 import { conversionEvents, pageViews } from "@/db/schema";
 import { isAttributionEvent, parseAttribution } from "@/lib/attribution";
+import { getSessionUser } from "@/lib/auth";
 
 const MAX_PATH_LENGTH = 300;
 const MAX_BODY_BYTES = 2048;
@@ -91,10 +92,9 @@ export async function POST(request: Request) {
 			// A malformed attribution is dropped but the event is still recorded:
 			// funnel counts stay honest, only fully-valid attribution is stored.
 			const attribution = parseAttribution({ ifb: body.ifb, ifl: body.ifl, ifs: body.ifs });
-			const userId =
-				event === "account_created" && typeof body.userId === "string" && body.userId.length > 0 && body.userId.length <= 128
-					? body.userId
-					: null;
+			// The user id comes from the signed-in session, never from the request body, so a
+			// caller cannot attach a conversion to someone else's account.
+			const userId = event === "account_created" ? ((await getSessionUser())?.id ?? null) : null;
 			const [recentEvent] = await db
 				.select({ id: conversionEvents.id })
 				.from(conversionEvents)

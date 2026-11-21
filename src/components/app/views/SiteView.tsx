@@ -5,6 +5,7 @@
  * - URLs: every tracked URL with status filters and per-row actions.
  * - Queue: what is waiting to be sent, and why (cooldown, retry).
  * - Sitemaps: sources and their sync state.
+ * - Keywords: keyword research (credit-metered DataForSEO data) and the saved keyword list.
  * - Settings: automation, engines (IndexNow key, Bing, Search Console, Yandex, Baidu), danger zone.
  * Sections are links (?view=) rather than client tabs, because the view must be linkable and
  * survive a reload; the current one carries aria-current="page".
@@ -22,6 +23,7 @@ import { QueueSection } from "./site/Queue";
 import { SettingsSection } from "./site/Settings";
 import { SitemapsSection } from "./site/Sitemaps";
 import { UrlsSection } from "./site/Urls";
+import { KeywordsSection, type KeywordsData } from "./site/Keywords";
 import { siteHref, type SiteSection } from "./site/shared";
 
 export type { SiteSection } from "./site/shared";
@@ -32,13 +34,14 @@ export const SECTIONS: Array<{ id: SiteSection; label: string }> = [
 	{ id: "urls", label: "URLs" },
 	{ id: "queue", label: "Queue" },
 	{ id: "sitemaps", label: "Sitemaps" },
+	{ id: "keywords", label: "Keywords" },
 	{ id: "settings", label: "Settings" },
 ];
 
-type Props = { data: SitePageData; section: SiteSection; tab: UrlTab; q: string; pageNumber: number };
+type Props = { data: SitePageData; section: SiteSection; tab: UrlTab; q: string; pageNumber: number; keywords?: KeywordsData | null };
 
 /** Pure view: renders from loaded data so it can also be rendered with fixtures. */
-export function SiteView({ data, section, tab, q, pageNumber }: Props) {
+export function SiteView({ data, section, tab, q, pageNumber, keywords }: Props) {
 	const { site, sources, stats, openJobs } = data;
 	const host = getSiteHost(site);
 	const sectionCount: Partial<Record<SiteSection, number>> = { urls: stats.total, queue: openJobs, sitemaps: sources.length };
@@ -100,6 +103,7 @@ export function SiteView({ data, section, tab, q, pageNumber }: Props) {
 			{section === "urls" ? <UrlsSection data={data} tab={tab} q={q} pageNumber={pageNumber} /> : null}
 			{section === "queue" ? <QueueSection data={data} q={q} pageNumber={pageNumber} /> : null}
 			{section === "sitemaps" ? <SitemapsSection data={data} /> : null}
+			{section === "keywords" && keywords ? <KeywordsSection siteId={site.id} data={keywords} /> : null}
 			{section === "settings" ? <SettingsSection data={data} /> : null}
 		</div>
 	);

@@ -9,6 +9,7 @@ import { EmptyState, PageHeader, RENEW_REMINDER_DAYS, formatDate, formatMoney, s
 import { Badge, Panel, Status, Table, Td, Th, cn, type StatusTone } from "@/components/ui";
 import { PLAN_GRACE_DAYS, PLAN_PERIOD_DAYS, VISIBLE_PLANS, isPaidPlan, type Entitlement } from "@/lib/platform/plans";
 import type { BillingOverview } from "@/lib/platform/razorpay-billing";
+import { SeoCreditsPanel, type SeoCreditsData } from "./SeoCredits";
 
 // The plan whose checkout is the screen's one primary action.
 const RECOMMENDED_PLAN = "unlimited";
@@ -59,7 +60,7 @@ function CurrentPlan({ entitlement }: { entitlement: Entitlement }) {
 }
 
 /** Pure view for Billing. */
-export function BillingView({ data }: { data: Pick<BillingOverview, "entitlement" | "history"> }) {
+export function BillingView({ data, credits }: { data: Pick<BillingOverview, "entitlement" | "history">; credits?: SeoCreditsData | null }) {
 	const { entitlement, history } = data;
 
 	return (
@@ -67,6 +68,8 @@ export function BillingView({ data }: { data: Pick<BillingOverview, "entitlement
 			<PageHeader title="Billing" description="Prepaid plans. No auto-charge, no surprise renewals." />
 
 			<CurrentPlan entitlement={entitlement} />
+
+			{credits ? <SeoCreditsPanel data={credits} /> : null}
 
 			<h2 className="mb-4 text-lg font-semibold">Plans</h2>
 			<div className="mb-8 grid gap-4 md:grid-cols-3">

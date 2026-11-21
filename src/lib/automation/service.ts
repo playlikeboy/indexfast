@@ -15,6 +15,7 @@
  */
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
+import { getPersonalOrganization } from "@/lib/org/context";
 import { db } from "@/db";
 import {
 	alerts,
@@ -46,6 +47,8 @@ import {
 } from "@/lib/engines/extra-engines";
 import { notifyGscAfterSync, runScheduledGscInspections } from "@/lib/engines/google-service";
 import { pruneQuotaUsage } from "@/lib/engines/shared";
+import { releaseStaleReservations } from "@/lib/credits/ledger";
+import { pruneProviderCache } from "@/lib/providers/cache";
 import { decryptSecret, encryptSecret, hasCredentialEncryptionKey, maskCredential, readSecret } from "./credentials";
 import {
 	generateIndexNowKey,
@@ -355,6 +358,18 @@ export async function adoptExistingIndexNowKeyForUser(userId: string, siteId: st
 	keyLocation = keyLocation || getIndexNowKeyLocation(host, key);
 	normalizeIndexNowKeyLocation(keyLocation, host);
 
+	// An existing key file is public, so adopting one proves nothing about who controls the
+	// site. Once another account has verified this host, only a key generated for this account
+	// (and hosted by it) can verify it again; otherwise anyone could take over submissions.
+	const [otherOwner] = await db
+		.select({ id: sites.id })
+		.from(sites)
+		.where(and(eq(sites.verified, true), ne(sites.userId, userId), or(eq(sites.domain, site.domain), eq(sites.indexingHost, host))))
+		.limit(1);
+	if (otherOwner) {
+		throw new Error("This domain is already verified by another IndexFast account, so an existing key cannot be reused. Host the key file IndexFast generated for you (Settings > Reset key) and verify again.");
+	}
+
 	const check = await verifyIndexNowKey(host, key, keyLocation);
 	if (!check.ok) {
 		throw new Error(
@@ -635,6 +650,7 @@ export async function createSiteForUser(input: { userId: string; domain: string;
 		.insert(sites)
 		.values({
 			userId: input.userId,
+			organizationId: (await getPersonalOrganization(input.userId)).id,
 			domain: host,
 			indexingHost: host,
 			name: input.name?.trim() || host,
@@ -1784,6 +1800,8 @@ export async function runScheduledAutomation() {
 		return result.rowCount ?? 0;
 	});
 	const prunedQuotaRows = await step("prune quota rows", () => pruneQuotaUsage(new Date(startedAt - GOOGLE_LIMITS.quotaRetentionDays * DAY_MS)));
+	const prunedProviderCache = await step("prune provider cache", () => pruneProviderCache(new Date(startedAt)));
+	const releasedReservations = await step("release stale credit reservations", () => releaseStaleReservations(new Date(startedAt - 30 * 60 * 1000)));
 
 	const summary = {
 		downgraded,
@@ -1795,6 +1813,8 @@ export async function runScheduledAutomation() {
 		gscInspection,
 		prunedUsageEvents,
 		prunedQuotaRows,
+		prunedProviderCache,
+		releasedReservations,
 		durationMs: Date.now() - startedAt,
 	};
 	await db

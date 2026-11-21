@@ -231,11 +231,15 @@ export const sites = pgTable(
 		automationEnabled: boolean("automation_enabled").default(false).notNull(),
 		verificationToken: text("verification_token").notNull(),
 		sitemapUrl: text("sitemap_url"), // Main monitored sitemap URL
+		// Tenant that owns the site (the "project" in SEO features). Nullable until every row is
+		// backfilled; new rows always set it. userId stays the creator and the indexing owner.
+		organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "set null" }),
 		createdAt: timestamp("created_at").defaultNow().notNull(),
 		updatedAt: timestamp("updated_at").defaultNow().notNull(),
 	},
 	(table) => [
 		index("sites_user_id_idx").on(table.userId),
+		index("sites_organization_idx").on(table.organizationId),
 		uniqueIndex("sites_user_domain_unique_idx").on(table.userId, table.domain),
 	],
 );
@@ -548,5 +552,154 @@ export const conversionEvents = pgTable(
 		index("conversion_events_event_created_idx").on(table.event, table.createdAt),
 		index("conversion_events_batch_lead_idx").on(table.batch, table.leadKey, table.event),
 		index("conversion_events_user_idx").on(table.userId, table.event),
+	],
+);
+
+// ---------------------------------------------------------------------------
+// SEO platform foundation (migration 0011). See docs/SEO-PLATFORM-ARCHITECTURE.md.
+// Tenancy: organization -> sites (projects) -> feature rows. Every feature table carries
+// organizationId so a query can always be filtered by tenant, even for child rows.
+// ---------------------------------------------------------------------------
+
+// A tenant. Every user owns exactly one personal organization (partial unique index), created
+// by the 0011 backfill or lazily on first sign-in. Credits live here, not on users, so a team
+// shares one balance. Plan entitlement is still read from the owner's users row in this phase.
+export const organizations = pgTable(
+	"organizations",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		name: text("name").notNull(),
+		ownerUserId: text("owner_user_id")
+			.references(() => users.id, { onDelete: "cascade" })
+			.notNull(),
+		personal: boolean("personal").default(false).notNull(),
+		// Monthly bucket is reset to the plan grant at the first spend of a new UTC month
+		// (creditPeriod 'YYYY-MM'); purchased credits never expire and are spent second.
+		creditPeriod: text("credit_period"),
+		monthlyCredits: integer("monthly_credits").default(0).notNull(),
+		purchasedCredits: integer("purchased_credits").default(0).notNull(),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at").defaultNow().notNull(),
+	},
+	(table) => [
+		index("organizations_owner_idx").on(table.ownerUserId),
+		uniqueIndex("organizations_personal_owner_unique_idx").on(table.ownerUserId).where(sql`${table.personal} = true`),
+	],
+);
+
+export const organizationMembers = pgTable(
+	"organization_members",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		organizationId: uuid("organization_id")
+			.references(() => organizations.id, { onDelete: "cascade" })
+			.notNull(),
+		userId: text("user_id")
+			.references(() => users.id, { onDelete: "cascade" })
+			.notNull(),
+		role: text("role").default("member").notNull(), // 'owner' | 'admin' | 'member'
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+	},
+	(table) => [
+		uniqueIndex("organization_members_org_user_unique_idx").on(table.organizationId, table.userId),
+		index("organization_members_user_idx").on(table.userId),
+	],
+);
+
+// Append-only record of every credit movement, so a customer can see exactly what spent
+// their balance. A paid call writes one 'reserve' row (negative credits, estimate) that is
+// later turned into 'settle' (actual cost) or 'release' (refunded). Grants and purchases are
+// positive. credits is signed; providerCostMicroUsd is the provider's own price (1e-6 USD).
+export const creditLedger = pgTable(
+	"credit_ledger",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		organizationId: uuid("organization_id")
+			.references(() => organizations.id, { onDelete: "cascade" })
+			.notNull(),
+		userId: text("user_id"), // Who triggered it; null for grants and cron
+		siteId: uuid("site_id"),
+		kind: text("kind").notNull(), // 'grant' | 'reserve' | 'settle' | 'release' | 'purchase' | 'adjust'
+		feature: text("feature"), // 'keyword_research', 'domain_overview', 'backlinks', 'rank_tracking', ...
+		provider: text("provider"), // 'dataforseo'
+		endpoint: text("endpoint"),
+		credits: integer("credits").notNull(),
+		providerCostMicroUsd: integer("provider_cost_micro_usd").default(0).notNull(),
+		byok: boolean("byok").default(false).notNull(), // Billed to the customer's own provider key
+		ref: text("ref"), // Idempotency key, e.g. 'grant:2026-11'
+		metadata: jsonb("metadata"),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+	},
+	(table) => [
+		index("credit_ledger_org_created_idx").on(table.organizationId, table.createdAt),
+		uniqueIndex("credit_ledger_org_ref_unique_idx").on(table.organizationId, table.ref),
+	],
+);
+
+// Short-lived cache of paid provider responses keyed by sha256(provider, endpoint, params).
+// Shared across tenants on purpose: the data is public search data, and a cache hit costs
+// nobody credits. Never cache anything tenant-specific here (GSC, GA4, private crawls).
+export const providerCache = pgTable(
+	"provider_cache",
+	{
+		key: text("key").primaryKey(),
+		provider: text("provider").notNull(),
+		endpoint: text("endpoint").notNull(),
+		payload: jsonb("payload").notNull(),
+		expiresAt: timestamp("expires_at").notNull(),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+	},
+	(table) => [index("provider_cache_expires_idx").on(table.expiresAt)],
+);
+
+// Bring-your-own-key provider credentials per organization (AES-GCM via credentials.ts).
+export const providerCredentials = pgTable(
+	"provider_credentials",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		organizationId: uuid("organization_id")
+			.references(() => organizations.id, { onDelete: "cascade" })
+			.notNull(),
+		provider: text("provider").notNull(), // 'dataforseo'
+		encryptedSecret: text("encrypted_secret").notNull(),
+		label: text("label"), // Masked login for display
+		lastValidatedAt: timestamp("last_validated_at"),
+		lastError: text("last_error"),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at").defaultNow().notNull(),
+	},
+	(table) => [uniqueIndex("provider_credentials_org_provider_unique_idx").on(table.organizationId, table.provider)],
+);
+
+// Keywords a user saved from research, per site (project). Metrics are a snapshot from the
+// research call that saved them; metricsAt says how old they are.
+export const savedKeywords = pgTable(
+	"saved_keywords",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		organizationId: uuid("organization_id")
+			.references(() => organizations.id, { onDelete: "cascade" })
+			.notNull(),
+		siteId: uuid("site_id")
+			.references(() => sites.id, { onDelete: "cascade" })
+			.notNull(),
+		keyword: text("keyword").notNull(),
+		locationCode: integer("location_code").notNull(),
+		languageCode: text("language_code").notNull(),
+		searchVolume: integer("search_volume"),
+		cpc: text("cpc"), // Decimal kept as text to avoid float drift
+		competition: text("competition"),
+		keywordDifficulty: integer("keyword_difficulty"),
+		intent: text("intent"),
+		monthlySearches: jsonb("monthly_searches"), // [{ year, month, volume }]
+		tags: jsonb("tags").$type<string[]>().default([]).notNull(),
+		metricsAt: timestamp("metrics_at"),
+		createdByUserId: text("created_by_user_id"),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at").defaultNow().notNull(),
+	},
+	(table) => [
+		uniqueIndex("saved_keywords_site_kw_unique_idx").on(table.siteId, table.keyword, table.locationCode, table.languageCode),
+		index("saved_keywords_org_idx").on(table.organizationId),
 	],
 );

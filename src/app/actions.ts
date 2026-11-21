@@ -43,6 +43,10 @@ import { runDiagnosticsForUser } from "@/lib/platform/operations";
 import { activatePaidOrder, createCheckoutOrder } from "@/lib/platform/razorpay-billing";
 import { fetchRazorpayPayment, getRazorpayConfig, verifyCheckoutSignature } from "@/lib/platform/razorpay";
 import { publicErrorMessage } from "@/lib/platform/http";
+import { getPersonalOrganization } from "@/lib/org/context";
+import { removeByokDataforseoCredentials, saveByokDataforseoCredentials } from "@/lib/providers/credentials";
+import { validateDataforseoCredentials } from "@/lib/providers/dataforseo/client";
+import { removeSavedKeywords, researchKeywords, saveKeywords, type SaveKeywordInput } from "@/lib/seo/keywords/service";
 
 export type ActionResult = { ok: boolean; message?: string; error?: string; data?: Record<string, unknown> } | null;
 
@@ -458,5 +462,69 @@ export async function removeEngineAction(siteId: string, engine: string): Promis
 		await removeEngineForUser(await sessionUserId(), siteId, engine);
 		revalidateSite(siteId);
 		return "Disconnected.";
+	});
+}
+
+// ---------------------------------------------------------------------------
+// SEO data: keyword research, saved keywords, provider keys (src/lib/seo, src/lib/providers)
+// ---------------------------------------------------------------------------
+
+export async function researchKeywordsAction(siteId: string, _prev: ActionResult, formData: FormData): Promise<ActionResult> {
+	return run(async () => {
+		const userId = await sessionUserId();
+		const result = await researchKeywords(userId, {
+			siteId,
+			keyword: text(formData, "keyword"),
+			mode: text(formData, "mode") || undefined,
+			locationCode: Number(text(formData, "locationCode")) || undefined,
+			languageCode: text(formData, "languageCode") || undefined,
+			limit: Number(text(formData, "limit")) || undefined,
+		});
+		revalidatePath("/dashboard/billing");
+		const cost = result.cached ? "cached, 0 credits" : `${result.credits} credit${result.credits === 1 ? "" : "s"}`;
+		return { message: `${result.rows.length} keywords (${cost}).`, data: result as unknown as Record<string, unknown> };
+	});
+}
+
+export async function saveKeywordsAction(siteId: string, input: { keywords: SaveKeywordInput[]; locationCode: number; languageCode: string }): Promise<ActionResult> {
+	return run(async () => {
+		const userId = await sessionUserId();
+		const { saved } = await saveKeywords(userId, { siteId, ...input });
+		revalidatePath(`/dashboard/sites/${siteId}`);
+		return `Saved ${saved} keyword${saved === 1 ? "" : "s"}.`;
+	});
+}
+
+export async function removeSavedKeywordAction(siteId: string, keywordId: string): Promise<ActionResult> {
+	return run(async () => {
+		const userId = await sessionUserId();
+		await removeSavedKeywords(userId, siteId, [keywordId]);
+		revalidatePath(`/dashboard/sites/${siteId}`);
+		return "Removed.";
+	});
+}
+
+export async function saveDataforseoKeyAction(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
+	return run(async () => {
+		const userId = await sessionUserId();
+		const login = text(formData, "login");
+		const password = text(formData, "password");
+		if (!login || !password) throw new Error("Enter your DataForSEO API login and password.");
+		const check = await validateDataforseoCredentials({ login, password, source: "byok" });
+		if (!check.ok) throw new Error(check.error);
+		const organization = await getPersonalOrganization(userId);
+		await saveByokDataforseoCredentials(organization.id, login, password);
+		revalidatePath("/dashboard/billing");
+		return "DataForSEO login saved. Research now runs on your own DataForSEO balance and uses 0 IndexFast credits.";
+	});
+}
+
+export async function removeDataforseoKeyAction(): Promise<ActionResult> {
+	return run(async () => {
+		const userId = await sessionUserId();
+		const organization = await getPersonalOrganization(userId);
+		await removeByokDataforseoCredentials(organization.id);
+		revalidatePath("/dashboard/billing");
+		return "DataForSEO login removed. Research uses IndexFast credits again.";
 	});
 }

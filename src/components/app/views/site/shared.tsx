@@ -11,7 +11,7 @@ import { ActionButton } from "@/components/app/client";
 import { buttonClass, type StatusTone } from "@/components/ui";
 import { VISIBLE_PLANS, type PlanLimits } from "@/lib/platform/plans";
 
-export type SiteSection = "overview" | "urls" | "queue" | "sitemaps" | "settings";
+export type SiteSection = "overview" | "urls" | "queue" | "sitemaps" | "keywords" | "settings";
 
 /** Inline text link inside prose: ink by default, cobalt on hover (DESIGN.md: links on hover). */
 export const textLink = "text-ink underline underline-offset-2 transition-colors duration-(--dur-micro) hover:text-signal";

@@ -3,7 +3,7 @@
  * adapters over the automation engine: they translate "site id or domain" references, shape
  * responses for machines, and never duplicate business rules (those live in service.ts).
  */
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { alerts, checks, siteSitemaps, sites, submissions, urls } from "@/db/schema";
 import {
@@ -346,11 +346,6 @@ export async function runDiagnosticsForUser(input: { userId: string; siteId: str
 		status: result.status,
 		blockers: result.blockers,
 	};
-}
-
-export async function getLatestCheck(urlId: string) {
-	const [row] = await db.select().from(checks).where(and(eq(checks.urlId, urlId), isNotNull(checks.details))).orderBy(desc(checks.checkedAt)).limit(1);
-	return row ?? null;
 }
 
 export function listDirectoryResources(priority?: "P0" | "P1" | "P2" | "P3") {

@@ -16,13 +16,38 @@ export function jsonResponse(data: unknown, status = 200) {
 	return Response.json(data, { status });
 }
 
-/** True for errors whose message is written for users (thrown deliberately by our code). */
+/**
+ * True for errors whose message is written for users (thrown deliberately by our code): plain
+ * Errors, the API limit error, and the SEO platform's named errors (org access, credits, missing
+ * provider data). Provider transport errors are mapped to fixed messages in providerErrorMessage.
+ */
+const PUBLIC_ERROR_NAMES = new Set(["OrgAccessError", "InsufficientCreditsError", "KeywordDataUnavailableError"]);
+
 export function isDomainError(error: unknown): error is Error {
-	return error instanceof ApiRequestLimitError || (error instanceof Error && error.constructor === Error);
+	return error instanceof ApiRequestLimitError || (error instanceof Error && (error.constructor === Error || PUBLIC_ERROR_NAMES.has(error.name)));
+}
+
+// DataForSEO failures: fixed wording, so no provider response body or account detail leaks.
+const PROVIDER_ERROR_MESSAGES: Record<string, string> = {
+	not_configured: "Keyword data is not configured for this account.",
+	auth_failed: "The data provider refused the request (account or balance problem). If you use your own DataForSEO login, check it in Settings.",
+	rate_limited: "The data provider is rate limiting requests. Try again in a minute.",
+	upstream_unavailable: "The data provider is temporarily unavailable. Try again in a moment; no credits were charged unless the provider billed the call.",
+	invalid_request: "The data provider rejected the request parameters (check the location and language).",
+	internal: "The data provider returned an unexpected response.",
+};
+
+function providerErrorCode(error: unknown): string | null {
+	return error instanceof Error && error.name === "DataforseoError" ? String((error as { code?: string }).code ?? "internal") : null;
 }
 
 /** The message safe to show a caller; logs and hides everything that is not a domain error. */
 export function publicErrorMessage(error: unknown) {
+	const providerCode = providerErrorCode(error);
+	if (providerCode) {
+		console.warn("Provider error", error);
+		return PROVIDER_ERROR_MESSAGES[providerCode] ?? PROVIDER_ERROR_MESSAGES.internal;
+	}
 	if (isDomainError(error)) return error.message;
 	if (error instanceof SyntaxError) return "Invalid JSON body.";
 	console.error("Unexpected API error", error);
@@ -50,6 +75,10 @@ export async function readJsonBody<T extends Record<string, unknown>>(request: R
 export function statusForError(error: unknown) {
 	if (error instanceof ApiRequestLimitError) return 429;
 	if (error instanceof SyntaxError) return 400;
+	const providerCode = providerErrorCode(error);
+	if (providerCode) return providerCode === "rate_limited" ? 429 : providerCode === "invalid_request" ? 400 : 502;
+	if (error instanceof Error && error.name === "InsufficientCreditsError") return 402;
+	if (error instanceof Error && error.name === "KeywordDataUnavailableError") return 503;
 	if (!isDomainError(error)) return 500;
 	const message = error.message;
 	if (/bearer|invalid or revoked|missing required scope/i.test(message)) return 401;
